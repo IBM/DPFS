@@ -199,7 +199,7 @@ static int virtiofs_emu_ll_handle_fuse_req(struct virtio_fs_ctrl *ctrl,
         {
             struct fuse_out_header *out_hdr = (struct fuse_out_header *) fuse_out_iov[0].iov_base;
             if (out_hdr->error != 0)
-                fprintf(stderr, "FUSE (op=%d) request ERROR=%d, %s\n", in_hdr->opcode,
+                fprintf(stderr, "FUSE OP(%d) request ERROR=%d, %s\n", in_hdr->opcode,
                     out_hdr->error, strerror(-out_hdr->error));
         }
         return ret;
