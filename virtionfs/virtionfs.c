@@ -292,6 +292,9 @@ void virtionfs_assign_ops(struct fuse_ll_operations *ops) {
     ops->init = (typeof(ops->init)) init;
     ops->lookup = (typeof(ops->lookup)) lookup;
     ops->getattr = (typeof(ops->getattr)) getattr;
+    // NFS accepts the NFS:fh (received from a NFS:lookup==FUSE:lookup) as
+    // its parameter to the dir ops like readdir
+    ops->opendir = NULL;
 }
 
 void virtionfs_main(char *server, char *export,
@@ -320,7 +323,7 @@ void virtionfs_main(char *server, char *export,
         warn("Failed to init virtionfs");
         goto virtionfs_main_ret_b;
     }
-    if (!mpool_init(vnfs->p, 100, sizeof(struct getattr_cb_data), 10)) {
+    if (mpool_init(vnfs->p, 100, sizeof(struct getattr_cb_data), 10) < 0) {
         warn("Failed to init virtionfs");
         goto virtionfs_main_ret_a;
     }

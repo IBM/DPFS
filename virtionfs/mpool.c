@@ -47,6 +47,7 @@ int mpool_init(struct mpool *p, uint64_t size, uint64_t chunk_size, uint64_t all
     p->alloc_size = alloc_size;
     p->head = NULL;
 
+    // Alloc one chunk to trigger the initial chunk allocations
     void *c = mpool_alloc(p);
     if (!c)
         return -1;
