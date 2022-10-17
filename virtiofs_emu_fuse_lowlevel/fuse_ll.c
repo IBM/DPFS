@@ -1602,6 +1602,10 @@ static void fuse_ll_map_emu(struct virtiofs_emu_ll_params *emu_ll_params) {
 int virtiofs_emu_fuse_ll_main(struct fuse_ll_operations *ops, struct virtiofs_emu_params *emu_params,
                               void *user_data, bool debug)
 {
+#ifdef FUSE_LL_DEBUG
+    printf("virtiofs_emu_fuse_ll is running in DEBUG mode\n");
+#endif
+
     struct fuse_ll *f_ll = calloc(1, sizeof(struct fuse_ll));
     f_ll->ops = *ops;
     f_ll->debug = debug;

@@ -271,8 +271,8 @@ struct virtiofs_emu_ll *virtiofs_emu_ll_new(struct virtiofs_emu_ll_params *param
         goto clear_pci_list;
     }
 
-    printf("VirtIO-FS controller 0x%p on emulation manager %s is ready\n",
-               emu->snap_ctrl, emu_params.emu_manager);
+    printf("VirtIO-FS device %s on emulation manager %s is ready\n",
+               param.tag, emu_params.emu_manager);
 
     return emu;
 
