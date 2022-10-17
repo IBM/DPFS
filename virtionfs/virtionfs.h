@@ -13,6 +13,7 @@
 #include <nfsc/libnfs.h>
 #include <nfsc/libnfs-raw.h>
 #include <nfsc/libnfs-raw-nfs.h>
+#include <nfsc/libnfs-raw-nfs4.h>
 #include "virtiofs_emu_ll.h"
 
 void virtionfs_main(char *server, char *export,
@@ -23,11 +24,14 @@ struct virtionfs {
     struct nfs_context *nfs;
     struct rpc_context *rpc;
     struct mpool *p;
+
     char *server;
     char *export;
     bool debug;
     uint64_t timeout_sec;
     uint32_t timeout_nsec;
+
+    nfs_fh4 rootfh;
 };
 
 #endif // VIRTIONFS_VIRTIONFS_H

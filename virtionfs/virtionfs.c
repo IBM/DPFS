@@ -9,6 +9,7 @@
 #include <nfsc/libnfs.h>
 #include <nfsc/libnfs-raw.h>
 #include <nfsc/libnfs-raw-nfs.h>
+#include <nfsc/libnfs-raw-nfs4.h>
 #include <linux/fuse.h>
 #include <poll.h>
 #include <err.h>
@@ -235,6 +236,18 @@ int getattr(struct fuse_session *se, struct virtionfs *vnfs,
     return EWOULDBLOCK;
 }
 
+static void getrootfh_cb(struct rpc_context *rpc, int status, void *data, void *private_data) {
+    struct virtionfs *vnfs = private_data;
+    COMPOUND4res *res = data;
+    
+    if (status != RPC_STATUS_SUCCESS || res->status != NFS4_OK) {
+    	fprintf(stderr, "Failed to get root filehandle of server\n");
+    	exit(10);
+    }
+    
+    vnfs->rootfh = res->resarray.resarray_val[1].nfs_resop4_u.opgetfh.GETFH4res_u.resok4.object;
+}
+
 int init(struct fuse_session *se, struct virtionfs *vnfs,
     struct fuse_in_header *in_hdr, struct fuse_init_in *in_init,
     struct fuse_conn_info *conn, struct fuse_out_header *out_hdr)
@@ -281,6 +294,21 @@ int init(struct fuse_session *se, struct virtionfs *vnfs,
         goto ret_errno;
     }
 
+    COMPOUND4args args;
+    nfs_argop4 op[2];
+    
+    memset(op, 0, sizeof(op));
+    op[0].argop = OP_PUTROOTFH;
+    op[1].argop = OP_GETFH;
+    
+    memset(&args, 0, sizeof(args));
+    args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
+    args.argarray.argarray_val = op;
+    if (rpc_nfs4_compound_async(vnfs->rpc, getrootfh_cb, &args, vnfs) != 0) {
+    	fprintf(stderr, "Failed to send nfs4 GETROOTFH request\n");
+    	exit(10);
+    }
+
     return 0;
 ret_errno:
     if (ret == -1)
@@ -290,8 +318,8 @@ ret_errno:
 
 void virtionfs_assign_ops(struct fuse_ll_operations *ops) {
     ops->init = (typeof(ops->init)) init;
-    ops->lookup = (typeof(ops->lookup)) lookup;
-    ops->getattr = (typeof(ops->getattr)) getattr;
+    ops->lookup = (typeof(ops->lookup)) NULL;
+    ops->getattr = (typeof(ops->getattr)) NULL;
     // NFS accepts the NFS:fh (received from a NFS:lookup==FUSE:lookup) as
     // its parameter to the dir ops like readdir
     ops->opendir = NULL;

@@ -148,6 +148,9 @@ void fuse_ll_debug_print_in_hdr(struct fuse_in_header *in) {
 	case 4096:
 	      op_name = "CUSE_INIT";
 	      break;
+	default:
+	      op_name = "UNKNOWN FUSE operation!";
+	      break;
 	}
 	printf("-- %s:%u --\n", op_name, in->opcode);
 	printf("* nodeid: %lu\n", in->nodeid);
