@@ -19,6 +19,10 @@
 #define VIRTIOFS_EMU_LL_NUM_QUEUES 64
 #define VIRTIOFS_EMU_LL_QUEUE_DEPTH 64
 
+// return int EWOULDBLOCK indicates that the done_ctx callback
+// will be used to indicate when the request is fully handled
+// return int 0 indicates that the request is fully handled and
+// can be sent to the host
 typedef int (*virtiofs_emu_ll_handler_t) (void *user_data,
                             struct iovec *fuse_in_iov, int in_iovcnt,
                             struct iovec *fuse_out_iov, int out_iovcnt,

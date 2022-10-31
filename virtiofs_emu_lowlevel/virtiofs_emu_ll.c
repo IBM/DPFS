@@ -193,6 +193,7 @@ static int virtiofs_emu_ll_handle_fuse_req(struct virtio_fs_ctrl *ctrl,
         if (h == NULL) {
             h = virtiofs_emu_ll_fuse_unknown;
         }
+        // Actually call the handler that was provided
         int ret = h(emu->user_data, fuse_in_iov, in_iovcnt, fuse_out_iov, out_iovcnt, done_ctx);
         if (ret == 0 && out_iovcnt > 0 &&
             fuse_out_iov[0].iov_len >= sizeof(struct fuse_out_header))
