@@ -12,6 +12,19 @@
 #include <linux/fuse.h>
 #include <arpa/inet.h>
 
+int nfs4_op_lookup(struct nfs_context *nfs, nfs_argop4 *op, const char *path)
+{
+    LOOKUP4args *largs;
+
+    op[0].argop = OP_LOOKUP;
+    largs = &op[0].nfs_argop4_u.oplookup;
+    largs->objname.utf8string_len = strlen(path);
+    largs->objname.utf8string_val = (char *) path;
+
+    return 1;
+
+}
+
 int nfs4_op_getattr(struct nfs_context *nfs, nfs_argop4 *op,
     uint32_t *attributes, int count)
 {
@@ -106,7 +119,7 @@ int nfs_parse_attributes(struct nfs_context *nfs, struct fuse_attr *attr,
     attr->size = nfs_pntoh64((uint32_t *)(void *)buf);
     buf += 8;
     len -= 8;
-    /* Inode */
+    /* Fileid aka Inode */
     CHECK_GETATTR_BUF_SPACE(len, 8);
     attr->ino = nfs_pntoh64((uint32_t *)(void *)buf);
     buf += 8;
@@ -202,6 +215,9 @@ int nfs_parse_attributes(struct nfs_context *nfs, struct fuse_attr *attr,
     
     attr->blksize = NFS_BLKSIZE;
     attr->blocks  = (space_used + NFS_BLKSIZE -1) / NFS_BLKSIZE;
+
+    // We don't have information for this field
+    attr->rdev = 0;
     
     return 0;
 }

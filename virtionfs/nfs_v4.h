@@ -13,6 +13,7 @@
 
 int nfs4_op_getattr(struct nfs_context *nfs, nfs_argop4 *op,
     uint32_t *attributes, int count);
+int nfs4_op_lookup(struct nfs_context *nfs, nfs_argop4 *op, const char *path);
 
 uint64_t nfs_hton64(uint64_t val);
 uint64_t nfs_ntoh64(uint64_t val);
