@@ -11,6 +11,7 @@
 #include <linux/fuse.h>
 #include <nfsc/libnfs-raw-nfs4.h>
 
+int nfs4_clone_fh(nfs_fh4 *dst, nfs_fh4 *src);
 int nfs4_find_op(struct nfs_context *nfs, COMPOUND4res *res, int op);
 int nfs4_op_getattr(struct nfs_context *nfs, nfs_argop4 *op,
     uint32_t *attributes, int count);

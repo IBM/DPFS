@@ -11,8 +11,20 @@
 #include <fcntl.h>
 #include <stdio.h>
 #include <errno.h>
+#include <stdlib.h>
 #include <linux/fuse.h>
 #include <arpa/inet.h>
+
+int nfs4_clone_fh(nfs_fh4 *dst, nfs_fh4 *src) {
+    dst->nfs_fh4_len = src->nfs_fh4_len;
+    dst->nfs_fh4_val = malloc(dst->nfs_fh4_len);
+    if (!dst->nfs_fh4_val) {
+        return -ENOMEM;
+    }
+    memcpy(dst->nfs_fh4_val, src->nfs_fh4_val, dst->nfs_fh4_len);
+
+    return 0;
+}
 
 int nfs4_find_op(struct nfs_context *nfs, COMPOUND4res *res, int op)
 {
@@ -29,8 +41,6 @@ int nfs4_find_op(struct nfs_context *nfs, COMPOUND4res *res, int op)
 
         return i;
 }
-
-
 
 int nfs4_op_lookup(struct nfs_context *nfs, nfs_argop4 *op, const char *path)
 {

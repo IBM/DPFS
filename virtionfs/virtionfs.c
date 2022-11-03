@@ -7,11 +7,10 @@
 
 #include <sys/time.h>
 #include <nfsc/libnfs.h>
-#include <nfsc/libnfs-raw.h>
-#include <nfsc/libnfs-raw-nfs.h>
 #include <nfsc/libnfs-raw-nfs4.h>
 #include <linux/fuse.h>
 #include <poll.h>
+#include <stdatomic.h>
 #include <err.h>
 
 #include "virtionfs.h"
@@ -19,6 +18,7 @@
 #include "helpers.h"
 #include "nfs_v4.h"
 #include "fuse_ll.h"
+#include "inode.h"
 
 
 // static uint32_t supported_attrs_attributes[1] = {
@@ -38,15 +38,19 @@ static uint32_t standard_attributes[2] = {
      1 << (FATTR4_TIME_MODIFY - 32))
 };
 
-int nfs4_op_putfh(struct virtionfs *vnfs, nfs_argop4 *op, uint64_t *nodeid)
+int nfs4_op_putfh(struct virtionfs *vnfs, nfs_argop4 *op, uint64_t nodeid)
 {
     op->argop = OP_PUTFH;
-    if (*nodeid == FUSE_ROOT_ID) {
+    if (nodeid == FUSE_ROOT_ID) {
         op->nfs_argop4_u.opputfh.object.nfs_fh4_val = vnfs->rootfh.nfs_fh4_val;
         op->nfs_argop4_u.opputfh.object.nfs_fh4_len = vnfs->rootfh.nfs_fh4_len;
     } else {
-        op->nfs_argop4_u.opputfh.object.nfs_fh4_val = (char *) nodeid;
-        op->nfs_argop4_u.opputfh.object.nfs_fh4_len = sizeof(*nodeid);
+        struct inode *i = inode_table_get(vnfs->inodes, nodeid);
+        if (!i) {
+            return 0;
+        }
+        op->nfs_argop4_u.opputfh.object.nfs_fh4_val = i->fh.nfs_fh4_val;
+        op->nfs_argop4_u.opputfh.object.nfs_fh4_len = i->fh.nfs_fh4_len;
     }
     return 1;
 }
@@ -142,14 +146,33 @@ void lookup_cb(struct rpc_context *rpc, int status, void *data,
         cb_data->out_hdr->error = -EREMOTEIO;
         goto ret;
     }
+    fuse_ino_t ino = cb_data->out_entry->attr.ino;
     // Finish the attr
     cb_data->out_entry->attr_valid = 0;
     cb_data->out_entry->attr_valid_nsec = 0;
     cb_data->out_entry->entry_valid = 0;
     cb_data->out_entry->entry_valid_nsec = 0;
+    // Taken from the nfs_parse_attributes
+    cb_data->out_entry->nodeid = ino;
+    cb_data->out_entry->generation = 0;
 
-    // Get the NFS:FH and return it as the FUSE:nodeid
-    cb_data->out_entry->nodeid = *((uint64_t *) res->resarray.resarray_val[3].nfs_resop4_u.opgetfh.GETFH4res_u.resok4.object.nfs_fh4_val);
+    struct inode *i = inode_table_getsert(vnfs->inodes, ino);
+    if (!i) {
+        cb_data->out_hdr->error = -ENOMEM;
+        goto ret;
+    }
+    atomic_fetch_add(&i->nlookup, 1);
+    cb_data->out_entry->generation = i->generation;
+
+    if (i->fh.nfs_fh4_len == 0) {
+        // Retreive the FH from the res and set it in the inode
+        // it's stored in the inode for later use ex. getattr when it uses the nodeid
+        int ret = nfs4_clone_fh(&i->fh, &res->resarray.resarray_val[3].nfs_resop4_u.opgetfh.GETFH4res_u.resok4.object);
+        if (ret < 0) {
+            cb_data->out_hdr->error = -ENOMEM;
+            goto ret;
+        }
+    }
 
 ret:;
     struct snap_fs_dev_io_done_ctx *cb = cb_data->cb;
@@ -177,7 +200,13 @@ int lookup(struct fuse_session *se, struct virtionfs *vnfs,
     nfs_argop4 op[4];
 
     // PUTFH
-    nfs4_op_putfh(vnfs, &op[0], &in_hdr->nodeid);
+    int fh_found = nfs4_op_putfh(vnfs, &op[0], in_hdr->nodeid);
+    if (!fh_found) {
+    	fprintf(stderr, "Invalid nodeid supplied to LOOKUP\n");
+        mpool_free(vnfs->p, cb_data);
+        out_hdr->error = -ENOENT;
+        return 0;
+    }
     // LOOKUP
     nfs4_op_lookup(vnfs->nfs, &op[1], in_name);
     // FH now replaced with in_name's FH
@@ -261,7 +290,13 @@ int getattr(struct fuse_session *se, struct virtionfs *vnfs,
     COMPOUND4args args;
     nfs_argop4 op[2];
 
-    nfs4_op_putfh(vnfs, &op[0], &in_hdr->nodeid);
+    int fh_found = nfs4_op_putfh(vnfs, &op[0], in_hdr->nodeid);
+    if (!fh_found) {
+    	fprintf(stderr, "Invalid nodeid supplied to LOOKUP\n");
+        mpool_free(vnfs->p, cb_data);
+        out_hdr->error = -ENOENT;
+        return 0;
+    }
     nfs4_op_getattr(vnfs->nfs, &op[1], standard_attributes, 2);
     
     memset(&args, 0, sizeof(args));
@@ -306,10 +341,7 @@ static void lookup_true_rootfh_cb(struct rpc_context *rpc, int status, void *dat
     assert(i >= 0);
 
     // Store the filehandle of the TRUE root (aka the filehandle of where our export lives)
-    vnfs->rootfh.nfs_fh4_len = res->resarray.resarray_val[i].nfs_resop4_u.opgetfh.GETFH4res_u.resok4.object.nfs_fh4_len;
-    vnfs->rootfh.nfs_fh4_val = malloc(vnfs->rootfh.nfs_fh4_len);
-    char *res_fh4_val = res->resarray.resarray_val[i].nfs_resop4_u.opgetfh.GETFH4res_u.resok4.object.nfs_fh4_val;
-    memcpy(vnfs->rootfh.nfs_fh4_val, res_fh4_val, vnfs->rootfh.nfs_fh4_len);
+    nfs4_clone_fh(&vnfs->rootfh, &res->resarray.resarray_val[i].nfs_resop4_u.opgetfh.GETFH4res_u.resok4.object); 
 
 ret:
     free(cb_data->export);
@@ -457,7 +489,7 @@ void virtionfs_main(char *server, char *export,
     vnfs->server = server;
     if (export[0] != '/') {
         fprintf(stderr, "export must start with a '/'\n");
-        return;
+        goto ret_a;
     }
     vnfs->export = export;
     vnfs->debug = debug;
@@ -467,7 +499,7 @@ void virtionfs_main(char *server, char *export,
     vnfs->nfs = nfs_init_context();
     if (vnfs->nfs == NULL) {
         warn("Failed to init nfs context\n");
-        goto virtionfs_main_ret_c;
+        goto ret_a;
     }
     nfs_set_version(vnfs->nfs, NFS_V4);
     vnfs->rpc = nfs_get_rpc_context(vnfs->nfs);
@@ -475,11 +507,21 @@ void virtionfs_main(char *server, char *export,
     vnfs->p = calloc(1, sizeof(struct mpool));
     if (!vnfs->p) {
         warn("Failed to init virtionfs");
-        goto virtionfs_main_ret_b;
+        goto ret_b;
     }
     if (mpool_init(vnfs->p, sizeof(struct getattr_cb_data), 10) < 0) {
         warn("Failed to init virtionfs");
-        goto virtionfs_main_ret_a;
+        goto ret_c;
+    }
+
+    vnfs->inodes = calloc(1, sizeof(struct inode_table));
+    if (!vnfs->inodes) {
+        warn("Failed to init virtionfs");
+        goto ret_d;
+    }
+    if (inode_table_init(vnfs->inodes) < 0) {
+        warn("Failed to init virtionfs");
+        goto ret_e;
     }
 
     struct fuse_ll_operations ops;
@@ -489,11 +531,15 @@ void virtionfs_main(char *server, char *export,
     virtiofs_emu_fuse_ll_main(&ops, emu_params, vnfs, debug);
     printf("nfsclient finished\n");
 
+    inode_table_destroy(vnfs->inodes);
+ret_e:
+    free(vnfs->inodes);
+ret_d:
     mpool_destroy(vnfs->p);
-virtionfs_main_ret_a:
+ret_c:
     free(vnfs->p);
-virtionfs_main_ret_b:
+ret_b:
     nfs_destroy_context(vnfs->nfs);
-virtionfs_main_ret_c:
+ret_a:
     free(vnfs);
 }

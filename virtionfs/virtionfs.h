@@ -11,8 +11,6 @@
 #include <stdbool.h>
 #include <sys/time.h>
 #include <nfsc/libnfs.h>
-#include <nfsc/libnfs-raw.h>
-#include <nfsc/libnfs-raw-nfs.h>
 #include <nfsc/libnfs-raw-nfs4.h>
 #include "virtiofs_emu_ll.h"
 
@@ -24,6 +22,7 @@ struct virtionfs {
     struct nfs_context *nfs;
     struct rpc_context *rpc;
     struct mpool *p;
+    struct inode_table *inodes;
 
     char *server;
     char *export;
