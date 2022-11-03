@@ -21,9 +21,9 @@
 #include "fuse_ll.h"
 
 
-static uint32_t supported_attrs_attributes[1] = {
-    (1 << FATTR4_SUPPORTED_ATTRS)
-};
+// static uint32_t supported_attrs_attributes[1] = {
+//     (1 << FATTR4_SUPPORTED_ATTRS)
+// };
 static uint32_t standard_attributes[2] = {
     (1 << FATTR4_TYPE |
      1 << FATTR4_SIZE |
@@ -38,63 +38,69 @@ static uint32_t standard_attributes[2] = {
      1 << (FATTR4_TIME_MODIFY - 32))
 };
 
-//struct lookup_cb_data {
-//    struct snap_fs_dev_io_done_ctx *cb;
-//    struct virtionfs *vnfs;
-//    struct fuse_out_header *out_hdr;
-//    struct fuse_entry_out *out_entry;
-//};
-//
-//void setattr_cb(struct rpc_context *rpc, int status, void *data,
-//                       void *private_data) {
-//    struct lookup_cb_data *cb_data = (struct lookup_cb_data *)private_data;
-//    struct virtionfs *vnfs = cb_data->vnfs;
-//    COMPOUND4res *res = data;
-//
-//    if (status != RPC_STATUS_SUCCESS || res->status != NFS4_OK) {
-//    	fprintf(stderr, "Failed to perform GETATTR\n");
-//        cb_data->out_hdr->error = -EREMOTEIO;
-//        goto ret;
-//    }
-//
-//ret:
-//    cb_data->cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb_data->cb->user_arg);
-//}
-//
-//int setattr(struct fuse_session *se, struct virtionfs *vnfs,
-//            struct fuse_in_header *in_hdr, struct stat *s, int valid, struct fuse_file_info *fi,
-//            struct fuse_out_header *out_hdr, struct fuse_attr_out *out_attr,
-//            struct snap_fs_dev_io_done_ctx *cb)
-//{
-//    struct lookup_cb_data *cb_data = mpool_alloc(vnfs->p);
-//    if (!cb_data) {
-//        out_hdr->error = -ENOMEM;
-//        return 0;
-//    }
-//
-//    cb_data->cb = cb;
-//    cb_data->vnfs = vnfs;
-//    cb_data->out_hdr = out_hdr;
-//    cb_data->out_entry = out_entry;
-//
-//    COMPOUND4args args;
-//    nfs_argop4 op[3];
-//    nfs4_op_lookup(vnfs->nfs, &op[0], in_name);
-//    nfs4_op_getattr(vnfs->nfs, &op[1], standard_attributes, 2);
-//    op[2].argop = OP_GETFH;
-//
-//    memset(&args, 0, sizeof(args));
-//    args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
-//    args.argarray.argarray_val = op;
-//
-//    if (rpc_nfs4_compound_async(vnfs->rpc, lookup_cb, &args, cb_data) != 0) {
-//    	fprintf(stderr, "Failed to send nfs4 GETATTR request\n");
-//        out_hdr->error = -EREMOTEIO;
-//        return 0;
-//    }
-//
-//    return EWOULDBLOCK;
-//}
+int nfs4_op_putfh(struct virtionfs *vnfs, nfs_argop4 *op, uint64_t *nodeid)
+{
+    op->argop = OP_PUTFH;
+    if (*nodeid == FUSE_ROOT_ID) {
+        op->nfs_argop4_u.opputfh.object.nfs_fh4_val = vnfs->rootfh.nfs_fh4_val;
+        op->nfs_argop4_u.opputfh.object.nfs_fh4_len = vnfs->rootfh.nfs_fh4_len;
+    } else {
+        op->nfs_argop4_u.opputfh.object.nfs_fh4_val = (char *) nodeid;
+        op->nfs_argop4_u.opputfh.object.nfs_fh4_len = sizeof(*nodeid);
+    }
+    return 1;
+}
+
+struct setattr_cb_data {
+    struct snap_fs_dev_io_done_ctx *cb;
+    struct virtionfs *vnfs;
+    struct fuse_out_header *out_hdr;
+    struct fuse_attr_out *out_attr;
+};
+
+void setattr_cb(struct rpc_context *rpc, int status, void *data,
+                       void *private_data) {
+    struct setattr_cb_data *cb_data = (struct setattr_cb_data *)private_data;
+    struct virtionfs *vnfs = cb_data->vnfs;
+    COMPOUND4res *res = data;
+
+    if (status != RPC_STATUS_SUCCESS) {
+    	fprintf(stderr, "RPC with NFS:LOOKUP unsuccessful: rpc error=%d\n", status);
+        cb_data->out_hdr->error = -EREMOTEIO;
+        goto ret;
+    }
+    if (res->status != NFS4_OK) {
+        cb_data->out_hdr->error = -nfs_error_to_fuse_error(res->status);
+    	fprintf(stderr, "NFS:LOOKUP unsuccessful: nfs error=%d, fuse error=%d\n",
+                res->status, cb_data->out_hdr->error);
+        goto ret;
+    }
+
+    cb_data->out_hdr->error = -ENOSYS;
+
+ret:;
+    struct snap_fs_dev_io_done_ctx *cb = cb_data->cb;
+    mpool_free(vnfs->p, cb_data);
+    cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb->user_arg);}
+
+int setattr(struct fuse_session *se, struct virtionfs *vnfs,
+            struct fuse_in_header *in_hdr, struct stat *s, int valid, struct fuse_file_info *fi,
+            struct fuse_out_header *out_hdr, struct fuse_attr_out *out_attr,
+            struct snap_fs_dev_io_done_ctx *cb)
+{
+    struct setattr_cb_data *cb_data = mpool_alloc(vnfs->p);
+    if (!cb_data) {
+        out_hdr->error = -ENOMEM;
+        return 0;
+    }
+
+    cb_data->cb = cb;
+    cb_data->vnfs = vnfs;
+    cb_data->out_hdr = out_hdr;
+    cb_data->out_attr = out_attr;
+
+    return EWOULDBLOCK;
+}
 
 struct lookup_cb_data {
     struct snap_fs_dev_io_done_ctx *cb;
@@ -109,14 +115,28 @@ void lookup_cb(struct rpc_context *rpc, int status, void *data,
     struct virtionfs *vnfs = cb_data->vnfs;
     COMPOUND4res *res = data;
 
-    if (status != RPC_STATUS_SUCCESS || res->status != NFS4_OK) {
-    	fprintf(stderr, "Failed to perform GETATTR\n");
+    if (status != RPC_STATUS_SUCCESS) {
+    	fprintf(stderr, "RPC with NFS:LOOKUP unsuccessful: rpc error=%d\n", status);
         cb_data->out_hdr->error = -EREMOTEIO;
         goto ret;
     }
+    if (res->status != NFS4_OK) {
+        cb_data->out_hdr->error = -nfs_error_to_fuse_error(res->status);
+    	fprintf(stderr, "NFS:LOOKUP unsuccessful: nfs error=%d, fuse error=%d\n",
+                res->status, cb_data->out_hdr->error);
+	fprintf(stderr, "NFS:LOOKUP unsuccessful: nfs op=%d, nfs error=%d\n",
+                res->resarray.resarray_val[0].resop, res->resarray.resarray_val[0].nfs_resop4_u.opputrootfh.status);
+	fprintf(stderr, "NFS:LOOKUP unsuccessful: nfs op=%d, nfs error=%d\n",
+                res->resarray.resarray_val[1].resop, res->resarray.resarray_val[1].nfs_resop4_u.oplookup.status);
+	fprintf(stderr, "NFS:LOOKUP unsuccessful: nfs op=%d, nfs error=%d\n",
+                res->resarray.resarray_val[2].resop, res->resarray.resarray_val[2].nfs_resop4_u.opgetattr.status);
+	fprintf(stderr, "NFS:LOOKUP unsuccessful: nfs op=%d, nfs error=%d\n",
+                res->resarray.resarray_val[3].resop, res->resarray.resarray_val[3].nfs_resop4_u.opgetfh.status);
+        goto ret;
+    }
 
-    char *attrs = res->resarray.resarray_val[1].nfs_resop4_u.opgetattr.GETATTR4res_u.resok4.obj_attributes.attr_vals.attrlist4_val;
-    u_int attrs_len = res->resarray.resarray_val[1].nfs_resop4_u.opgetattr.GETATTR4res_u.resok4.obj_attributes.attr_vals.attrlist4_len;
+    char *attrs = res->resarray.resarray_val[2].nfs_resop4_u.opgetattr.GETATTR4res_u.resok4.obj_attributes.attr_vals.attrlist4_val;
+    u_int attrs_len = res->resarray.resarray_val[2].nfs_resop4_u.opgetattr.GETATTR4res_u.resok4.obj_attributes.attr_vals.attrlist4_len;
     int ret = nfs_parse_attributes(vnfs->nfs, &cb_data->out_entry->attr, attrs, attrs_len);
     if (ret != 0) {
         cb_data->out_hdr->error = -EREMOTEIO;
@@ -129,11 +149,12 @@ void lookup_cb(struct rpc_context *rpc, int status, void *data,
     cb_data->out_entry->entry_valid_nsec = 0;
 
     // Get the NFS:FH and return it as the FUSE:nodeid
-    assert(res->resarray.resarray_val[2].nfs_resop4_u.opgetfh.GETFH4res_u.resok4.object.nfs_fh4_len == sizeof(uint64_t));
-    cb_data->out_entry->nodeid = *((uint64_t *) res->resarray.resarray_val[2].nfs_resop4_u.opgetfh.GETFH4res_u.resok4.object.nfs_fh4_val);
+    cb_data->out_entry->nodeid = *((uint64_t *) res->resarray.resarray_val[3].nfs_resop4_u.opgetfh.GETFH4res_u.resok4.object.nfs_fh4_val);
 
-ret:
-    cb_data->cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb_data->cb->user_arg);
+ret:;
+    struct snap_fs_dev_io_done_ctx *cb = cb_data->cb;
+    mpool_free(vnfs->p, cb_data);
+    cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb->user_arg);
 }
 
 int lookup(struct fuse_session *se, struct virtionfs *vnfs,
@@ -153,17 +174,25 @@ int lookup(struct fuse_session *se, struct virtionfs *vnfs,
     cb_data->out_entry = out_entry;
 
     COMPOUND4args args;
-    nfs_argop4 op[3];
-    nfs4_op_lookup(vnfs->nfs, &op[0], in_name);
-    nfs4_op_getattr(vnfs->nfs, &op[1], standard_attributes, 2);
-    op[2].argop = OP_GETFH;
+    nfs_argop4 op[4];
+
+    // PUTFH
+    nfs4_op_putfh(vnfs, &op[0], &in_hdr->nodeid);
+    // LOOKUP
+    nfs4_op_lookup(vnfs->nfs, &op[1], in_name);
+    // FH now replaced with in_name's FH
+    // GETATTR
+    nfs4_op_getattr(vnfs->nfs, &op[2], standard_attributes, 2);
+    // GETFH
+    op[3].argop = OP_GETFH;
 
     memset(&args, 0, sizeof(args));
     args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
     args.argarray.argarray_val = op;
 
     if (rpc_nfs4_compound_async(vnfs->rpc, lookup_cb, &args, cb_data) != 0) {
-    	fprintf(stderr, "Failed to send nfs4 GETATTR request\n");
+    	fprintf(stderr, "Failed to send nfs4 LOOKUP request\n");
+        mpool_free(vnfs->p, cb_data);
         out_hdr->error = -EREMOTEIO;
         return 0;
     }
@@ -184,9 +213,15 @@ void getattr_cb(struct rpc_context *rpc, int status, void *data,
     struct virtionfs *vnfs = cb_data->vnfs;
     COMPOUND4res *res = data;
 
-    if (status != RPC_STATUS_SUCCESS || res->status != NFS4_OK) {
-    	fprintf(stderr, "Failed to perform GETATTR: rpc_status=%d, nfs_status=%d\n", status, res->status);
+    if (status != RPC_STATUS_SUCCESS) {
+    	fprintf(stderr, "RPC with NFS:LOOKUP unsuccessful: rpc error=%d\n", status);
         cb_data->out_hdr->error = -EREMOTEIO;
+        goto ret;
+    }
+    if (res->status != NFS4_OK) {
+        cb_data->out_hdr->error = -nfs_error_to_fuse_error(res->status);
+    	fprintf(stderr, "NFS:LOOKUP unsuccessful: nfs error=%d, fuse error=%d\n",
+                res->status, cb_data->out_hdr->error);
         goto ret;
     }
 
@@ -201,8 +236,10 @@ void getattr_cb(struct rpc_context *rpc, int status, void *data,
         cb_data->out_hdr->error = -EREMOTEIO;
     }
 
-ret:
-    cb_data->cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb_data->cb->user_arg);
+ret:;
+    struct snap_fs_dev_io_done_ctx *cb = cb_data->cb;
+    mpool_free(vnfs->p, cb_data);
+    cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb->user_arg);
 }
 
 int getattr(struct fuse_session *se, struct virtionfs *vnfs,
@@ -224,14 +261,7 @@ int getattr(struct fuse_session *se, struct virtionfs *vnfs,
     COMPOUND4args args;
     nfs_argop4 op[2];
 
-    if (in_hdr->nodeid == FUSE_ROOT_ID) {
-        op[0].argop = OP_PUTROOTFH;
-    } else {
-        op[0].argop = OP_PUTFH;
-        op[0].nfs_argop4_u.opputfh.object.nfs_fh4_len = sizeof(in_hdr->nodeid);
-        op[0].nfs_argop4_u.opputfh.object.nfs_fh4_val = (char *) &in_hdr->nodeid;
-    }
-
+    nfs4_op_putfh(vnfs, &op[0], &in_hdr->nodeid);
     nfs4_op_getattr(vnfs->nfs, &op[1], standard_attributes, 2);
     
     memset(&args, 0, sizeof(args));
@@ -240,6 +270,7 @@ int getattr(struct fuse_session *se, struct virtionfs *vnfs,
 
     if (rpc_nfs4_compound_async(vnfs->rpc, getattr_cb, &args, cb_data) != 0) {
     	fprintf(stderr, "Failed to send nfs4 GETATTR request\n");
+        mpool_free(vnfs->p, cb_data);
         out_hdr->error = -EREMOTEIO;
         return 0;
     }
@@ -247,35 +278,103 @@ int getattr(struct fuse_session *se, struct virtionfs *vnfs,
     return EWOULDBLOCK;
 }
 
-static void get_supported_attributes(struct rpc_context *rpc, int status, void *data, void *private_data) {
-    //struct virtionfs *vnfs = private_data;
+struct lookup_true_rootfh_cb_data {
+    struct virtionfs *vnfs;
+    struct fuse_out_header *out_hdr;
+    struct snap_fs_dev_io_done_ctx *cb;
+    char *export;
+};
+
+static void lookup_true_rootfh_cb(struct rpc_context *rpc, int status, void *data,
+                       void *private_data) {
+    struct lookup_true_rootfh_cb_data *cb_data = private_data;
+    struct virtionfs *vnfs = cb_data->vnfs;
     COMPOUND4res *res = data;
-    
-    if (status != RPC_STATUS_SUCCESS || res->status != NFS4_OK) {
-    	fprintf(stderr, "Failed to get root filehandle of server\n");
-    	exit(10);
+
+    if (status != RPC_STATUS_SUCCESS) {
+    	fprintf(stderr, "RPC with NFS:LOOKUP_TRUE_ROOTFH unsuccessful: rpc error=%d\n", status);
+        goto ret;
+    }
+    if (res->status != NFS4_OK) {
+        cb_data->out_hdr->error = -nfs_error_to_fuse_error(res->status);
+    	fprintf(stderr, "NFS:LOOKUP_TRUE_ROOTFH unsuccessful: nfs error=%d, fuse error=%d\n",
+                res->status, cb_data->out_hdr->error);
+        goto ret;
     }
 
-    //char *supported_attrs_bits = res->resarray.resarray_val[1].nfs_resop4_u.opgetattr.GETATTR4res_u.resok4.obj_attributes.attr_vals.attrlist4_val;
-    u_int len = res->resarray.resarray_val[1].nfs_resop4_u.opgetattr.GETATTR4res_u.resok4.obj_attributes.attr_vals.attrlist4_len;
-    printf("len=%u\n", len);
+    int i = nfs4_find_op(vnfs->nfs, res, OP_GETFH);
+    assert(i >= 0);
+
+    // Store the filehandle of the TRUE root (aka the filehandle of where our export lives)
+    vnfs->rootfh.nfs_fh4_len = res->resarray.resarray_val[i].nfs_resop4_u.opgetfh.GETFH4res_u.resok4.object.nfs_fh4_len;
+    vnfs->rootfh.nfs_fh4_val = malloc(vnfs->rootfh.nfs_fh4_len);
+    char *res_fh4_val = res->resarray.resarray_val[i].nfs_resop4_u.opgetfh.GETFH4res_u.resok4.object.nfs_fh4_val;
+    memcpy(vnfs->rootfh.nfs_fh4_val, res_fh4_val, vnfs->rootfh.nfs_fh4_len);
+
+ret:
+    free(cb_data->export);
+    struct snap_fs_dev_io_done_ctx *cb = cb_data->cb;
+    mpool_free(vnfs->p, cb_data);
+    cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb->user_arg);
 }
 
-//static void getrootfh_cb(struct rpc_context *rpc, int status, void *data, void *private_data) {
-//    struct virtionfs *vnfs = private_data;
-//    COMPOUND4res *res = data;
-//    
-//    if (status != RPC_STATUS_SUCCESS || res->status != NFS4_OK) {
-//    	fprintf(stderr, "Failed to get root filehandle of server\n");
-//    	exit(10);
-//    }
-//    
-//    vnfs->rootfh = res->resarray.resarray_val[1].nfs_resop4_u.opgetfh.GETFH4res_u.resok4.object;
-//}
+static int lookup_true_rootfh(struct virtionfs *vnfs, struct fuse_out_header *out_hdr,
+    struct snap_fs_dev_io_done_ctx *cb)
+{
+    struct lookup_true_rootfh_cb_data *cb_data = mpool_alloc(vnfs->p);
+    if (!cb_data) {
+        out_hdr->error = -ENOMEM;
+        return 0;
+    }
+
+    cb_data->cb = cb;
+    cb_data->vnfs = vnfs;
+    cb_data->out_hdr = out_hdr;
+
+    char *export = strdup(vnfs->export);
+    cb_data->export = export;
+    int export_len = strlen(export);
+    // Chop off the last slash, this is to count the correct number
+    // of path elements
+    if (export[export_len-1] == '/') {
+        export[export_len-1] = '\0';
+    }
+    // Count the slashes
+    size_t count = 0;
+    while(*vnfs->export) if (*vnfs->export++ == '/') ++count;
+
+    COMPOUND4args args;
+    nfs_argop4 op[2+count];
+    int i = 0;
+
+    // PUTFH
+    op[i++].argop = OP_PUTROOTFH;
+    // LOOKUP
+    char *token = strtok(export, "/");
+    while (i < count+1) {
+        nfs4_op_lookup(vnfs->nfs, &op[i++], token);
+        token = strtok(NULL, "/");
+    }
+    // GETFH
+    op[i].argop = OP_GETFH;
+
+    memset(&args, 0, sizeof(args));
+    args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
+    args.argarray.argarray_val = op;
+
+    if (rpc_nfs4_compound_async(vnfs->rpc, lookup_true_rootfh_cb, &args, cb_data) != 0) {
+    	fprintf(stderr, "Failed to send nfs4 LOOKUP request\n");
+        mpool_free(vnfs->p, cb_data);
+        return -1;
+    }
+
+    return 0;
+}
 
 int init(struct fuse_session *se, struct virtionfs *vnfs,
     struct fuse_in_header *in_hdr, struct fuse_init_in *in_init,
-    struct fuse_conn_info *conn, struct fuse_out_header *out_hdr)
+    struct fuse_conn_info *conn, struct fuse_out_header *out_hdr,
+    struct snap_fs_dev_io_done_ctx *cb)
 {
     if (conn->capable & FUSE_CAP_EXPORT_SUPPORT)
         conn->want |= FUSE_CAP_EXPORT_SUPPORT;
@@ -319,22 +418,17 @@ int init(struct fuse_session *se, struct virtionfs *vnfs,
         goto ret_errno;
     }
 
-    COMPOUND4args args;
-    nfs_argop4 op[2];
-    
-    memset(op, 0, sizeof(op));
-    op[0].argop = OP_PUTROOTFH;
-    nfs4_op_getattr(vnfs->nfs, &op[1], supported_attrs_attributes, 1);
-    (void) standard_attributes;
-    
-    memset(&args, 0, sizeof(args));
-    args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
-    args.argarray.argarray_val = op;
-    if (rpc_nfs4_compound_async(vnfs->rpc, get_supported_attributes, &args, vnfs) != 0) {
-    	fprintf(stderr, "Failed to send nfs4 GETROOTFH request\n");
-    	exit(10);
+    if (lookup_true_rootfh(vnfs, out_hdr, cb)) {
+        printf("Failed to retreive root filehandle for the given export\n");
+        out_hdr->error = -ENOENT;
+        return 0;
     }
 
+    // TODO WARNING
+    // By returning 0, we allow the host to imediately start sending us requests,
+    // even though the lookup_true_rootfh might not be done yet
+    // This introduces a race condition, where if the rootfh is not found yet
+    // virtionfs will crash horribly
     return 0;
 ret_errno:
     if (ret == -1)
@@ -361,6 +455,10 @@ void virtionfs_main(char *server, char *export,
         return;
     }
     vnfs->server = server;
+    if (export[0] != '/') {
+        fprintf(stderr, "export must start with a '/'\n");
+        return;
+    }
     vnfs->export = export;
     vnfs->debug = debug;
     vnfs->timeout_sec = calc_timeout_sec(timeout);
@@ -379,7 +477,7 @@ void virtionfs_main(char *server, char *export,
         warn("Failed to init virtionfs");
         goto virtionfs_main_ret_b;
     }
-    if (mpool_init(vnfs->p, 100, sizeof(struct getattr_cb_data), 10) < 0) {
+    if (mpool_init(vnfs->p, sizeof(struct getattr_cb_data), 10) < 0) {
         warn("Failed to init virtionfs");
         goto virtionfs_main_ret_a;
     }

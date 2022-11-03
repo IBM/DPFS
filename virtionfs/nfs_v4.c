@@ -9,20 +9,39 @@
 #include <string.h>
 #include <ctype.h>
 #include <fcntl.h>
+#include <stdio.h>
+#include <errno.h>
 #include <linux/fuse.h>
 #include <arpa/inet.h>
+
+int nfs4_find_op(struct nfs_context *nfs, COMPOUND4res *res, int op)
+{
+        int i;
+
+        for (i = 0; i < (int)res->resarray.resarray_len; i++) {
+                if (res->resarray.resarray_val[i].resop == op) {
+                        break;
+                }
+        }
+        if (i == res->resarray.resarray_len) {
+                return -1;
+        }
+
+        return i;
+}
+
+
 
 int nfs4_op_lookup(struct nfs_context *nfs, nfs_argop4 *op, const char *path)
 {
     LOOKUP4args *largs;
 
-    op[0].argop = OP_LOOKUP;
-    largs = &op[0].nfs_argop4_u.oplookup;
+    op->argop = OP_LOOKUP;
+    largs = &op->nfs_argop4_u.oplookup;
     largs->objname.utf8string_len = strlen(path);
     largs->objname.utf8string_val = (char *) path;
 
     return 1;
-
 }
 
 int nfs4_op_getattr(struct nfs_context *nfs, nfs_argop4 *op,
@@ -30,8 +49,8 @@ int nfs4_op_getattr(struct nfs_context *nfs, nfs_argop4 *op,
 {
     GETATTR4args *gaargs;
 
-    op[0].argop = OP_GETATTR;
-    gaargs = &op[0].nfs_argop4_u.opgetattr;
+    op->argop = OP_GETATTR;
+    gaargs = &op->nfs_argop4_u.opgetattr;
     memset(gaargs, 0, sizeof(*gaargs));
 
     gaargs->attr_request.bitmap4_val = attributes;
@@ -100,7 +119,7 @@ int nfs_get_ugid(struct nfs_context *nfs, const char *buf, int slen, int is_user
 
 #define CHECK_GETATTR_BUF_SPACE(len, size)                              \
     if (len < size) {                                                   \
-        fprintf(stderr, "Not enough data in fattr4");                \
+        fprintf(stderr, "Not enough data in fattr4\n");                 \
         return -1;                                                      \
     }
 
@@ -221,3 +240,13 @@ int nfs_parse_attributes(struct nfs_context *nfs, struct fuse_attr *attr,
     
     return 0;
 }
+
+int32_t nfs_error_to_fuse_error(nfsstat4 status) {
+    if (status <= NFS4ERR_MLINK) {
+        return status;
+    } else {
+        fprintf(stderr, "Unknown NFS status code in nfs_error_to_fuse_error!\n");
+        return -ENOSYS;
+    }
+}
+
