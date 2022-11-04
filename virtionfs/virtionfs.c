@@ -9,6 +9,7 @@
 #include <nfsc/libnfs.h>
 #include <nfsc/libnfs-raw-nfs4.h>
 #include <linux/fuse.h>
+#include <arpa/inet.h>
 #include <poll.h>
 #include <stdatomic.h>
 #include <err.h>
@@ -60,6 +61,9 @@ struct setattr_cb_data {
     struct virtionfs *vnfs;
     struct fuse_out_header *out_hdr;
     struct fuse_attr_out *out_attr;
+
+    uint64_t *bitmap;
+    char *attrlist;
 };
 
 void setattr_cb(struct rpc_context *rpc, int status, void *data,
@@ -80,12 +84,25 @@ void setattr_cb(struct rpc_context *rpc, int status, void *data,
         goto ret;
     }
 
-    cb_data->out_hdr->error = -ENOSYS;
+    GETATTR4resok *resok = &res->resarray.resarray_val[1].nfs_resop4_u.opgetattr.GETATTR4res_u.resok4;
+    char *attrs = resok->obj_attributes.attr_vals.attrlist4_val;
+    u_int attrs_len = resok->obj_attributes.attr_vals.attrlist4_len;
+    if (nfs_parse_attributes(vnfs->nfs, &cb_data->out_attr->attr, attrs, attrs_len) == 0) {
+        // This is not filled in by the parse_attributes fn
+        cb_data->out_attr->attr.rdev = 0;
+        cb_data->out_attr->attr_valid = 0;
+        cb_data->out_attr->attr_valid_nsec = 0;
+    } else {
+        cb_data->out_hdr->error = -EREMOTEIO;
+    }
 
 ret:;
+    free(cb_data->bitmap);
+    free(cb_data->attrlist);
     struct snap_fs_dev_io_done_ctx *cb = cb_data->cb;
     mpool_free(vnfs->p, cb_data);
-    cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb->user_arg);}
+    cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb->user_arg);
+}
 
 int setattr(struct fuse_session *se, struct virtionfs *vnfs,
             struct fuse_in_header *in_hdr, struct stat *s, int valid, struct fuse_file_info *fi,
@@ -102,6 +119,68 @@ int setattr(struct fuse_session *se, struct virtionfs *vnfs,
     cb_data->vnfs = vnfs;
     cb_data->out_hdr = out_hdr;
     cb_data->out_attr = out_attr;
+
+    COMPOUND4args args;
+    nfs_argop4 op[4];
+
+    int fh_found = nfs4_op_putfh(vnfs, &op[0], in_hdr->nodeid);
+    if (!fh_found) {
+    	fprintf(stderr, "Invalid nodeid supplied to GETATTR\n");
+        mpool_free(vnfs->p, cb_data);
+        out_hdr->error = -ENOENT;
+        return 0;
+    }
+
+    /* TODO if locking is supported, put the stateid in here
+     * zeroed stateid means anonymous aka
+     * which can be used in READ, WRITE, and SETATTR requests to indicate the absence of any
+     * open state associated with the request. (from 9.1.4.3. NFS 4 rfc)
+     */
+    op[1].argop = OP_SETATTR;
+    memset(&op[1].nfs_argop4_u.opsetattr.stateid, 0, sizeof(stateid4));
+
+    uint64_t *bitmap = malloc(sizeof(*bitmap));
+    bitmap4 attrsmask;
+    attrsmask.bitmap4_len = sizeof(*bitmap);
+    attrsmask.bitmap4_val = (uint32_t *) bitmap;
+
+    size_t attrlist_len = 0;
+    if (valid & FUSE_SET_ATTR_MODE) {
+        *bitmap |= (1UL << FATTR4_MODE);
+        attrlist_len += 4;
+    }
+    if (valid & FUSE_SET_ATTR_SIZE) {
+        *bitmap |= (1UL << FATTR4_SIZE);
+    }
+    char *attrlist = malloc(attrlist_len);
+
+    if (valid & FUSE_SET_ATTR_MODE) {
+        *(uint32_t *) attrlist = htonl(s->st_mode);
+        attrlist += 4;
+    }
+    if (valid & FUSE_SET_ATTR_SIZE) {
+        *(uint32_t *) attrlist = nfs_hton64(s->st_size);
+        attrlist += 8;
+    }
+
+    op[1].nfs_argop4_u.opsetattr.obj_attributes.attrmask = attrsmask;
+    op[1].nfs_argop4_u.opsetattr.obj_attributes.attr_vals.attrlist4_val = attrlist;
+    op[1].nfs_argop4_u.opsetattr.obj_attributes.attr_vals.attrlist4_len = attrlist_len;
+    cb_data->bitmap = bitmap;
+    cb_data->attrlist = attrlist;
+
+    nfs4_op_getattr(&op[2], standard_attributes, 2);
+
+    memset(&args, 0, sizeof(args));
+    args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
+    args.argarray.argarray_val = op;
+
+    if (rpc_nfs4_compound_async(vnfs->rpc, setattr_cb, &args, cb_data) != 0) {
+    	fprintf(stderr, "Failed to send nfs4 SETATTR request\n");
+        mpool_free(vnfs->p, cb_data);
+        out_hdr->error = -EREMOTEIO;
+        return 0;
+    }
 
     return EWOULDBLOCK;
 }
@@ -202,10 +281,10 @@ int lookup(struct fuse_session *se, struct virtionfs *vnfs,
         return 0;
     }
     // LOOKUP
-    nfs4_op_lookup(vnfs->nfs, &op[1], in_name);
+    nfs4_op_lookup(&op[1], in_name);
     // FH now replaced with in_name's FH
     // GETATTR
-    nfs4_op_getattr(vnfs->nfs, &op[2], standard_attributes, 2);
+    nfs4_op_getattr(&op[2], standard_attributes, 2);
     // GETFH
     op[3].argop = OP_GETFH;
 
@@ -248,8 +327,9 @@ void getattr_cb(struct rpc_context *rpc, int status, void *data,
         goto ret;
     }
 
-    char *attrs = res->resarray.resarray_val[1].nfs_resop4_u.opgetattr.GETATTR4res_u.resok4.obj_attributes.attr_vals.attrlist4_val;
-    u_int attrs_len = res->resarray.resarray_val[1].nfs_resop4_u.opgetattr.GETATTR4res_u.resok4.obj_attributes.attr_vals.attrlist4_len;
+    GETATTR4resok *resok = &res->resarray.resarray_val[1].nfs_resop4_u.opgetattr.GETATTR4res_u.resok4;
+    char *attrs = resok->obj_attributes.attr_vals.attrlist4_val;
+    u_int attrs_len = resok->obj_attributes.attr_vals.attrlist4_len;
     if (nfs_parse_attributes(vnfs->nfs, &cb_data->out_attr->attr, attrs, attrs_len) == 0) {
         // This is not filled in by the parse_attributes fn
         cb_data->out_attr->attr.rdev = 0;
@@ -291,7 +371,7 @@ int getattr(struct fuse_session *se, struct virtionfs *vnfs,
         out_hdr->error = -ENOENT;
         return 0;
     }
-    nfs4_op_getattr(vnfs->nfs, &op[1], standard_attributes, 2);
+    nfs4_op_getattr(&op[1], standard_attributes, 2);
     
     memset(&args, 0, sizeof(args));
     args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
@@ -331,7 +411,7 @@ static void lookup_true_rootfh_cb(struct rpc_context *rpc, int status, void *dat
         goto ret;
     }
 
-    int i = nfs4_find_op(vnfs->nfs, res, OP_GETFH);
+    int i = nfs4_find_op(res, OP_GETFH);
     assert(i >= 0);
 
     // Store the filehandle of the TRUE root (aka the filehandle of where our export lives)
@@ -378,7 +458,7 @@ static int lookup_true_rootfh(struct virtionfs *vnfs, struct fuse_out_header *ou
     // LOOKUP
     char *token = strtok(export, "/");
     while (i < count+1) {
-        nfs4_op_lookup(vnfs->nfs, &op[i++], token);
+        nfs4_op_lookup(&op[i++], token);
         token = strtok(NULL, "/");
     }
     // GETFH

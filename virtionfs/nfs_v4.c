@@ -1,5 +1,6 @@
 /*
 #
+# Copyright (C) 2017 by Ronnie Sahlberg <ronniesahlberg@gmail.com>
 # Copyright 2022- IBM Inc. All rights reserved
 # SPDX-License-Identifier: LGPL-2.1-or-later
 #
@@ -26,23 +27,37 @@ int nfs4_clone_fh(nfs_fh4 *dst, nfs_fh4 *src) {
     return 0;
 }
 
-int nfs4_find_op(struct nfs_context *nfs, COMPOUND4res *res, int op)
-{
-        int i;
-
-        for (i = 0; i < (int)res->resarray.resarray_len; i++) {
-                if (res->resarray.resarray_val[i].resop == op) {
-                        break;
-                }
-        }
-        if (i == res->resarray.resarray_len) {
-                return -1;
-        }
-
-        return i;
+int32_t nfs_error_to_fuse_error(nfsstat4 status) {
+    if (status <= NFS4ERR_MLINK) {
+        return status;
+    } else {
+        fprintf(stderr, "Unknown NFS status code in nfs_error_to_fuse_error!\n");
+        return -ENOSYS;
+    }
 }
 
-int nfs4_op_lookup(struct nfs_context *nfs, nfs_argop4 *op, const char *path)
+int fuse_stat_to_nfs_attrlist(int valid) { return 0;}
+
+/* Functions taken and modified from libnfs/lib/nfs_v4.c
+ * commit: 2678dfecd9c797991b7768490929b1478f339809 */
+
+int nfs4_find_op(COMPOUND4res *res, int op)
+{
+    int i;
+    
+    for (i = 0; i < (int)res->resarray.resarray_len; i++) {
+        if (res->resarray.resarray_val[i].resop == op) {
+            break;
+        }
+    }
+    if (i == res->resarray.resarray_len) {
+        return -1;
+    }
+    
+    return i;
+}
+
+int nfs4_op_lookup(nfs_argop4 *op, const char *path)
 {
     LOOKUP4args *largs;
 
@@ -54,8 +69,7 @@ int nfs4_op_lookup(struct nfs_context *nfs, nfs_argop4 *op, const char *path)
     return 1;
 }
 
-int nfs4_op_getattr(struct nfs_context *nfs, nfs_argop4 *op,
-    uint32_t *attributes, int count)
+int nfs4_op_getattr(nfs_argop4 *op, uint32_t *attributes, int count)
 {
     GETATTR4args *gaargs;
 
@@ -69,8 +83,6 @@ int nfs4_op_getattr(struct nfs_context *nfs, nfs_argop4 *op,
     return 1;
 }
 
-/* Taken from libnfs/lib/nfs_v4.c
- * commit: 2678dfecd9c797991b7768490929b1478f339809 */
 __attribute__((unused)) uint64_t nfs_hton64(uint64_t val)
 {
     int i;
@@ -249,14 +261,5 @@ int nfs_parse_attributes(struct nfs_context *nfs, struct fuse_attr *attr,
     attr->rdev = 0;
     
     return 0;
-}
-
-int32_t nfs_error_to_fuse_error(nfsstat4 status) {
-    if (status <= NFS4ERR_MLINK) {
-        return status;
-    } else {
-        fprintf(stderr, "Unknown NFS status code in nfs_error_to_fuse_error!\n");
-        return -ENOSYS;
-    }
 }
 
