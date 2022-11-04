@@ -128,14 +128,6 @@ void lookup_cb(struct rpc_context *rpc, int status, void *data,
         cb_data->out_hdr->error = -nfs_error_to_fuse_error(res->status);
     	fprintf(stderr, "NFS:LOOKUP unsuccessful: nfs error=%d, fuse error=%d\n",
                 res->status, cb_data->out_hdr->error);
-	fprintf(stderr, "NFS:LOOKUP unsuccessful: nfs op=%d, nfs error=%d\n",
-                res->resarray.resarray_val[0].resop, res->resarray.resarray_val[0].nfs_resop4_u.opputrootfh.status);
-	fprintf(stderr, "NFS:LOOKUP unsuccessful: nfs op=%d, nfs error=%d\n",
-                res->resarray.resarray_val[1].resop, res->resarray.resarray_val[1].nfs_resop4_u.oplookup.status);
-	fprintf(stderr, "NFS:LOOKUP unsuccessful: nfs op=%d, nfs error=%d\n",
-                res->resarray.resarray_val[2].resop, res->resarray.resarray_val[2].nfs_resop4_u.opgetattr.status);
-	fprintf(stderr, "NFS:LOOKUP unsuccessful: nfs op=%d, nfs error=%d\n",
-                res->resarray.resarray_val[3].resop, res->resarray.resarray_val[3].nfs_resop4_u.opgetfh.status);
         goto ret;
     }
 
@@ -146,18 +138,19 @@ void lookup_cb(struct rpc_context *rpc, int status, void *data,
         cb_data->out_hdr->error = -EREMOTEIO;
         goto ret;
     }
-    fuse_ino_t ino = cb_data->out_entry->attr.ino;
+    fattr4_fileid fileid = cb_data->out_entry->attr.ino;
     // Finish the attr
     cb_data->out_entry->attr_valid = 0;
     cb_data->out_entry->attr_valid_nsec = 0;
     cb_data->out_entry->entry_valid = 0;
     cb_data->out_entry->entry_valid_nsec = 0;
     // Taken from the nfs_parse_attributes
-    cb_data->out_entry->nodeid = ino;
+    cb_data->out_entry->nodeid = fileid;
     cb_data->out_entry->generation = 0;
 
-    struct inode *i = inode_table_getsert(vnfs->inodes, ino);
+    struct inode *i = inode_table_getsert(vnfs->inodes, fileid);
     if (!i) {
+        fprintf(stderr, "Couldn't getsert inode with fileid: %lu\n", fileid);
         cb_data->out_hdr->error = -ENOMEM;
         goto ret;
     }
@@ -169,6 +162,7 @@ void lookup_cb(struct rpc_context *rpc, int status, void *data,
         // it's stored in the inode for later use ex. getattr when it uses the nodeid
         int ret = nfs4_clone_fh(&i->fh, &res->resarray.resarray_val[3].nfs_resop4_u.opgetfh.GETFH4res_u.resok4.object);
         if (ret < 0) {
+            fprintf(stderr, "Couldn't clone fh with fileid: %lu\n", fileid);
             cb_data->out_hdr->error = -ENOMEM;
             goto ret;
         }
@@ -292,7 +286,7 @@ int getattr(struct fuse_session *se, struct virtionfs *vnfs,
 
     int fh_found = nfs4_op_putfh(vnfs, &op[0], in_hdr->nodeid);
     if (!fh_found) {
-    	fprintf(stderr, "Invalid nodeid supplied to LOOKUP\n");
+    	fprintf(stderr, "Invalid nodeid supplied to GETATTR\n");
         mpool_free(vnfs->p, cb_data);
         out_hdr->error = -ENOENT;
         return 0;

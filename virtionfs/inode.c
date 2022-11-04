@@ -82,21 +82,22 @@ struct inode *inode_table_get(struct inode_table *t, fattr4_fileid fileid) {
 struct inode *inode_table_getsert(struct inode_table *t, fattr4_fileid fileid) {
     size_t hash = inode_table_hash(t, fileid);
 
+    struct inode *i;
     pthread_mutex_lock(&t->m);
-    for (struct inode *inode = t->array[hash]; inode != NULL; inode = inode->next)
-        if (inode->fileid == fileid)
-            return inode;
+    for (i = t->array[hash]; i != NULL; i = i->next)
+        if (i->fileid == fileid)
+            goto ret;
 
-    struct inode *i = inode_new(fileid);
+    i = inode_new(fileid);
     if (!i)
-        return NULL;
+        goto ret;
 
     if (t->array[hash] != NULL)
         i->next = t->array[hash];
     t->array[hash] = i;
 
+ret:
     pthread_mutex_unlock(&t->m);
-
     return i;
 }
 
