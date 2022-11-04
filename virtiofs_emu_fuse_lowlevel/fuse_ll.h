@@ -240,8 +240,9 @@ struct fuse_ll_operations {
                   struct fuse_out_header *, struct fuse_entry_out *,
                   struct snap_fs_dev_io_done_ctx *cb);
     int (*symlink) (struct fuse_session *, void *user_data,
-                    struct fuse_in_header *, const char *const in_name, const char *const in_link,
-                      struct fuse_out_header *, struct fuse_entry_out *,
+                    struct fuse_in_header *, const char *const in_name,
+                    const char *const in_link_name,
+                    struct fuse_out_header *, struct fuse_entry_out *,
                     struct snap_fs_dev_io_done_ctx *cb);
     int (*statfs) (struct fuse_session *, void *user_data,
                    struct fuse_in_header *,

@@ -7,6 +7,7 @@
 
 #include <errno.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 #include "mpool.h"
 
@@ -17,6 +18,7 @@ void *mpool_alloc(struct mpool *p) {
             p->head = p->head->next;
         return e;
     } else {
+        printf("mpool allocating new chunk\n");
         for (int i = 0; i < p->alloc_size-1; i++) {
             void *c = malloc(p->chunk_size);
             if (!c) {
@@ -42,11 +44,12 @@ void mpool_free(struct mpool *p, void *e) {
     p->head = e;
 }
 
-int mpool_init(struct mpool *p, uint64_t size, uint64_t chunk_size, uint64_t alloc_size) {
+int mpool_init(struct mpool *p, uint64_t chunk_size, uint64_t alloc_size) {
     p->chunk_size = chunk_size;
     p->alloc_size = alloc_size;
     p->head = NULL;
 
+    // Alloc one chunk to trigger the initial chunk allocations
     void *c = mpool_alloc(p);
     if (!c)
         return -1;

@@ -193,13 +193,14 @@ static int virtiofs_emu_ll_handle_fuse_req(struct virtio_fs_ctrl *ctrl,
         if (h == NULL) {
             h = virtiofs_emu_ll_fuse_unknown;
         }
+        // Actually call the handler that was provided
         int ret = h(emu->user_data, fuse_in_iov, in_iovcnt, fuse_out_iov, out_iovcnt, done_ctx);
         if (ret == 0 && out_iovcnt > 0 &&
             fuse_out_iov[0].iov_len >= sizeof(struct fuse_out_header))
         {
             struct fuse_out_header *out_hdr = (struct fuse_out_header *) fuse_out_iov[0].iov_base;
             if (out_hdr->error != 0)
-                fprintf(stderr, "FUSE (op=%d) request ERROR=%d, %s\n", in_hdr->opcode,
+                fprintf(stderr, "FUSE OP(%d) request ERROR=%d, %s\n", in_hdr->opcode,
                     out_hdr->error, strerror(-out_hdr->error));
         }
         return ret;
@@ -271,8 +272,8 @@ struct virtiofs_emu_ll *virtiofs_emu_ll_new(struct virtiofs_emu_ll_params *param
         goto clear_pci_list;
     }
 
-    printf("VirtIO-FS controller 0x%p on emulation manager %s is ready\n",
-               emu->snap_ctrl, emu_params.emu_manager);
+    printf("VirtIO-FS device %s on emulation manager %s is ready\n",
+               param.tag, emu_params.emu_manager);
 
     return emu;
 

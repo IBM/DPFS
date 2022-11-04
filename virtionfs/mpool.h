@@ -33,7 +33,7 @@ void mpool_free(struct mpool *p, void *e);
  alloc_size = the size with which the pool is extended if no more elements are available
  returns error code if unsuccesful
  */
-int mpool_init(struct mpool *p, uint64_t size, uint64_t chunk_size, uint64_t alloc_size);
+int mpool_init(struct mpool *p, uint64_t chunk_size, uint64_t alloc_size);
 void mpool_destroy(struct mpool *p);
 
 #endif // MPOOL_H

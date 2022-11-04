@@ -81,6 +81,7 @@ struct inode *inode_table_getsert(struct inode_table *t, fuse_ino_t ino) {
     struct inode *i = inode_new(ino);
     if (!i)
         return NULL;
+    pthread_mutex_lock(&i->m);
 
     inode_table_insert(t, i);
 

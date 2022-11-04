@@ -5,6 +5,14 @@
 #
 */
 
+/*
+ * The ENOSYS returns for FUSE operations are always after fully parsing
+ * the input data, this is useful because that data can then be used
+ * for debug printing. It does not affect performance because FUSE
+ * implementations are required to never call that operation again after
+ * an ENOSYS.
+ */
+
 #include <stdint.h>
 #include <stdio.h>
 #include <errno.h>
@@ -20,6 +28,7 @@
 
 #include "common.h"
 #include "fuse_ll.h"
+#include "debug.h"
 #include "virtiofs_emu_ll.h"
 
 static void convert_stat(const struct stat *stbuf, struct fuse_attr *attr)
@@ -599,6 +608,11 @@ static int fuse_ll_lookup(struct fuse_ll *f_ll,
     const char *const in_name = fuse_in_iov[1].iov_base;
     struct fuse_entry_out *out_entry = (struct fuse_entry_out *) fuse_out_iov[1].iov_base;
 
+#ifdef FUSE_LL_DEBUG
+    fuse_ll_debug_print_in_hdr(in_hdr);
+    printf("* in_name: %s\n", in_name);
+#endif
+
     if (f_ll->ops.lookup)
         return f_ll->ops.lookup(f_ll->se, f_ll->user_data, in_hdr, in_name, out_hdr, out_entry, cb);
     else {
@@ -623,13 +637,18 @@ static int fuse_ll_setattr(struct fuse_ll *f_ll,
     out_hdr->len = sizeof(*out_hdr);
     out_hdr->error = 0;
 
+    struct fuse_setattr_in *in_setattr = (struct fuse_setattr_in *) fuse_in_iov[1].iov_base;
+    struct fuse_attr_out *out_attr = (struct fuse_attr_out *) fuse_out_iov[1].iov_base;
+
+#ifdef FUSE_LL_DEBUG
+    fuse_ll_debug_print_in_hdr(in_hdr);
+    printf("* fh: %lu", in_setattr->fh);
+#endif
+
     if (!f_ll->ops.setattr) {
         out_hdr->error = -ENOSYS;
         return 0;
     }
-
-    struct fuse_setattr_in *in_setattr = (struct fuse_setattr_in *) fuse_in_iov[1].iov_base;
-    struct fuse_attr_out *out_attr = (struct fuse_attr_out *) fuse_out_iov[1].iov_base;
 
     struct fuse_file_info *fi = NULL;
     struct fuse_file_info fi_store;
@@ -672,32 +691,38 @@ static int fuse_ll_create(struct fuse_ll *f_ll,
     out_hdr->len = sizeof(*out_hdr);
     out_hdr->error = 0;
 
-    if (!f_ll->ops.create) {
-        out_hdr->error = -ENOSYS;
-        return 0;
-    }
-
     char *name;
     struct fuse_entry_out *out_entry = (struct fuse_entry_out *) fuse_out_iov[1].iov_base;
     size_t entrysize = f_ll->se->conn.proto_minor < 9 ?
         FUSE_COMPAT_ENTRY_OUT_SIZE : sizeof(struct fuse_entry_out);
     struct fuse_open_out *out_open = (struct fuse_open_out *) (((char *)fuse_out_iov[1].iov_base) + entrysize);
 
+    struct fuse_create_in *in_create;
     if (f_ll->se->conn.proto_minor >= 12) {
-        struct fuse_create_in *in_create = (struct fuse_create_in *) fuse_in_iov[1].iov_base;
+        in_create = (struct fuse_create_in *) fuse_in_iov[1].iov_base;
         name = ((char *) fuse_in_iov[1].iov_base) + sizeof(struct fuse_create_in);
-
-        return f_ll->ops.create(f_ll->se, f_ll->user_data, in_hdr, in_create, name, out_hdr, out_entry, out_open, cb);
     } else {
-        struct fuse_create_in in_create;
+        struct fuse_create_in in_create_struct;
+        in_create = &in_create_struct;
         struct fuse_open_in *in_open = (struct fuse_open_in *) fuse_in_iov[1].iov_base;
-        in_create.flags = in_open->flags;
-        in_create.mode = 0;
-        in_create.umask = 0;
-        name = ((char *) fuse_in_iov[1].iov_base) + sizeof(struct fuse_open_in);
 
-        return f_ll->ops.create(f_ll->se, f_ll->user_data, in_hdr, &in_create, name, out_hdr, out_entry, out_open, cb);
+        in_create->flags = in_open->flags;
+        in_create->mode = 0;
+        in_create->umask = 0;
+        name = ((char *) fuse_in_iov[1].iov_base) + sizeof(struct fuse_open_in);
     }
+
+#ifdef FUSE_LL_DEBUG
+    fuse_ll_debug_print_in_hdr(in_hdr);
+    printf("* name: %s\n", name);
+#endif
+
+    if (!f_ll->ops.create) {
+        out_hdr->error = -ENOSYS;
+        return 0;
+    }
+
+    return f_ll->ops.create(f_ll->se, f_ll->user_data, in_hdr, in_create, name, out_hdr, out_entry, out_open, cb);
 }
 
 static int fuse_ll_flush(struct fuse_ll *f_ll,
@@ -715,13 +740,18 @@ static int fuse_ll_flush(struct fuse_ll *f_ll,
     out_hdr->len = sizeof(*out_hdr);
     out_hdr->error = 0;
 
+    struct fuse_flush_in *in_flush = (struct fuse_flush_in *) fuse_in_iov[1].iov_base;
+    struct fuse_file_info fi;
+
+#ifdef FUSE_LL_DEBUG
+    fuse_ll_debug_print_in_hdr(in_hdr);
+    printf("* fh: %lu\n", in_flush->fh);
+#endif
+
     if (!f_ll->ops.flush) {
         out_hdr->error = -ENOSYS;
         return 0;
     }
-
-    struct fuse_flush_in *in_flush = (struct fuse_flush_in *) fuse_in_iov[1].iov_base;
-    struct fuse_file_info fi;
 
     memset(&fi, 0, sizeof(fi));
     fi.fh = in_flush->fh;
@@ -747,9 +777,14 @@ static int fuse_ll_setlk_common(struct fuse_ll *f_ll,
     out_hdr->len = sizeof(*out_hdr);
     out_hdr->error = 0;
 
-    struct fuse_lk_in *in_lk = (struct fuse_lk_in *) in_lk;
+    struct fuse_lk_in *in_lk = (struct fuse_lk_in *) fuse_in_iov[1].iov_base;
     struct fuse_file_info fi;
     memset(&fi, 0, sizeof(fi));
+
+#ifdef FUSE_LL_DEBUG
+    fuse_ll_debug_print_in_hdr(in_hdr);
+    printf("* fh: %lu\n", in_lk->fh);
+#endif
 
     fi.fh = in_lk->fh;
     fi.lock_owner = in_lk->owner;
@@ -813,13 +848,18 @@ static int fuse_ll_getattr(struct fuse_ll *f_ll,
     out_hdr->len = sizeof(*out_hdr);
     out_hdr->error = 0;
 
+    struct fuse_getattr_in *in_getattr = (struct fuse_getattr_in *) fuse_in_iov[1].iov_base;
+    struct fuse_attr_out *out_attr = (struct fuse_attr_out *) fuse_out_iov[1].iov_base;
+
+#ifdef FUSE_LL_DEBUG
+    fuse_ll_debug_print_in_hdr(in_hdr);
+    printf("* fh: %lu\n", in_getattr->fh);
+#endif
+
     if (!f_ll->ops.getattr) {
         out_hdr->error = -ENOSYS;
         return 0;
     }
-
-    struct fuse_getattr_in *in_getattr = (struct fuse_getattr_in *) fuse_in_iov[1].iov_base;
-    struct fuse_attr_out *out_attr = (struct fuse_attr_out *) fuse_out_iov[1].iov_base;
 
     return f_ll->ops.getattr(f_ll->se, f_ll->user_data, in_hdr, in_getattr, out_hdr, out_attr, cb);
 }
@@ -839,13 +879,18 @@ static int fuse_ll_opendir(struct fuse_ll *f_ll,
     out_hdr->len = sizeof(*out_hdr);
     out_hdr->error = 0;
 
+    struct fuse_open_in *in_open = (struct fuse_open_in *) fuse_in_iov[1].iov_base;
+    struct fuse_open_out *out_open = (struct fuse_open_out *) fuse_out_iov[1].iov_base;
+
+#ifdef FUSE_LL_DEBUG
+    fuse_ll_debug_print_in_hdr(in_hdr);
+    printf("* flags: %x\n", in_open->flags);
+#endif
+
     if (!f_ll->ops.opendir) {
         out_hdr->error = -ENOSYS;
         return 0;
     }
-
-    struct fuse_open_in *in_open = (struct fuse_open_in *) fuse_in_iov[1].iov_base;
-    struct fuse_open_out *out_open = (struct fuse_open_out *) fuse_out_iov[1].iov_base;
 
     return f_ll->ops.opendir(f_ll->se, f_ll->user_data, in_hdr, in_open, out_hdr, out_open, cb);
 }
@@ -865,12 +910,17 @@ static int fuse_ll_releasedir(struct fuse_ll *f_ll,
     out_hdr->len = sizeof(*out_hdr);
     out_hdr->error = 0;
 
+    struct fuse_release_in *in_release = (struct fuse_release_in *) fuse_in_iov[1].iov_base;
+
+#ifdef FUSE_LL_DEBUG
+    fuse_ll_debug_print_in_hdr(in_hdr);
+    printf("* fh: %lu\n", in_release->fh);
+#endif
+
     if (!f_ll->ops.releasedir) {
         out_hdr->error = -ENOSYS;
         return 0;
     }
-
-    struct fuse_release_in *in_release = (struct fuse_release_in *) fuse_in_iov[1].iov_base;
 
     return f_ll->ops.releasedir(f_ll->se, f_ll->user_data, in_hdr, in_release, out_hdr, cb);
 }
@@ -891,12 +941,18 @@ static int fuse_ll_readdir_common(struct fuse_ll *f_ll,
     out_hdr->len = sizeof(*out_hdr);
     out_hdr->error = 0;
 
+
+    struct fuse_read_in *in_read = (struct fuse_read_in *) fuse_in_iov[1].iov_base;
+
+#ifdef FUSE_LL_DEBUG
+    fuse_ll_debug_print_in_hdr(in_hdr);
+    printf("* fh: %lu\n", in_read->fh);
+#endif
+
     if (!f_ll->ops.readdir) {
         out_hdr->error = -ENOSYS;
         return 0;
     }
-
-    struct fuse_read_in *in_read = (struct fuse_read_in *) fuse_in_iov[1].iov_base;
 
     struct iov read_iov;
     iov_init(&read_iov, &fuse_out_iov[1], out_iovcnt-1);
@@ -933,13 +989,18 @@ static int fuse_ll_open(struct fuse_ll *f_ll,
     out_hdr->len = sizeof(*out_hdr);
     out_hdr->error = 0;
 
+    struct fuse_open_in *in_open = (struct fuse_open_in *) fuse_in_iov[1].iov_base;
+    struct fuse_open_out *out_open = (struct fuse_open_out *) fuse_out_iov[1].iov_base;
+
+#ifdef FUSE_LL_DEBUG
+    fuse_ll_debug_print_in_hdr(in_hdr);
+    printf("* flags: %x\n", in_open->flags);
+#endif
+
     if (!f_ll->ops.open) {
         out_hdr->error = -ENOSYS;
         return 0;
     }
-
-    struct fuse_open_in *in_open = (struct fuse_open_in *) fuse_in_iov[1].iov_base;
-    struct fuse_open_out *out_open = (struct fuse_open_out *) fuse_out_iov[1].iov_base;
 
     return f_ll->ops.open(f_ll->se, f_ll->user_data, in_hdr, in_open, out_hdr, out_open, cb);
 }
@@ -959,12 +1020,20 @@ static int fuse_ll_release(struct fuse_ll *f_ll,
     out_hdr->len = sizeof(*out_hdr);
     out_hdr->error = 0;
 
+    struct fuse_release_in *in_release = (struct fuse_release_in *) fuse_in_iov[1].iov_base;
+
+#ifdef FUSE_LL_DEBUG
+    fuse_ll_debug_print_in_hdr(in_hdr);
+    printf("* fh: %lu\n", in_release->fh);
+    printf("* flags: %x\n", in_release->flags);
+    printf("* release_flags: %x\n", in_release->release_flags);
+    printf("* lock_owner: %lu\n", in_release->lock_owner);
+#endif
+
     if (!f_ll->ops.release) {
         out_hdr->error = -ENOSYS;
         return 0;
     }
-
-    struct fuse_release_in *in_release = (struct fuse_release_in *) fuse_in_iov[1].iov_base;
 
     return f_ll->ops.release(f_ll->se, f_ll->user_data, in_hdr, in_release, out_hdr, cb);
 }
@@ -984,12 +1053,18 @@ static int fuse_ll_fsync(struct fuse_ll *f_ll,
     out_hdr->len = sizeof(*out_hdr);
     out_hdr->error = 0;
 
+    struct fuse_fsync_in *in_fsync = (struct fuse_fsync_in *) fuse_in_iov[1].iov_base;
+
+#ifdef FUSE_LL_DEBUG
+    fuse_ll_debug_print_in_hdr(in_hdr);
+    printf("* fh: %lu\n", in_fsync->fh);
+    printf("* fsync_flags: %x\n", in_fsync->fsync_flags);
+#endif
+
     if (!f_ll->ops.fsync) {
         out_hdr->error = -ENOSYS;
         return 0;
     }
-
-    struct fuse_fsync_in *in_fsync = (struct fuse_fsync_in *) fuse_in_iov[1].iov_base;
 
     return f_ll->ops.fsync(f_ll->se, f_ll->user_data, in_hdr, in_fsync, out_hdr, cb);
 }
@@ -1009,12 +1084,18 @@ static int fuse_ll_fsyncdir(struct fuse_ll *f_ll,
     out_hdr->len = sizeof(*out_hdr);
     out_hdr->error = 0;
 
+    struct fuse_fsync_in *in_fsync = (struct fuse_fsync_in *) fuse_in_iov[1].iov_base;
+
+#ifdef FUSE_LL_DEBUG
+    fuse_ll_debug_print_in_hdr(in_hdr);
+    printf("* fh: %lu\n", in_fsync->fh);
+    printf("* fsync_flags: %x\n", in_fsync->fsync_flags);
+#endif
+
     if (!f_ll->ops.fsyncdir) {
         out_hdr->error = -ENOSYS;
         return 0;
     }
-
-    struct fuse_fsync_in *in_fsync = (struct fuse_fsync_in *) fuse_in_iov[1].iov_base;
 
     return f_ll->ops.fsyncdir(f_ll->se, f_ll->user_data, in_hdr, in_fsync, out_hdr, cb);
 }
@@ -1034,12 +1115,17 @@ static int fuse_ll_rmdir(struct fuse_ll *f_ll,
     out_hdr->len = sizeof(*out_hdr);
     out_hdr->error = 0;
 
+    const char *const in_name = (const char *) fuse_in_iov[1].iov_base;
+
+#ifdef FUSE_LL_DEBUG
+    fuse_ll_debug_print_in_hdr(in_hdr);
+    printf("* name: %s\n", in_name);
+#endif
+
     if (!f_ll->ops.rmdir) {
         out_hdr->error = -ENOSYS;
         return 0;
     }
-
-    const char *const in_name = (const char *) fuse_in_iov[1].iov_base;
 
     return f_ll->ops.rmdir(f_ll->se, f_ll->user_data, in_hdr, in_name, out_hdr, cb);
 }
@@ -1055,6 +1141,10 @@ static int fuse_ll_forget(struct fuse_ll *f_ll,
 
     struct fuse_in_header *in_hdr = (struct fuse_in_header *) fuse_in_iov[0].iov_base;
     struct fuse_forget_in *in_forget = (struct fuse_forget_in *) (((char *) fuse_in_iov[0].iov_base) + sizeof(struct fuse_in_header));
+
+#ifdef FUSE_LL_DEBUG
+    fuse_ll_debug_print_in_hdr(in_hdr);
+#endif
 
     if (f_ll->ops.forget)
         return f_ll->ops.forget(f_ll->se, f_ll->user_data, in_hdr, in_forget, cb);
@@ -1077,6 +1167,10 @@ static int fuse_ll_batch_forget(struct fuse_ll *f_ll,
     struct fuse_forget_one *in_forget = (struct fuse_forget_one *) (((char *) fuse_in_iov[0].iov_base)
             + sizeof(struct fuse_in_header) + sizeof(struct fuse_batch_forget_in));
 
+#ifdef FUSE_LL_DEBUG
+    fuse_ll_debug_print_in_hdr(in_hdr);
+#endif
+
     if (f_ll->ops.batch_forget)
         return f_ll->ops.batch_forget(f_ll->se, f_ll->user_data, in_hdr, in_batch_forget, in_forget, cb);
     else
@@ -1098,14 +1192,21 @@ static int fuse_ll_rename(struct fuse_ll *f_ll,
     out_hdr->len = sizeof(*out_hdr);
     out_hdr->error = 0;
 
+    struct fuse_rename_in *in_rename = (struct fuse_rename_in *) fuse_in_iov[1].iov_base;
+    const char *name = ((char *) fuse_in_iov[1].iov_base) + sizeof(*in_rename);
+    const char *new_name = (const char *) name + strlen(name) + 1;
+
+#ifdef FUSE_LL_DEBUG
+    fuse_ll_debug_print_in_hdr(in_hdr);
+    printf("* name: %s\n", name);
+    printf("* newdir: %lu\n", in_rename->newdir);
+    printf("* new_name: %s\n", new_name);
+#endif
+
     if (!f_ll->ops.rename) {
         out_hdr->error = -ENOSYS;
         return 0;
     }
-
-    struct fuse_rename_in *in_rename = (struct fuse_rename_in *) fuse_in_iov[1].iov_base;
-    const char *name = ((char *) fuse_in_iov[1].iov_base) + sizeof(*in_rename);
-    const char *new_name = (const char *) name + strlen(name) + 1;
 
     return f_ll->ops.rename(f_ll->se, f_ll->user_data, in_hdr, name, in_rename->newdir,
                     new_name, 0, out_hdr, cb);
@@ -1126,14 +1227,23 @@ static int fuse_ll_rename2(struct fuse_ll *f_ll,
     out_hdr->len = sizeof(*out_hdr);
     out_hdr->error = 0;
 
+    struct fuse_rename2_in *in_rename2 = (struct fuse_rename2_in *) fuse_in_iov[1].iov_base;
+    const char *name = ((char *) fuse_in_iov[1].iov_base) + sizeof(*in_rename2);
+    const char *new_name = (const char *) name + strlen(name) + 1;
+
+#ifdef FUSE_LL_DEBUG
+    fuse_ll_debug_print_in_hdr(in_hdr);
+    printf("* name: %s\n", name);
+    printf("* newdir: %lu\n", in_rename2->newdir);
+    printf("* flags: %x\n", in_rename2->flags);
+    printf("* new_name: %s\n", new_name);
+#endif
+
     if (!f_ll->ops.rename) {
         out_hdr->error = -ENOSYS;
         return 0;
     }
 
-    struct fuse_rename2_in *in_rename2 = (struct fuse_rename2_in *) fuse_in_iov[1].iov_base;
-    const char *name = ((char *) fuse_in_iov[1].iov_base) + sizeof(*in_rename2);
-    const char *new_name = (const char *) name + strlen(name) + 1;
 
     return f_ll->ops.rename(f_ll->se, f_ll->user_data, in_hdr, name, in_rename2->newdir,
                     new_name, in_rename2->flags, out_hdr, cb);
@@ -1154,12 +1264,23 @@ static int fuse_ll_read(struct fuse_ll *f_ll,
     out_hdr->len = sizeof(*out_hdr);
     out_hdr->error = 0;
 
+    struct fuse_read_in *in_read = (struct fuse_read_in *) fuse_in_iov[1].iov_base;
+
+#ifdef FUSE_LL_DEBUG
+    fuse_ll_debug_print_in_hdr(in_hdr);
+    printf("* fh: %lu\n", in_read->fh);
+    printf("* offset: %lu\n", in_read->offset);
+    printf("* size: %u\n", in_read->size);
+    printf("* read_flags: %x\n", in_read->read_flags);
+    printf("* lock_owner: %lu\n", in_read->lock_owner);
+    printf("* flags: %x\n", in_read->flags);
+#endif
+
     if (!f_ll->ops.read) {
         out_hdr->error = -ENOSYS;
         return 0;
     }
 
-    struct fuse_read_in *in_read = (struct fuse_read_in *) fuse_in_iov[1].iov_base;
     struct iov read_iov;
     iov_init(&read_iov, &fuse_out_iov[1], out_iovcnt-1);
     if (read_iov.bytes_unused != in_read->size) {
@@ -1185,13 +1306,24 @@ static int fuse_ll_write(struct fuse_ll *f_ll,
     out_hdr->len = sizeof(*out_hdr);
     out_hdr->error = 0;
 
+    struct fuse_write_in *in_write = (struct fuse_write_in *) fuse_in_iov[1].iov_base;
+    struct fuse_write_out *out_write = (struct fuse_write_out *) fuse_out_iov[1].iov_base;
+
+#ifdef FUSE_LL_DEBUG
+    fuse_ll_debug_print_in_hdr(in_hdr);
+    printf("* fh: %lu\n", in_write->fh);
+    printf("* offset: %lu\n", in_write->offset);
+    printf("* size: %u\n", in_write->size);
+    printf("* read_flags: %x\n", in_write->write_flags);
+    printf("* lock_owner: %lu\n", in_write->lock_owner);
+    printf("* flags: %x\n", in_write->flags);
+#endif
+
     if (!f_ll->ops.write) {
         out_hdr->error = -ENOSYS;
         return 0;
     }
 
-    struct fuse_write_in *in_write = (struct fuse_write_in *) fuse_in_iov[1].iov_base;
-    struct fuse_write_out *out_write = (struct fuse_write_out *) fuse_out_iov[1].iov_base;
     struct iov write_iov;
     iov_init(&write_iov, &fuse_in_iov[2], in_iovcnt-2);
     if (write_iov.bytes_unused != in_write->size) {
@@ -1229,7 +1361,16 @@ static int fuse_ll_mknod(struct fuse_ll *f_ll,
         in_name = ((char *) fuse_in_iov[1].iov_base) + FUSE_COMPAT_MKNOD_IN_SIZE;
     else
         in_name = ((char *) fuse_in_iov[1].iov_base) + sizeof(struct fuse_mknod_in);
+
     struct fuse_entry_out *out_entry = (struct fuse_entry_out *) fuse_out_iov[1].iov_base;
+
+#ifdef FUSE_LL_DEBUG
+    fuse_ll_debug_print_in_hdr(in_hdr);
+    printf("* name: %s\n", in_name);
+    printf("* mode: %u\n", in_mknod->mode);
+    printf("* rdev: %u\n", in_mknod->rdev);
+    printf("* umask: %x\n", in_mknod->umask);
+#endif
 
     return f_ll->ops.mknod(f_ll->se, f_ll->user_data, in_hdr, in_mknod, in_name, out_hdr, out_entry, cb);
 }
@@ -1250,15 +1391,21 @@ static int fuse_ll_mkdir(struct fuse_ll *f_ll,
     out_hdr->len = sizeof(*out_hdr);
     out_hdr->error = 0;
 
+    struct fuse_mkdir_in *in_mkdir = (struct fuse_mkdir_in *) fuse_in_iov[1].iov_base;
+    const char *in_name = ((char *) fuse_in_iov[1].iov_base) + sizeof(struct fuse_mkdir_in);
+    struct fuse_entry_out *out_entry = (struct fuse_entry_out *) fuse_out_iov[1].iov_base;
+
+#ifdef FUSE_LL_DEBUG
+    fuse_ll_debug_print_in_hdr(in_hdr);
+    printf("* name: %s\n", in_name);
+    printf("* mode: %u\n", in_mkdir->mode);
+    printf("* umask: %x\n", in_mkdir->umask);
+#endif
+
     if (!f_ll->ops.mkdir) {
         out_hdr->error = -ENOSYS;
         return 0;
     }
-
-    struct fuse_mkdir_in *in_mkdir = (struct fuse_mkdir_in *) fuse_in_iov[1].iov_base;
-    const char *in_name = ((char *) fuse_in_iov[1].iov_base) + sizeof(struct fuse_mkdir_in);
-
-    struct fuse_entry_out *out_entry = (struct fuse_entry_out *) fuse_out_iov[1].iov_base;
 
     return f_ll->ops.mkdir(f_ll->se, f_ll->user_data, in_hdr, in_mkdir, in_name, out_hdr, out_entry, cb);
 }
@@ -1279,16 +1426,24 @@ static int fuse_ll_symlink(struct fuse_ll *f_ll,
     out_hdr->len = sizeof(*out_hdr);
     out_hdr->error = 0;
 
+    const char *in_name = fuse_in_iov[1].iov_base;
+    const char *in_link_name = in_name + strlen(in_name)+1;
+    struct fuse_entry_out *out_entry = (struct fuse_entry_out *) fuse_out_iov[1].iov_base;
+
+#ifdef FUSE_LL_DEBUG
+    struct fuse_link_in *in_link = (struct fuse_link_in *) in_link_name + strlen(in_link_name) + 1;
+    fuse_ll_debug_print_in_hdr(in_hdr);
+    printf("* name: %s\n", in_name);
+    printf("* link_name: %s\n", in_link_name);
+    printf("* oldnodeid: %lu\n", in_link->oldnodeid);
+#endif
+
     if (!f_ll->ops.symlink) {
         out_hdr->error = -ENOSYS;
         return 0;
     }
 
-    const char *in_name = fuse_in_iov[1].iov_base;
-    const char *in_link = in_name + strlen(in_name)+1;
-    struct fuse_entry_out *out_entry = (struct fuse_entry_out *) fuse_out_iov[1].iov_base;
-
-    return f_ll->ops.symlink(f_ll->se, f_ll->user_data, in_hdr, in_name, in_link, out_hdr, out_entry, cb);
+    return f_ll->ops.symlink(f_ll->se, f_ll->user_data, in_hdr, in_name, in_link_name, out_hdr, out_entry, cb);
 }
 
 static int fuse_ll_statfs(struct fuse_ll *f_ll,
@@ -1307,12 +1462,16 @@ static int fuse_ll_statfs(struct fuse_ll *f_ll,
     out_hdr->len = sizeof(*out_hdr);
     out_hdr->error = 0;
 
+    struct fuse_statfs_out *out_statfs = (struct fuse_statfs_out *) fuse_out_iov[1].iov_base;
+
+#ifdef FUSE_LL_DEBUG
+    fuse_ll_debug_print_in_hdr(in_hdr);
+#endif
+
     if (!f_ll->ops.statfs) {
         out_hdr->error = -ENOSYS;
         return 0;
     }
-
-    struct fuse_statfs_out *out_statfs = (struct fuse_statfs_out *) fuse_out_iov[1].iov_base;
 
     return f_ll->ops.statfs(f_ll->se, f_ll->user_data, in_hdr, out_hdr, out_statfs, cb);
 }
@@ -1333,12 +1492,17 @@ static int fuse_ll_unlink(struct fuse_ll *f_ll,
     out_hdr->len = sizeof(*out_hdr);
     out_hdr->error = 0;
 
+    const char *in_name = (const char *) fuse_in_iov[1].iov_base;
+
+#ifdef FUSE_LL_DEBUG
+    fuse_ll_debug_print_in_hdr(in_hdr);
+    printf("* name: %s\n", in_name);
+#endif
+
     if (!f_ll->ops.unlink) {
         out_hdr->error = -ENOSYS;
         return 0;
     }
-
-    const char *in_name = (const char *) fuse_in_iov[1].iov_base;
 
     return f_ll->ops.unlink(f_ll->se, f_ll->user_data , in_hdr, in_name, out_hdr, cb);
 }
@@ -1348,6 +1512,7 @@ static int fuse_ll_readlink(struct fuse_ll *f_ll,
                struct iovec *fuse_out_iov, int out_iovcnt,
            struct snap_fs_dev_io_done_ctx *cb)
 {
+    // TODO this function is still WIP, printing to see how it works
     fprintf(stderr, "READLINK called with:\n");
     for (int i = 0; i < in_iovcnt; i++) {
         fprintf(stderr, " in_iov[%d].len=%ld", i, fuse_in_iov[i].iov_len);
@@ -1380,12 +1545,20 @@ static int fuse_ll_fallocate(struct fuse_ll *f_ll,
     out_hdr->len = sizeof(*out_hdr);
     out_hdr->error = 0;
 
+    struct fuse_fallocate_in *in_fallocate = (struct fuse_fallocate_in *) fuse_in_iov[1].iov_base;
+
+#ifdef FUSE_LL_DEBUG
+    fuse_ll_debug_print_in_hdr(in_hdr);
+    printf("* fh: %lu\n", in_fallocate->fh);
+    printf("* offset: %lu\n", in_fallocate->offset);
+    printf("* length: %lu\n", in_fallocate->length);
+    printf("* mode: %u\n", in_fallocate->mode);
+#endif
+
     if (!f_ll->ops.fallocate) {
         out_hdr->error = -ENOSYS;
         return 0;
     }
-
-    struct fuse_fallocate_in *in_fallocate = (struct fuse_fallocate_in *) fuse_in_iov[1].iov_base;
 
     return f_ll->ops.fallocate(f_ll->se, f_ll->user_data, in_hdr, in_fallocate, out_hdr, cb);
 }
@@ -1429,6 +1602,10 @@ static void fuse_ll_map_emu(struct virtiofs_emu_ll_params *emu_ll_params) {
 int virtiofs_emu_fuse_ll_main(struct fuse_ll_operations *ops, struct virtiofs_emu_params *emu_params,
                               void *user_data, bool debug)
 {
+#ifdef FUSE_LL_DEBUG
+    printf("virtiofs_emu_fuse_ll is running in DEBUG mode\n");
+#endif
+
     struct fuse_ll *f_ll = calloc(1, sizeof(struct fuse_ll));
     f_ll->ops = *ops;
     f_ll->debug = debug;
