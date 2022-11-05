@@ -46,7 +46,6 @@
 #include "compiler.h"
 #include "mlnx_snap_pci_manager.h"
 #include "virtiofs_emu_ll.h"
-//#include "fuse_impl.h"
 
 struct virtiofs_emu_ll {
     struct virtio_fs_ctrl *snap_ctrl;
@@ -162,6 +161,8 @@ static int virtiofs_emu_ll_fuse_unknown(void *user_data,
     out_hdr->unique = in_hdr->unique;
     out_hdr->len = sizeof(struct fuse_out_header);
     out_hdr->error = -ENOSYS;
+
+    printf("virtiofs_emu_ll: fuse OP(%u) called, but not implemented\n", in_hdr->opcode);
 
     return 0;
 }

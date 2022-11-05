@@ -608,7 +608,7 @@ static int fuse_ll_lookup(struct fuse_ll *f_ll,
     const char *const in_name = fuse_in_iov[1].iov_base;
     struct fuse_entry_out *out_entry = (struct fuse_entry_out *) fuse_out_iov[1].iov_base;
 
-#ifdef FUSE_LL_DEBUG
+#ifdef DEBUG_ENABLED
     fuse_ll_debug_print_in_hdr(in_hdr);
     printf("* in_name: %s\n", in_name);
 #endif
@@ -640,7 +640,7 @@ static int fuse_ll_setattr(struct fuse_ll *f_ll,
     struct fuse_setattr_in *in_setattr = (struct fuse_setattr_in *) fuse_in_iov[1].iov_base;
     struct fuse_attr_out *out_attr = (struct fuse_attr_out *) fuse_out_iov[1].iov_base;
 
-#ifdef FUSE_LL_DEBUG
+#ifdef DEBUG_ENABLED
     fuse_ll_debug_print_in_hdr(in_hdr);
     printf("* fh: %lu", in_setattr->fh);
 #endif
@@ -712,7 +712,7 @@ static int fuse_ll_create(struct fuse_ll *f_ll,
         name = ((char *) fuse_in_iov[1].iov_base) + sizeof(struct fuse_open_in);
     }
 
-#ifdef FUSE_LL_DEBUG
+#ifdef DEBUG_ENABLED
     fuse_ll_debug_print_in_hdr(in_hdr);
     printf("* name: %s\n", name);
 #endif
@@ -743,7 +743,7 @@ static int fuse_ll_flush(struct fuse_ll *f_ll,
     struct fuse_flush_in *in_flush = (struct fuse_flush_in *) fuse_in_iov[1].iov_base;
     struct fuse_file_info fi;
 
-#ifdef FUSE_LL_DEBUG
+#ifdef DEBUG_ENABLED
     fuse_ll_debug_print_in_hdr(in_hdr);
     printf("* fh: %lu\n", in_flush->fh);
 #endif
@@ -781,7 +781,7 @@ static int fuse_ll_setlk_common(struct fuse_ll *f_ll,
     struct fuse_file_info fi;
     memset(&fi, 0, sizeof(fi));
 
-#ifdef FUSE_LL_DEBUG
+#ifdef DEBUG_ENABLED
     fuse_ll_debug_print_in_hdr(in_hdr);
     printf("* fh: %lu\n", in_lk->fh);
 #endif
@@ -851,7 +851,7 @@ static int fuse_ll_getattr(struct fuse_ll *f_ll,
     struct fuse_getattr_in *in_getattr = (struct fuse_getattr_in *) fuse_in_iov[1].iov_base;
     struct fuse_attr_out *out_attr = (struct fuse_attr_out *) fuse_out_iov[1].iov_base;
 
-#ifdef FUSE_LL_DEBUG
+#ifdef DEBUG_ENABLED
     fuse_ll_debug_print_in_hdr(in_hdr);
     printf("* fh: %lu\n", in_getattr->fh);
 #endif
@@ -882,7 +882,7 @@ static int fuse_ll_opendir(struct fuse_ll *f_ll,
     struct fuse_open_in *in_open = (struct fuse_open_in *) fuse_in_iov[1].iov_base;
     struct fuse_open_out *out_open = (struct fuse_open_out *) fuse_out_iov[1].iov_base;
 
-#ifdef FUSE_LL_DEBUG
+#ifdef DEBUG_ENABLED
     fuse_ll_debug_print_in_hdr(in_hdr);
     printf("* flags: %x\n", in_open->flags);
 #endif
@@ -912,7 +912,7 @@ static int fuse_ll_releasedir(struct fuse_ll *f_ll,
 
     struct fuse_release_in *in_release = (struct fuse_release_in *) fuse_in_iov[1].iov_base;
 
-#ifdef FUSE_LL_DEBUG
+#ifdef DEBUG_ENABLED
     fuse_ll_debug_print_in_hdr(in_hdr);
     printf("* fh: %lu\n", in_release->fh);
 #endif
@@ -944,7 +944,7 @@ static int fuse_ll_readdir_common(struct fuse_ll *f_ll,
 
     struct fuse_read_in *in_read = (struct fuse_read_in *) fuse_in_iov[1].iov_base;
 
-#ifdef FUSE_LL_DEBUG
+#ifdef DEBUG_ENABLED
     fuse_ll_debug_print_in_hdr(in_hdr);
     printf("* fh: %lu\n", in_read->fh);
 #endif
@@ -992,7 +992,7 @@ static int fuse_ll_open(struct fuse_ll *f_ll,
     struct fuse_open_in *in_open = (struct fuse_open_in *) fuse_in_iov[1].iov_base;
     struct fuse_open_out *out_open = (struct fuse_open_out *) fuse_out_iov[1].iov_base;
 
-#ifdef FUSE_LL_DEBUG
+#ifdef DEBUG_ENABLED
     fuse_ll_debug_print_in_hdr(in_hdr);
     printf("* flags: %x\n", in_open->flags);
 #endif
@@ -1022,7 +1022,7 @@ static int fuse_ll_release(struct fuse_ll *f_ll,
 
     struct fuse_release_in *in_release = (struct fuse_release_in *) fuse_in_iov[1].iov_base;
 
-#ifdef FUSE_LL_DEBUG
+#ifdef DEBUG_ENABLED
     fuse_ll_debug_print_in_hdr(in_hdr);
     printf("* fh: %lu\n", in_release->fh);
     printf("* flags: %x\n", in_release->flags);
@@ -1055,7 +1055,7 @@ static int fuse_ll_fsync(struct fuse_ll *f_ll,
 
     struct fuse_fsync_in *in_fsync = (struct fuse_fsync_in *) fuse_in_iov[1].iov_base;
 
-#ifdef FUSE_LL_DEBUG
+#ifdef DEBUG_ENABLED
     fuse_ll_debug_print_in_hdr(in_hdr);
     printf("* fh: %lu\n", in_fsync->fh);
     printf("* fsync_flags: %x\n", in_fsync->fsync_flags);
@@ -1086,7 +1086,7 @@ static int fuse_ll_fsyncdir(struct fuse_ll *f_ll,
 
     struct fuse_fsync_in *in_fsync = (struct fuse_fsync_in *) fuse_in_iov[1].iov_base;
 
-#ifdef FUSE_LL_DEBUG
+#ifdef DEBUG_ENABLED
     fuse_ll_debug_print_in_hdr(in_hdr);
     printf("* fh: %lu\n", in_fsync->fh);
     printf("* fsync_flags: %x\n", in_fsync->fsync_flags);
@@ -1117,7 +1117,7 @@ static int fuse_ll_rmdir(struct fuse_ll *f_ll,
 
     const char *const in_name = (const char *) fuse_in_iov[1].iov_base;
 
-#ifdef FUSE_LL_DEBUG
+#ifdef DEBUG_ENABLED
     fuse_ll_debug_print_in_hdr(in_hdr);
     printf("* name: %s\n", in_name);
 #endif
@@ -1142,7 +1142,7 @@ static int fuse_ll_forget(struct fuse_ll *f_ll,
     struct fuse_in_header *in_hdr = (struct fuse_in_header *) fuse_in_iov[0].iov_base;
     struct fuse_forget_in *in_forget = (struct fuse_forget_in *) (((char *) fuse_in_iov[0].iov_base) + sizeof(struct fuse_in_header));
 
-#ifdef FUSE_LL_DEBUG
+#ifdef DEBUG_ENABLED
     fuse_ll_debug_print_in_hdr(in_hdr);
 #endif
 
@@ -1167,7 +1167,7 @@ static int fuse_ll_batch_forget(struct fuse_ll *f_ll,
     struct fuse_forget_one *in_forget = (struct fuse_forget_one *) (((char *) fuse_in_iov[0].iov_base)
             + sizeof(struct fuse_in_header) + sizeof(struct fuse_batch_forget_in));
 
-#ifdef FUSE_LL_DEBUG
+#ifdef DEBUG_ENABLED
     fuse_ll_debug_print_in_hdr(in_hdr);
 #endif
 
@@ -1196,7 +1196,7 @@ static int fuse_ll_rename(struct fuse_ll *f_ll,
     const char *name = ((char *) fuse_in_iov[1].iov_base) + sizeof(*in_rename);
     const char *new_name = (const char *) name + strlen(name) + 1;
 
-#ifdef FUSE_LL_DEBUG
+#ifdef DEBUG_ENABLED
     fuse_ll_debug_print_in_hdr(in_hdr);
     printf("* name: %s\n", name);
     printf("* newdir: %lu\n", in_rename->newdir);
@@ -1231,7 +1231,7 @@ static int fuse_ll_rename2(struct fuse_ll *f_ll,
     const char *name = ((char *) fuse_in_iov[1].iov_base) + sizeof(*in_rename2);
     const char *new_name = (const char *) name + strlen(name) + 1;
 
-#ifdef FUSE_LL_DEBUG
+#ifdef DEBUG_ENABLED
     fuse_ll_debug_print_in_hdr(in_hdr);
     printf("* name: %s\n", name);
     printf("* newdir: %lu\n", in_rename2->newdir);
@@ -1266,7 +1266,7 @@ static int fuse_ll_read(struct fuse_ll *f_ll,
 
     struct fuse_read_in *in_read = (struct fuse_read_in *) fuse_in_iov[1].iov_base;
 
-#ifdef FUSE_LL_DEBUG
+#ifdef DEBUG_ENABLED
     fuse_ll_debug_print_in_hdr(in_hdr);
     printf("* fh: %lu\n", in_read->fh);
     printf("* offset: %lu\n", in_read->offset);
@@ -1309,7 +1309,7 @@ static int fuse_ll_write(struct fuse_ll *f_ll,
     struct fuse_write_in *in_write = (struct fuse_write_in *) fuse_in_iov[1].iov_base;
     struct fuse_write_out *out_write = (struct fuse_write_out *) fuse_out_iov[1].iov_base;
 
-#ifdef FUSE_LL_DEBUG
+#ifdef DEBUG_ENABLED
     fuse_ll_debug_print_in_hdr(in_hdr);
     printf("* fh: %lu\n", in_write->fh);
     printf("* offset: %lu\n", in_write->offset);
@@ -1364,7 +1364,7 @@ static int fuse_ll_mknod(struct fuse_ll *f_ll,
 
     struct fuse_entry_out *out_entry = (struct fuse_entry_out *) fuse_out_iov[1].iov_base;
 
-#ifdef FUSE_LL_DEBUG
+#ifdef DEBUG_ENABLED
     fuse_ll_debug_print_in_hdr(in_hdr);
     printf("* name: %s\n", in_name);
     printf("* mode: %u\n", in_mknod->mode);
@@ -1395,7 +1395,7 @@ static int fuse_ll_mkdir(struct fuse_ll *f_ll,
     const char *in_name = ((char *) fuse_in_iov[1].iov_base) + sizeof(struct fuse_mkdir_in);
     struct fuse_entry_out *out_entry = (struct fuse_entry_out *) fuse_out_iov[1].iov_base;
 
-#ifdef FUSE_LL_DEBUG
+#ifdef DEBUG_ENABLED
     fuse_ll_debug_print_in_hdr(in_hdr);
     printf("* name: %s\n", in_name);
     printf("* mode: %u\n", in_mkdir->mode);
@@ -1430,7 +1430,7 @@ static int fuse_ll_symlink(struct fuse_ll *f_ll,
     const char *in_link_name = in_name + strlen(in_name)+1;
     struct fuse_entry_out *out_entry = (struct fuse_entry_out *) fuse_out_iov[1].iov_base;
 
-#ifdef FUSE_LL_DEBUG
+#ifdef DEBUG_ENABLED
     struct fuse_link_in *in_link = (struct fuse_link_in *) in_link_name + strlen(in_link_name) + 1;
     fuse_ll_debug_print_in_hdr(in_hdr);
     printf("* name: %s\n", in_name);
@@ -1464,7 +1464,7 @@ static int fuse_ll_statfs(struct fuse_ll *f_ll,
 
     struct fuse_statfs_out *out_statfs = (struct fuse_statfs_out *) fuse_out_iov[1].iov_base;
 
-#ifdef FUSE_LL_DEBUG
+#ifdef DEBUG_ENABLED
     fuse_ll_debug_print_in_hdr(in_hdr);
 #endif
 
@@ -1494,7 +1494,7 @@ static int fuse_ll_unlink(struct fuse_ll *f_ll,
 
     const char *in_name = (const char *) fuse_in_iov[1].iov_base;
 
-#ifdef FUSE_LL_DEBUG
+#ifdef DEBUG_ENABLED
     fuse_ll_debug_print_in_hdr(in_hdr);
     printf("* name: %s\n", in_name);
 #endif
@@ -1547,7 +1547,7 @@ static int fuse_ll_fallocate(struct fuse_ll *f_ll,
 
     struct fuse_fallocate_in *in_fallocate = (struct fuse_fallocate_in *) fuse_in_iov[1].iov_base;
 
-#ifdef FUSE_LL_DEBUG
+#ifdef DEBUG_ENABLED
     fuse_ll_debug_print_in_hdr(in_hdr);
     printf("* fh: %lu\n", in_fallocate->fh);
     printf("* offset: %lu\n", in_fallocate->offset);
@@ -1602,7 +1602,7 @@ static void fuse_ll_map_emu(struct virtiofs_emu_ll_params *emu_ll_params) {
 int virtiofs_emu_fuse_ll_main(struct fuse_ll_operations *ops, struct virtiofs_emu_params *emu_params,
                               void *user_data, bool debug)
 {
-#ifdef FUSE_LL_DEBUG
+#ifdef DEBUG_ENABLED
     printf("virtiofs_emu_fuse_ll is running in DEBUG mode\n");
 #endif
 
