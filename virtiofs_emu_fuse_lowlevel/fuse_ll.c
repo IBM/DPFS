@@ -26,6 +26,7 @@
 #include <sys/fcntl.h>
 #include <linux/fuse.h>
 
+#include "config.h"
 #include "common.h"
 #include "fuse_ll.h"
 #include "debug.h"

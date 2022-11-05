@@ -159,7 +159,7 @@ void fuse_ll_debug_print_in_hdr(struct fuse_in_header *in) {
 	      op_name = "UNKNOWN FUSE operation!";
 	      break;
 	}
-	printf("-- %s:%u --\n", op_name, in->opcode);
+	printf("-- %s:%lu --\n", op_name, in->unique);
 	printf("* nodeid: %lu\n", in->nodeid);
 	printf("* uid, gid, pid: %u, %u, %u\n", in->uid, in->gid, in->pid);
 }
