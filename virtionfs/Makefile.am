@@ -16,6 +16,6 @@ virtionfs_LDADD = $(srcdir)/../virtiofs_emu_fuse_lowlevel/libvirtiofs_emu_fuse_l
 virtionfs_CFLAGS  = $(BASE_CFLAGS) -I$(srcdir)/../../src -I$(srcdir)/../virtiofs_emu_fuse_lowlevel \
                 -I$(srcdir)/../virtiofs_emu_lowlevel $(SNAP_CFLAGS) \
                 -I/usr/local/include
-virtionfs_SOURCES = virtionfs.c helpers.c mpool.c nfs_v4.c inode.c main.c
+virtionfs_SOURCES = virtionfs.c helpers.c mpool.c nfs_v4.c inode.c ftimer.c main.c
 
 endif

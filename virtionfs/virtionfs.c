@@ -16,11 +16,19 @@
 
 #include "virtionfs.h"
 #include "mpool.h"
+#include "config.h"
+#ifdef LATENCY_MEASURING_ENABLED
+#include "ftimer.h"
+#endif
 #include "helpers.h"
 #include "nfs_v4.h"
 #include "fuse_ll.h"
 #include "inode.h"
 
+#ifdef LATENCY_MEASURING_ENABLED
+static struct ftimer ft[FUSE_REMOVEMAPPING+1];
+static uint64_t op_calls[FUSE_REMOVEMAPPING+1];
+#endif
 
 // static uint32_t supported_attrs_attributes[1] = {
 //     (1 << FATTR4_SUPPORTED_ATTRS)
@@ -188,6 +196,7 @@ int setattr(struct fuse_session *se, struct virtionfs *vnfs,
 struct lookup_cb_data {
     struct snap_fs_dev_io_done_ctx *cb;
     struct virtionfs *vnfs;
+
     struct fuse_out_header *out_hdr;
     struct fuse_entry_out *out_entry;
 };
@@ -195,8 +204,12 @@ struct lookup_cb_data {
 void lookup_cb(struct rpc_context *rpc, int status, void *data,
                        void *private_data) {
     struct lookup_cb_data *cb_data = (struct lookup_cb_data *)private_data;
+#ifdef LATENCY_MEASURING_ENABLED
+    ft_stop(&ft[FUSE_GETATTR]);
+#endif
     struct virtionfs *vnfs = cb_data->vnfs;
     COMPOUND4res *res = data;
+
 
     if (status != RPC_STATUS_SUCCESS) {
     	fprintf(stderr, "RPC with NFS:LOOKUP unsuccessful: rpc error=%d\n", status);
@@ -292,6 +305,11 @@ int lookup(struct fuse_session *se, struct virtionfs *vnfs,
     args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
     args.argarray.argarray_val = op;
 
+#ifdef LATENCY_MEASURING_ENABLED
+    op_calls[FUSE_LOOKUP]++;
+    ft_start(&ft[FUSE_LOOKUP]);
+#endif
+
     if (rpc_nfs4_compound_async(vnfs->rpc, lookup_cb, &args, cb_data) != 0) {
     	fprintf(stderr, "Failed to send nfs4 LOOKUP request\n");
         mpool_free(vnfs->p, cb_data);
@@ -305,6 +323,7 @@ int lookup(struct fuse_session *se, struct virtionfs *vnfs,
 struct getattr_cb_data {
     struct snap_fs_dev_io_done_ctx *cb;
     struct virtionfs *vnfs;
+
     struct fuse_out_header *out_hdr;
     struct fuse_attr_out *out_attr;
 };
@@ -312,6 +331,9 @@ struct getattr_cb_data {
 void getattr_cb(struct rpc_context *rpc, int status, void *data,
                        void *private_data) {
     struct getattr_cb_data *cb_data = (struct getattr_cb_data *)private_data;
+#ifdef LATENCY_MEASURING_ENABLED
+    ft_stop(&ft[FUSE_GETATTR]);
+#endif
     struct virtionfs *vnfs = cb_data->vnfs;
     COMPOUND4res *res = data;
 
@@ -377,6 +399,10 @@ int getattr(struct fuse_session *se, struct virtionfs *vnfs,
     args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
     args.argarray.argarray_val = op;
 
+#ifdef LATENCY_MEASURING_ENABLED
+    op_calls[FUSE_GETATTR]++;
+    ft_start(&ft[FUSE_GETATTR]);
+#endif
     if (rpc_nfs4_compound_async(vnfs->rpc, getattr_cb, &args, cb_data) != 0) {
     	fprintf(stderr, "Failed to send nfs4 GETATTR request\n");
         mpool_free(vnfs->p, cb_data);
@@ -477,6 +503,19 @@ static int lookup_true_rootfh(struct virtionfs *vnfs, struct fuse_out_header *ou
     return 0;
 }
 
+int destroy(struct fuse_session *se, struct virtionfs *vnfs,
+            struct fuse_in_header *in_hdr,
+            struct fuse_out_header *out_hdr,
+            struct snap_fs_dev_io_done_ctx *cb)
+{
+#ifdef LATENCY_MEASURING_ENABLED
+    for (int i = 1; i < FUSE_REMOVEMAPPING+1; i++) {
+        printf("OP(%d) took %lu on average\n", i, ft_get_nsec(&ft[i]) / op_calls[i]);
+    }
+#endif
+    return 0;
+}
+
 int init(struct fuse_session *se, struct virtionfs *vnfs,
     struct fuse_in_header *in_hdr, struct fuse_init_in *in_init,
     struct fuse_conn_info *conn, struct fuse_out_header *out_hdr,
@@ -524,6 +563,13 @@ int init(struct fuse_session *se, struct virtionfs *vnfs,
         goto ret_errno;
     }
 
+#ifdef LATENCY_MEASURING_ENABLED
+    for (int i = 0; i < FUSE_REMOVEMAPPING+1; i++) {
+        ft_init(&ft[i]);
+        op_calls[i] = 0;
+    }
+#endif
+
     if (lookup_true_rootfh(vnfs, out_hdr, cb)) {
         printf("Failed to retreive root filehandle for the given export\n");
         out_hdr->error = -ENOENT;
@@ -550,6 +596,7 @@ void virtionfs_assign_ops(struct fuse_ll_operations *ops) {
     // its parameter to the dir ops like readdir
     ops->opendir = NULL;
     //ops->setattr = (typeof(ops->setattr)) setattr;
+    ops->destroy = (typeof(ops->destroy)) destroy;
 }
 
 void virtionfs_main(char *server, char *export,
