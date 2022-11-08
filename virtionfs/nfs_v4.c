@@ -121,7 +121,7 @@ uint64_t nfs_pntoh64(const uint32_t *buf)
     return val;
 }
 
-int nfs_get_ugid(struct nfs_context *nfs, const char *buf, int slen, int is_user)
+static int nfs_get_ugid(const char *buf, int slen, int is_user)
 {
     int ugid = 0;
 
@@ -145,7 +145,7 @@ int nfs_get_ugid(struct nfs_context *nfs, const char *buf, int slen, int is_user
         return -1;                                                      \
     }
 
-int nfs_parse_attributes(struct nfs_context *nfs, struct fuse_attr *attr,
+int nfs_parse_attributes(struct fuse_attr *attr,
     const char *buf, int len)
 {
     int type, slen, pad;
@@ -207,7 +207,7 @@ int nfs_parse_attributes(struct nfs_context *nfs, struct fuse_attr *attr,
     len -= 4;
     pad = (4 - (slen & 0x03)) & 0x03;
     CHECK_GETATTR_BUF_SPACE(len, slen);
-    attr->uid = nfs_get_ugid(nfs, buf, slen, 1);
+    attr->uid = nfs_get_ugid(buf, slen, 1);
     buf += slen;
     CHECK_GETATTR_BUF_SPACE(len, pad);
     buf += pad;
@@ -219,7 +219,7 @@ int nfs_parse_attributes(struct nfs_context *nfs, struct fuse_attr *attr,
     len -= 4;
     pad = (4 - (slen & 0x03)) & 0x03;
     CHECK_GETATTR_BUF_SPACE(len, slen);
-    attr->gid = nfs_get_ugid(nfs, buf, slen, 0);
+    attr->gid = nfs_get_ugid(buf, slen, 0);
     buf += slen;
     CHECK_GETATTR_BUF_SPACE(len, pad);
     buf += pad;
@@ -260,6 +260,59 @@ int nfs_parse_attributes(struct nfs_context *nfs, struct fuse_attr *attr,
     // We don't have information for this field
     attr->rdev = 0;
     
+    return 0;
+}
+
+int nfs_parse_statfs(struct fuse_kstatfs *stat, const char *buf, int len)
+{
+    uint64_t u64;
+    uint32_t u32;
+
+    stat->bsize   = NFS_BLKSIZE;
+    stat->frsize  = NFS_BLKSIZE;
+
+    /* Files Free */
+    CHECK_GETATTR_BUF_SPACE(len, 8);
+    memcpy(&u64, buf, 8);
+    stat->ffree = nfs_ntoh64(u64);
+    buf += 8;
+    len -= 8;
+
+    /* Files Total */
+    CHECK_GETATTR_BUF_SPACE(len, 8);
+    memcpy(&u64, buf, 8);
+    stat->files = nfs_ntoh64(u64);
+    buf += 8;
+    len -= 8;
+
+    /* Max Name */
+    CHECK_GETATTR_BUF_SPACE(len, 4);
+    memcpy(&u32, buf, 4);
+    stat->namelen = ntohl(u32);
+    buf += 4;
+    len -= 4;
+
+    /* Space Avail */
+    CHECK_GETATTR_BUF_SPACE(len, 8);
+    memcpy(&u64, buf, 8);
+    stat->bavail = nfs_ntoh64(u64) / stat->frsize;
+    buf += 8;
+    len -= 8;
+
+    /* Space Free */
+    CHECK_GETATTR_BUF_SPACE(len, 8);
+    memcpy(&u64, buf, 8);
+    stat->bfree = nfs_ntoh64(u64) / stat->frsize;
+    buf += 8;
+    len -= 8;
+
+    /* Space Total */
+    CHECK_GETATTR_BUF_SPACE(len, 8);
+    memcpy(&u64, buf, 8);
+    stat->blocks = nfs_ntoh64(u64) / stat->frsize;
+    buf += 8;
+    len -= 8;
+
     return 0;
 }
 

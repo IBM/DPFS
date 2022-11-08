@@ -19,9 +19,8 @@ int nfs4_op_lookup(nfs_argop4 *op, const char *path);
 uint64_t nfs_hton64(uint64_t val);
 uint64_t nfs_ntoh64(uint64_t val);
 uint64_t nfs_pntoh64(const uint32_t *buf);
-int nfs_get_ugid(struct nfs_context *nfs, const char *buf, int slen, int is_user);
-int nfs_parse_attributes(struct nfs_context *nfs, struct fuse_attr *attr,
-    const char *buf, int len);
+int nfs_parse_attributes(struct fuse_attr *attr, const char *buf, int len);
+int nfs_parse_statfs(struct fuse_kstatfs *stat, const char *buf, int len);
 int32_t nfs_error_to_fuse_error(nfsstat4 status);
 
 #endif // NFS_V4_H

@@ -7,6 +7,7 @@
 
 #include <sys/time.h>
 #include <nfsc/libnfs.h>
+#include <nfsc/libnfs-raw.h>
 #include <nfsc/libnfs-raw-nfs4.h>
 #include <linux/fuse.h>
 #include <arpa/inet.h>
@@ -14,15 +15,14 @@
 #include <stdatomic.h>
 #include <err.h>
 
+#include "fuse_ll.h"
+#include "config.h"
 #include "virtionfs.h"
 #include "mpool.h"
-#include "config.h"
 #ifdef LATENCY_MEASURING_ENABLED
 #include "ftimer.h"
 #endif
-#include "helpers.h"
 #include "nfs_v4.h"
-#include "fuse_ll.h"
 #include "inode.h"
 
 #ifdef LATENCY_MEASURING_ENABLED
@@ -45,6 +45,24 @@ static uint32_t standard_attributes[2] = {
      1 << (FATTR4_TIME_ACCESS - 32) |
      1 << (FATTR4_TIME_METADATA - 32) |
      1 << (FATTR4_TIME_MODIFY - 32))
+};
+
+// uint64_t blocks = FATTR4_SPACE_TOTAL / BLOCKSIZE
+// uint64_t bfree; = FATTR4_SPACE_FREE / BLOCKSIE
+// uint64_t bavail; = FATTR4_SPACE_AVAIL / BLOCKSIZE
+// uint64_t files; = FATTR4_FILES_TOTAL
+// uint64_t ffree; = FATTR4_FILES_FREE
+// uint32_t bsize; = BLOCKSIZE
+// uint32_t namelen; = FATTR4_MAXNAME
+// uint32_t frsize; = BLOCKSIZE
+
+static uint32_t statfs_attributes[2] = {
+        (1 << FATTR4_FILES_FREE |
+         1 << FATTR4_FILES_TOTAL |
+         1 << FATTR4_MAXNAME),
+        (1 << (FATTR4_SPACE_AVAIL - 32) |
+         1 << (FATTR4_SPACE_FREE - 32) |
+         1 << (FATTR4_SPACE_TOTAL - 32))
 };
 
 int nfs4_op_putfh(struct virtionfs *vnfs, nfs_argop4 *op, uint64_t nodeid)
@@ -95,7 +113,7 @@ void setattr_cb(struct rpc_context *rpc, int status, void *data,
     GETATTR4resok *resok = &res->resarray.resarray_val[1].nfs_resop4_u.opgetattr.GETATTR4res_u.resok4;
     char *attrs = resok->obj_attributes.attr_vals.attrlist4_val;
     u_int attrs_len = resok->obj_attributes.attr_vals.attrlist4_len;
-    if (nfs_parse_attributes(vnfs->nfs, &cb_data->out_attr->attr, attrs, attrs_len) == 0) {
+    if (nfs_parse_attributes(&cb_data->out_attr->attr, attrs, attrs_len) == 0) {
         // This is not filled in by the parse_attributes fn
         cb_data->out_attr->attr.rdev = 0;
         cb_data->out_attr->attr_valid = 0;
@@ -193,6 +211,92 @@ int setattr(struct fuse_session *se, struct virtionfs *vnfs,
     return EWOULDBLOCK;
 }
 
+struct statfs_cb_data {
+    struct snap_fs_dev_io_done_ctx *cb;
+    struct virtionfs *vnfs;
+
+    struct fuse_out_header *out_hdr;
+    struct fuse_statfs_out *stat;
+};
+
+void statfs_cb(struct rpc_context *rpc, int status, void *data,
+                       void *private_data) {
+    struct statfs_cb_data *cb_data = (struct statfs_cb_data *)private_data;
+#ifdef LATENCY_MEASURING_ENABLED
+    ft_stop(&ft[FUSE_STATFS]);
+#endif
+    struct virtionfs *vnfs = cb_data->vnfs;
+    COMPOUND4res *res = data;
+
+    if (status != RPC_STATUS_SUCCESS) {
+    	fprintf(stderr, "RPC with NFS:LOOKUP unsuccessful: rpc error=%d\n", status);
+        cb_data->out_hdr->error = -EREMOTEIO;
+        goto ret;
+    }
+    if (res->status != NFS4_OK) {
+        cb_data->out_hdr->error = -nfs_error_to_fuse_error(res->status);
+    	fprintf(stderr, "NFS:LOOKUP unsuccessful: nfs error=%d, fuse error=%d\n",
+                res->status, cb_data->out_hdr->error);
+        goto ret;
+    }
+
+    GETATTR4resok *resok = &res->resarray.resarray_val[1].nfs_resop4_u.opgetattr.GETATTR4res_u.resok4;
+    char *attrs = resok->obj_attributes.attr_vals.attrlist4_val;
+    u_int attrs_len = resok->obj_attributes.attr_vals.attrlist4_len;
+    if (nfs_parse_statfs(&cb_data->stat->st, attrs, attrs_len) != 0) {
+        cb_data->out_hdr->error = -EREMOTEIO;
+    }
+
+ret:;
+    struct snap_fs_dev_io_done_ctx *cb = cb_data->cb;
+    mpool_free(vnfs->p, cb_data);
+    cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb->user_arg);
+}
+
+
+int statfs (struct fuse_session *se, struct virtionfs *vnfs,
+            struct fuse_in_header *in_hdr,
+            struct fuse_out_header *out_hdr, struct fuse_statfs_out *stat,
+            struct snap_fs_dev_io_done_ctx *cb)
+{
+    struct statfs_cb_data *cb_data = mpool_alloc(vnfs->p);
+    if (!cb_data) {
+        out_hdr->error = -ENOMEM;
+        return 0;
+    }
+
+    cb_data->cb = cb;
+    cb_data->vnfs = vnfs;
+    cb_data->out_hdr = out_hdr;
+    cb_data->stat = stat;
+
+    COMPOUND4args args;
+    nfs_argop4 op[2];
+
+    // PUTFH
+    nfs4_op_putfh(vnfs, &op[0], FUSE_ROOT_ID);
+    // GETATTR
+    nfs4_op_getattr(&op[1], statfs_attributes, 2);
+
+    memset(&args, 0, sizeof(args));
+    args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
+    args.argarray.argarray_val = op;
+
+#ifdef LATENCY_MEASURING_ENABLED
+    op_calls[FUSE_STATFS]++;
+    ft_start(&ft[FUSE_STATFS]);
+#endif
+
+    if (rpc_nfs4_compound_async(vnfs->rpc, statfs_cb, &args, cb_data) != 0) {
+    	fprintf(stderr, "Failed to send FUSE:statfs request\n");
+        mpool_free(vnfs->p, cb_data);
+        out_hdr->error = -EREMOTEIO;
+        return 0;
+    }
+
+    return EWOULDBLOCK;
+}
+
 struct lookup_cb_data {
     struct snap_fs_dev_io_done_ctx *cb;
     struct virtionfs *vnfs;
@@ -225,7 +329,7 @@ void lookup_cb(struct rpc_context *rpc, int status, void *data,
 
     char *attrs = res->resarray.resarray_val[2].nfs_resop4_u.opgetattr.GETATTR4res_u.resok4.obj_attributes.attr_vals.attrlist4_val;
     u_int attrs_len = res->resarray.resarray_val[2].nfs_resop4_u.opgetattr.GETATTR4res_u.resok4.obj_attributes.attr_vals.attrlist4_len;
-    int ret = nfs_parse_attributes(vnfs->nfs, &cb_data->out_entry->attr, attrs, attrs_len);
+    int ret = nfs_parse_attributes(&cb_data->out_entry->attr, attrs, attrs_len);
     if (ret != 0) {
         cb_data->out_hdr->error = -EREMOTEIO;
         goto ret;
@@ -352,7 +456,7 @@ void getattr_cb(struct rpc_context *rpc, int status, void *data,
     GETATTR4resok *resok = &res->resarray.resarray_val[1].nfs_resop4_u.opgetattr.GETATTR4res_u.resok4;
     char *attrs = resok->obj_attributes.attr_vals.attrlist4_val;
     u_int attrs_len = resok->obj_attributes.attr_vals.attrlist4_len;
-    if (nfs_parse_attributes(vnfs->nfs, &cb_data->out_attr->attr, attrs, attrs_len) == 0) {
+    if (nfs_parse_attributes(&cb_data->out_attr->attr, attrs, attrs_len) == 0) {
         // This is not filled in by the parse_attributes fn
         cb_data->out_attr->attr.rdev = 0;
         cb_data->out_attr->attr_valid = 0;
@@ -510,7 +614,7 @@ int destroy(struct fuse_session *se, struct virtionfs *vnfs,
 {
 #ifdef LATENCY_MEASURING_ENABLED
     for (int i = 1; i < FUSE_REMOVEMAPPING+1; i++) {
-        printf("OP(%d) took %lu on average\n", i, ft_get_nsec(&ft[i]) / op_calls[i]);
+        printf("OP(%d) took %lu averaged over %lu calls\n", i, ft_get_nsec(&ft[i]) / op_calls[i], op_calls[i]);
     }
 #endif
     return 0;
@@ -596,6 +700,7 @@ void virtionfs_assign_ops(struct fuse_ll_operations *ops) {
     // its parameter to the dir ops like readdir
     ops->opendir = NULL;
     //ops->setattr = (typeof(ops->setattr)) setattr;
+    ops->statfs = (typeof(ops->statfs)) statfs;
     ops->destroy = (typeof(ops->destroy)) destroy;
 }
 

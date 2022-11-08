@@ -1,4 +1,6 @@
 /*
+ * This is only really useful if you do a single run, as then the number
+ * is somewhat representativ
 #
 # Copyright 2022- IBM Inc. All rights reserved
 # SPDX-License-Identifier: LGPL-2.1-or-later
@@ -83,7 +85,8 @@ static void convert_statfs(const struct statvfs *stbuf,
     kstatfs->bavail	 = stbuf->f_bavail;
     kstatfs->files	 = stbuf->f_files;
     kstatfs->ffree	 = stbuf->f_ffree;
-    kstatfs->namelen = stbuf->f_namemax;
+    // Maximum FILEname length
+    kstatfs->namelen     = stbuf->f_namemax;
 }
 
 static void fill_entry(struct fuse_entry_out *arg,
