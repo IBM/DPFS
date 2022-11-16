@@ -11,6 +11,9 @@
 #include <linux/fuse.h>
 #include <nfsc/libnfs-raw-nfs4.h>
 
+// Empirically verified with Linux kernel 5.11
+#define NFS_ROOT_FILEID 2
+
 int nfs4_clone_fh(nfs_fh4 *dst, nfs_fh4 *src);
 int nfs4_find_op(COMPOUND4res *res, int op);
 int nfs4_fill_create_attrs(struct fuse_in_header *in_hdr, uint32_t flags, fattr4 *attr);

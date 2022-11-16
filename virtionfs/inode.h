@@ -17,10 +17,12 @@
 
 struct inode {
     // We return the fileid as fuse_ino_t
-    // This is only possible under the assumption that FUSE_ROOT_ID
-    // is not in the possible range of fileids
-    // this assumption is made because empirically we found that the
-    // actual NFS root (aka PUTROOTFH) has fileid=2 and others only
+    // This is only possible under the assumption that FUSE_ROOT_ID (=1)
+    // is not in the possible range of fileids.
+    // This is needed because the host will always use FUSE_ROOT_ID,
+    // the value of which we can't change.
+    // This assumption is made because empirically we found that the
+    // NFS root (aka PUTROOTFH) has fileid=2 and others only
     // above that.
     // AKA this assumption is NOT battle-tested
     fattr4_fileid fileid;
