@@ -12,6 +12,7 @@
 #include <linux/fuse.h>
 #include <arpa/inet.h>
 #include <poll.h>
+#include <fcntl.h>
 #include <stdatomic.h>
 #include <err.h>
 
@@ -33,6 +34,7 @@ static uint64_t op_calls[FUSE_REMOVEMAPPING+1];
 // static uint32_t supported_attrs_attributes[1] = {
 //     (1 << FATTR4_SUPPORTED_ATTRS)
 // };
+
 static uint32_t standard_attributes[2] = {
     (1 << FATTR4_TYPE |
      1 << FATTR4_SIZE |
@@ -47,14 +49,15 @@ static uint32_t standard_attributes[2] = {
      1 << (FATTR4_TIME_MODIFY - 32))
 };
 
-// uint64_t blocks = FATTR4_SPACE_TOTAL / BLOCKSIZE
-// uint64_t bfree; = FATTR4_SPACE_FREE / BLOCKSIE
-// uint64_t bavail; = FATTR4_SPACE_AVAIL / BLOCKSIZE
-// uint64_t files; = FATTR4_FILES_TOTAL
-// uint64_t ffree; = FATTR4_FILES_FREE
-// uint32_t bsize; = BLOCKSIZE
-// uint32_t namelen; = FATTR4_MAXNAME
-// uint32_t frsize; = BLOCKSIZE
+// How statfs_attributes maps to struct fuse_kstatfs
+// blocks  = FATTR4_SPACE_TOTAL / BLOCKSIZE
+// bfree   = FATTR4_SPACE_FREE / BLOCKSIE
+// bavail  = FATTR4_SPACE_AVAIL / BLOCKSIZE
+// files   = FATTR4_FILES_TOTAL
+// ffree   = FATTR4_FILES_FREE
+// bsize   = BLOCKSIZE
+// namelen = FATTR4_MAXNAME
+// frsize  = BLOCKSIZE
 
 static uint32_t statfs_attributes[2] = {
         (1 << FATTR4_FILES_FREE |
@@ -64,6 +67,13 @@ static uint32_t statfs_attributes[2] = {
          1 << (FATTR4_SPACE_FREE - 32) |
          1 << (FATTR4_SPACE_TOTAL - 32))
 };
+
+static uint32_t fileid_attributes[2] = {
+        1 << FATTR4_FILEID,
+        0
+};
+
+// supported_attributes = standard_attributes | statfs_attributes
 
 int nfs4_op_putfh(struct virtionfs *vnfs, nfs_argop4 *op, uint64_t nodeid)
 {
@@ -80,6 +90,128 @@ int nfs4_op_putfh(struct virtionfs *vnfs, nfs_argop4 *op, uint64_t nodeid)
         op->nfs_argop4_u.opputfh.object.nfs_fh4_len = i->fh.nfs_fh4_len;
     }
     return 1;
+}
+
+struct open_cb_data {
+    struct snap_fs_dev_io_done_ctx *cb;
+    struct virtionfs *vnfs;
+    struct fuse_out_header *out_hdr;
+    struct fuse_open_out *out_open;
+};
+
+void vopen_cb(struct rpc_context *rpc, int status, void *data,
+                       void *private_data) {
+    struct open_cb_data *cb_data = (struct open_cb_data *)private_data;
+#ifdef LATENCY_MEASURING_ENABLED
+    ft_stop(&ft[FUSE_OPEN]);
+#endif
+    struct virtionfs *vnfs = cb_data->vnfs;
+    COMPOUND4res *res = data;
+
+    if (status != RPC_STATUS_SUCCESS) {
+    	fprintf(stderr, "RPC with NFS:OPEN unsuccessful: rpc error=%d\n", status);
+        cb_data->out_hdr->error = -EREMOTEIO;
+        goto ret;
+    }
+    if (res->status != NFS4_OK) {
+        cb_data->out_hdr->error = -nfs_error_to_fuse_error(res->status);
+    	fprintf(stderr, "NFS:OPEN unsuccessful: nfs error=%d, fuse error=%d\n",
+                res->status, cb_data->out_hdr->error);
+        goto ret;
+    }
+
+    GETATTR4resok *resok = &res->resarray.resarray_val[2].nfs_resop4_u.opgetattr.GETATTR4res_u.resok4;
+    char *attrs = resok->obj_attributes.attr_vals.attrlist4_val;
+    u_int attrs_len = resok->obj_attributes.attr_vals.attrlist4_len;
+    uint64_t fileid;
+    if (nfs_parse_fileid(&fileid, attrs, attrs_len) != 0) {
+        cb_data->out_hdr->error = -EREMOTEIO;
+    }
+
+    struct inode *i = inode_table_getsert(vnfs->inodes, fileid);
+    if (!i) {
+        fprintf(stderr, "Couldn't getsert inode with fileid: %lu\n", fileid);
+        cb_data->out_hdr->error = -ENOMEM;
+        goto ret;
+    }
+    atomic_fetch_add(&i->nlookup, 1);
+
+    if (i->fh.nfs_fh4_len == 0) {
+        // Retreive the FH from the res and set it in the inode
+        // it's stored in the inode for later use ex. getattr when it uses the nodeid
+        int ret = nfs4_clone_fh(&i->fh, &res->resarray.resarray_val[3].nfs_resop4_u.opgetfh.GETFH4res_u.resok4.object);
+        if (ret < 0) {
+            fprintf(stderr, "Couldn't clone fh with fileid: %lu\n", fileid);
+            cb_data->out_hdr->error = -ENOMEM;
+            goto ret;
+        }
+    }
+
+ret:;
+    struct snap_fs_dev_io_done_ctx *cb = cb_data->cb;
+    mpool_free(vnfs->p, cb_data);
+    cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb->user_arg);
+}
+
+
+int vopen(struct fuse_session *se, struct virtionfs *vnfs,
+         struct fuse_in_header *in_hdr, struct fuse_open_in *in_open,
+         struct fuse_out_header *out_hdr, struct fuse_open_out *out_open,
+         struct snap_fs_dev_io_done_ctx *cb)
+{
+    struct open_cb_data *cb_data = mpool_alloc(vnfs->p);
+    if (!cb_data) {
+        out_hdr->error = -ENOMEM;
+        return 0;
+    }
+
+    cb_data->cb = cb;
+    cb_data->vnfs = vnfs;
+    cb_data->out_hdr = out_hdr;
+    cb_data->out_open = out_open;
+
+    COMPOUND4args args;
+    nfs_argop4 op[4];
+
+    // PUTFH the root
+    int fh_found = nfs4_op_putfh(vnfs, &op[0], in_hdr->nodeid);
+    if (!fh_found) {
+    	fprintf(stderr, "Invalid nodeid supplied to open\n");
+        mpool_free(vnfs->p, cb_data);
+        out_hdr->error = -ENOENT;
+        return 0;
+    }
+    // OPEN
+    op[1].argop = OP_OPEN;
+    openflag4 *open = &op[1].nfs_argop4_u.opopen.openhow;
+    if (in_open->flags & O_CREAT) {
+        open->opentype = OPEN4_CREATE;
+        open->openflag4_u.how.mode = UNCHECKED4;
+        nfs4_fill_create_attrs(in_hdr, in_open->flags, &open->openflag4_u.how.createhow4_u.createattrs);
+    } else {
+        open->opentype = OPEN4_NOCREATE;
+    }
+    // GETATTR attributes
+    nfs4_op_getattr(&op[2], fileid_attributes, 2);
+    op[3].argop = OP_GETFH;
+
+    memset(&args, 0, sizeof(args));
+    args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
+    args.argarray.argarray_val = op;
+
+#ifdef LATENCY_MEASURING_ENABLED
+    op_calls[FUSE_STATFS]++;
+    ft_start(&ft[FUSE_STATFS]);
+#endif
+
+    if (rpc_nfs4_compound_async(vnfs->rpc, vopen_cb, &args, cb_data) != 0) {
+    	fprintf(stderr, "Failed to send FUSE:open request\n");
+        mpool_free(vnfs->p, cb_data);
+        out_hdr->error = -EREMOTEIO;
+        return 0;
+    }
+
+    return EWOULDBLOCK;
 }
 
 struct setattr_cb_data {
@@ -99,13 +231,13 @@ void setattr_cb(struct rpc_context *rpc, int status, void *data,
     COMPOUND4res *res = data;
 
     if (status != RPC_STATUS_SUCCESS) {
-    	fprintf(stderr, "RPC with NFS:LOOKUP unsuccessful: rpc error=%d\n", status);
+    	fprintf(stderr, "RPC with NFS:SETATTR unsuccessful: rpc error=%d\n", status);
         cb_data->out_hdr->error = -EREMOTEIO;
         goto ret;
     }
     if (res->status != NFS4_OK) {
         cb_data->out_hdr->error = -nfs_error_to_fuse_error(res->status);
-    	fprintf(stderr, "NFS:LOOKUP unsuccessful: nfs error=%d, fuse error=%d\n",
+    	fprintf(stderr, "NFS:SETATTR unsuccessful: nfs error=%d, fuse error=%d\n",
                 res->status, cb_data->out_hdr->error);
         goto ret;
     }
@@ -273,9 +405,11 @@ int statfs (struct fuse_session *se, struct virtionfs *vnfs,
     COMPOUND4args args;
     nfs_argop4 op[2];
 
-    // PUTFH
-    nfs4_op_putfh(vnfs, &op[0], FUSE_ROOT_ID);
-    // GETATTR
+    // PUTFH the root
+    op[0].argop = OP_PUTFH;
+    op[0].nfs_argop4_u.opputfh.object.nfs_fh4_val = vnfs->rootfh.nfs_fh4_val;
+    op[0].nfs_argop4_u.opputfh.object.nfs_fh4_len = vnfs->rootfh.nfs_fh4_len;
+    // GETATTR statfs attributes
     nfs4_op_getattr(&op[1], statfs_attributes, 2);
 
     memset(&args, 0, sizeof(args));
@@ -699,6 +833,7 @@ void virtionfs_assign_ops(struct fuse_ll_operations *ops) {
     // NFS accepts the NFS:fh (received from a NFS:lookup==FUSE:lookup) as
     // its parameter to the dir ops like readdir
     ops->opendir = NULL;
+    ops->open = (typeof(ops->open)) vopen;
     //ops->setattr = (typeof(ops->setattr)) setattr;
     ops->statfs = (typeof(ops->statfs)) statfs;
     ops->destroy = (typeof(ops->destroy)) destroy;

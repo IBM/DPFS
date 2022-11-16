@@ -16,6 +16,13 @@
 #include <linux/fuse.h>
 #include <arpa/inet.h>
 
+static uint32_t create_attributes[2] = {
+    0,
+    (1 << (FATTR4_MODE - 32) |
+     1 << (FATTR4_OWNER - 32) |
+     1 << (FATTR4_OWNER_GROUP - 32))
+};
+
 int nfs4_clone_fh(nfs_fh4 *dst, nfs_fh4 *src) {
     dst->nfs_fh4_len = src->nfs_fh4_len;
     dst->nfs_fh4_val = malloc(dst->nfs_fh4_len);
@@ -37,6 +44,55 @@ int32_t nfs_error_to_fuse_error(nfsstat4 status) {
 }
 
 int fuse_stat_to_nfs_attrlist(int valid) { return 0;}
+
+#define CREATE_ATTRS_SIZE 32 + 32 + sizeof(uint32_t)
+int nfs4_fill_create_attrs(struct fuse_in_header *in_hdr, uint32_t flags, fattr4 *attr) {
+    attr->attr_vals.attrlist4_val = malloc(CREATE_ATTRS_SIZE);
+
+    if (!attr->attr_vals.attrlist4_val) {
+        return -ENOMEM;
+    }
+    attr->attr_vals.attrlist4_len = 64 + sizeof(uint32_t);
+    memset(attr->attr_vals.attrlist4_val, 0, attr->attr_vals.attrlist4_len);
+
+    attr->attrmask.bitmap4_val = create_attributes;
+    attr->attrmask.bitmap4_len = 2;
+    
+    int i = 0;
+    char *str = attr->attr_vals.attrlist4_val;
+
+    /* Mode */
+    uint32_t mode = S_IFREG | S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP;
+    mode = htonl(mode);
+    memcpy(str, &mode, sizeof(uint32_t));
+    i += sizeof(uint32_t);
+
+    /* UID */
+    int l = snprintf(&str[i + 4], CREATE_ATTRS_SIZE - 4 - i,
+                     "%d", in_hdr->uid);
+    if (l < 0) {
+        return -1;
+    }
+    uint32_t len = htonl(l);
+    /* UID length prefix */
+    memcpy(&str[i], &len, sizeof(uint32_t));
+    i += 4 + l;
+    i = (i + 3) & ~0x03;
+
+    /* GID */
+    l = snprintf(&str[i + 4], CREATE_ATTRS_SIZE - 4 - i,
+                 "%d", in_hdr->gid);
+    if (l < 0) {
+        return -1;
+    }
+    len = htonl(l);
+    /* GID length prefix */
+    memcpy(&str[i], &len, sizeof(uint32_t));
+    i += 4 + l;
+    i = (i + 3) & ~0x03;
+
+    return 0;
+}
 
 /* Functions taken and modified from libnfs/lib/nfs_v4.c
  * commit: 2678dfecd9c797991b7768490929b1478f339809 */
@@ -312,6 +368,16 @@ int nfs_parse_statfs(struct fuse_kstatfs *stat, const char *buf, int len)
     stat->blocks = nfs_ntoh64(u64) / stat->frsize;
     buf += 8;
     len -= 8;
+
+    return 0;
+}
+
+int nfs_parse_fileid(uint64_t *fileid,
+    const char *buf, int len)
+{
+    /* Fileid aka Inode */
+    CHECK_GETATTR_BUF_SPACE(len, 8);
+    *fileid = nfs_pntoh64((uint32_t *)(void *)buf);
 
     return 0;
 }
