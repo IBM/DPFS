@@ -9,6 +9,7 @@
 #define VIRTIONFS_VIRTIONFS_H
 
 #include <stdbool.h>
+#include <stdatomic.h>
 #include <sys/time.h>
 #include <nfsc/libnfs.h>
 #include <nfsc/libnfs-raw-nfs4.h>
@@ -30,7 +31,11 @@ struct virtionfs {
     uint64_t timeout_sec;
     uint32_t timeout_nsec;
 
+    atomic_uint open_owner_counter;
+
     nfs_fh4 rootfh;
+    clientid4 clientid;
+    verifier4 setclientid_confirm;
 };
 
 #endif // VIRTIONFS_VIRTIONFS_H

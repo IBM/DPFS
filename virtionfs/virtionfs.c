@@ -381,6 +381,8 @@ struct open_cb_data {
     struct virtionfs *vnfs;
     struct fuse_out_header *out_hdr;
     struct fuse_open_out *out_open;
+
+    uint32_t owner_val;
 };
 
 void vopen_cb(struct rpc_context *rpc, int status, void *data,
@@ -475,13 +477,32 @@ int vopen(struct fuse_session *se, struct virtionfs *vnfs,
         out_hdr->error = -ENOENT;
         return 0;
     }
+
     // OPEN
     op[1].argop = OP_OPEN;
     memset(&op[1].nfs_argop4_u.opopen, 0, sizeof(OPEN4args));
+    // Tell the server we want to open the file of the current FH
+    // instead of a filename
+    // NFS 4.1 specific feature
+    op[1].nfs_argop4_u.opopen.claim.claim = CLAIM_FH;
+    // Don't use this, so set to zero
+    op[1].nfs_argop4_u.opopen.seqid = 0;
+    // Windows share stuff, this means normal operation in UNIX world
+    op[1].nfs_argop4_u.opopen.share_access = OPEN4_SHARE_ACCESS_BOTH;
+    op[1].nfs_argop4_u.opopen.share_deny = OPEN4_SHARE_DENY_NONE;
+    // Set the owner with the clientid and the unique owner number (32 bit should be safe)
+    // The clientid stems from the setclientid() handshake
+    op[1].nfs_argop4_u.opopen.owner.clientid = vnfs->clientid;
+    op[1].nfs_argop4_u.opopen.owner.owner.owner_len = sizeof(vnfs->open_owner_counter);
+    cb_data->owner_val = atomic_fetch_add(&vnfs->open_owner_counter, 1);
+    op[1].nfs_argop4_u.opopen.owner.owner.owner_val = (char *) &cb_data->owner_val;
+
+    // Now we determine whether to CREATE or NOCREATE
     openflag4 *openhow = &op[1].nfs_argop4_u.opopen.openhow;
     if (in_open->flags & O_CREAT) {
         openhow->opentype = OPEN4_CREATE;
         openhow->openflag4_u.how.mode = UNCHECKED4;
+        // Sets the UID, GID and mode in the attrs of the new file
         nfs4_fill_create_attrs(in_hdr, in_open->flags, &openhow->openflag4_u.how.createhow4_u.createattrs);
     } else {
         openhow->opentype = OPEN4_NOCREATE;
@@ -949,6 +970,82 @@ int getattr(struct fuse_session *se, struct virtionfs *vnfs,
     return EWOULDBLOCK;
 }
 
+static void
+setclientid_cb_2(struct rpc_context *rpc, int status, void *data,
+                void *private_data)
+{
+    COMPOUND4res *res = data;
+    
+    if (status != RPC_STATUS_SUCCESS) {
+        fprintf(stderr, "RPC with NFS:COMMIT unsuccessful: rpc error=%d\n", status);
+        return;
+    }
+    if (res->status != NFS4_OK) {
+        fprintf(stderr, "NFS:COMMIT unsuccessful: nfs error=%d\n", res->status);
+        return;
+    }
+
+    printf("NFS clientid has been set\n");
+}
+
+static void
+setclientid_cb_1(struct rpc_context *rpc, int status, void *data,
+                 void *private_data)
+{
+    struct virtionfs *vnfs = private_data;
+    COMPOUND4res *res = data;
+    
+    if (status != RPC_STATUS_SUCCESS) {
+    	fprintf(stderr, "RPC with NFS:setclientid unsuccessful: rpc error=%d\n", status);
+        return;
+    }
+    if (res->status != NFS4_OK) {
+    	fprintf(stderr, "NFS:setclientid unsuccessful: nfs error=%d\n", res->status);
+        return;
+    }
+    
+    COMPOUND4args args;
+    nfs_argop4 op[1];
+    memset(&args, 0, sizeof(args));
+    args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
+    args.argarray.argarray_val = op;
+    
+    SETCLIENTID4resok *scidresok;
+    scidresok = &res->resarray.resarray_val[0].nfs_resop4_u.opsetclientid.SETCLIENTID4res_u.resok4;
+    vnfs->clientid = scidresok->clientid;
+    memcpy(vnfs->setclientid_confirm, scidresok->setclientid_confirm, NFS4_VERIFIER_SIZE);
+    
+    nfs4_op_setclientid_confirm(&op[0], vnfs->clientid, vnfs->setclientid_confirm);
+           
+    if (rpc_nfs4_compound_async(vnfs->rpc, setclientid_cb_2, &args, vnfs) != 0) {
+    	fprintf(stderr, "Failed to send NFS:setclientid_confirm request\n");
+        return;
+    }
+}
+
+static verifier4 verifier = {'0', '1', '2', '3', '4', '5', '6', '7'};
+
+int setclientid(struct virtionfs *vnfs)
+{
+    COMPOUND4args args;
+    nfs_argop4 op[1];
+    memset(&args, 0, sizeof(args));
+    args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
+    args.argarray.argarray_val = op;
+    
+    memset(op, 0, sizeof(op));
+
+    nfs4_op_setclientid(&op[0], verifier, "virtionfs");
+    
+    if (rpc_nfs4_compound_async(vnfs->rpc, setclientid_cb_1, &args, vnfs) != 0) {
+    	fprintf(stderr, "Failed to send NFS:setclientid request\n");
+        return -1;
+    }
+
+    return 0;
+}
+
+
 struct lookup_true_rootfh_cb_data {
     struct virtionfs *vnfs;
     struct fuse_out_header *out_hdr;
@@ -979,11 +1076,16 @@ static void lookup_true_rootfh_cb(struct rpc_context *rpc, int status, void *dat
     // Store the filehandle of the TRUE root (aka the filehandle of where our export lives)
     nfs4_clone_fh(&vnfs->rootfh, &res->resarray.resarray_val[i].nfs_resop4_u.opgetfh.GETFH4res_u.resok4.object); 
 
+    printf("True root has been found\n");
+
 ret:
     free(cb_data->export);
-    struct snap_fs_dev_io_done_ctx *cb = cb_data->cb;
+    //struct snap_fs_dev_io_done_ctx *cb = cb_data->cb;
     mpool_free(vnfs->p, cb_data);
-    cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb->user_arg);
+    // We don't do this anymore since init returns instantly before
+    // the true root has been found
+    // TODO when init timeout is fixed, enable this callback again
+    //cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb->user_arg);
 }
 
 static int lookup_true_rootfh(struct virtionfs *vnfs, struct fuse_out_header *out_hdr,
@@ -1106,8 +1208,21 @@ int init(struct fuse_session *se, struct virtionfs *vnfs,
     }
 #endif
 
+    // These two upcomming function calls are in a way redundant...
+    // The libnfs mount function also retrieves the true rootfh for the export
+    // and it negotiates a clientid with the server.
+    // HOWever it does not expose this to libnfs consumers.
+    // So we either have to copy their header into this project, which would
+    // be painful plus give headaches with local libnfs versioning
+    // or we simply redo these same two procedures at startup ourselves to
+    // retreive and set the values. Luckily this cost is fixed once per startup.
     if (lookup_true_rootfh(vnfs, out_hdr, cb)) {
         printf("Failed to retreive root filehandle for the given export\n");
+        out_hdr->error = -ENOENT;
+        return 0;
+    }
+    if (setclientid(vnfs)) {
+        printf("Failed to set the NFS clientid\n");
         out_hdr->error = -ENOENT;
         return 0;
     }

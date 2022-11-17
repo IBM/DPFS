@@ -17,6 +17,8 @@
 int nfs4_clone_fh(nfs_fh4 *dst, nfs_fh4 *src);
 int nfs4_find_op(COMPOUND4res *res, int op);
 int nfs4_fill_create_attrs(struct fuse_in_header *in_hdr, uint32_t flags, fattr4 *attr);
+int nfs4_op_setclientid(nfs_argop4 *op, verifier4 verifier, const char *client_name);
+int nfs4_op_setclientid_confirm(struct nfs_argop4 *op, uint64_t clientid, verifier4 verifier);
 int nfs4_op_getattr(nfs_argop4 *op, uint32_t *attributes, int count);
 int nfs4_op_lookup(nfs_argop4 *op, const char *path);
 

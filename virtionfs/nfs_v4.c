@@ -97,6 +97,44 @@ int nfs4_fill_create_attrs(struct fuse_in_header *in_hdr, uint32_t flags, fattr4
 /* Functions taken and modified from libnfs/lib/nfs_v4.c
  * commit: 2678dfecd9c797991b7768490929b1478f339809 */
 
+int nfs4_op_setclientid(nfs_argop4 *op, verifier4 verifier, const char *client_name)
+{
+        SETCLIENTID4args *scidargs;
+
+        op[0].argop = OP_SETCLIENTID;
+        scidargs = &op[0].nfs_argop4_u.opsetclientid;
+        memcpy(scidargs->client.verifier, verifier, sizeof(verifier4));
+        scidargs->client.id.id_len = strlen(client_name);
+        scidargs->client.id.id_val = (char *) client_name;
+        /* TODO: Decide what we should do here. As long as we only
+         * expose a single FD to the application we will not be able to
+         * do NFSv4 callbacks easily.
+         * Just give it garbage for now until we figure out how we should
+         * solve this. Until then we will just have to avoid doing things
+         * that require a callback.
+         * ( Clients (i.e. Linux) ignore this anyway and just call back to
+         *   the originating address and program anyway. )
+         */
+        scidargs->callback.cb_program = 0; /* NFS4_CALLBACK */
+        scidargs->callback.cb_location.r_netid = "tcp";
+        scidargs->callback.cb_location.r_addr = "0.0.0.0.0.0";
+        scidargs->callback_ident = 0x00000001;
+
+        return 1;
+}
+
+int nfs4_op_setclientid_confirm(struct nfs_argop4 *op, uint64_t clientid, verifier4 verifier)
+{
+        SETCLIENTID_CONFIRM4args *scidcargs;
+
+        op[0].argop = OP_SETCLIENTID_CONFIRM;
+        scidcargs = &op[0].nfs_argop4_u.opsetclientid_confirm;
+        scidcargs->clientid = clientid;
+        memcpy(scidcargs->setclientid_confirm, verifier, NFS4_VERIFIER_SIZE);
+
+        return 1;
+}
+
 int nfs4_find_op(COMPOUND4res *res, int op)
 {
     int i;
