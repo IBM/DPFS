@@ -1055,19 +1055,16 @@ struct lookup_true_rootfh_cb_data {
 
 static void lookup_true_rootfh_cb(struct rpc_context *rpc, int status, void *data,
                        void *private_data) {
-    struct lookup_true_rootfh_cb_data *cb_data = private_data;
-    struct virtionfs *vnfs = cb_data->vnfs;
+    struct virtionfs *vnfs = private_data;
     COMPOUND4res *res = data;
 
     if (status != RPC_STATUS_SUCCESS) {
     	fprintf(stderr, "RPC with NFS:LOOKUP_TRUE_ROOTFH unsuccessful: rpc error=%d\n", status);
-        goto ret;
+        return;
     }
     if (res->status != NFS4_OK) {
-        cb_data->out_hdr->error = -nfs_error_to_fuse_error(res->status);
-    	fprintf(stderr, "NFS:LOOKUP_TRUE_ROOTFH unsuccessful: nfs error=%d, fuse error=%d\n",
-                res->status, cb_data->out_hdr->error);
-        goto ret;
+    	fprintf(stderr, "NFS:LOOKUP_TRUE_ROOTFH unsuccessful: nfs error=%d", res->status);
+        return;
     }
 
     int i = nfs4_find_op(res, OP_GETFH);
@@ -1077,32 +1074,11 @@ static void lookup_true_rootfh_cb(struct rpc_context *rpc, int status, void *dat
     nfs4_clone_fh(&vnfs->rootfh, &res->resarray.resarray_val[i].nfs_resop4_u.opgetfh.GETFH4res_u.resok4.object); 
 
     printf("True root has been found\n");
-
-ret:
-    free(cb_data->export);
-    //struct snap_fs_dev_io_done_ctx *cb = cb_data->cb;
-    mpool_free(vnfs->p, cb_data);
-    // We don't do this anymore since init returns instantly before
-    // the true root has been found
-    // TODO when init timeout is fixed, enable this callback again
-    //cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb->user_arg);
 }
 
-static int lookup_true_rootfh(struct virtionfs *vnfs, struct fuse_out_header *out_hdr,
-    struct snap_fs_dev_io_done_ctx *cb)
+static int lookup_true_rootfh(struct virtionfs *vnfs)
 {
-    struct lookup_true_rootfh_cb_data *cb_data = mpool_alloc(vnfs->p);
-    if (!cb_data) {
-        out_hdr->error = -ENOMEM;
-        return 0;
-    }
-
-    cb_data->cb = cb;
-    cb_data->vnfs = vnfs;
-    cb_data->out_hdr = out_hdr;
-
     char *export = strdup(vnfs->export);
-    cb_data->export = export;
     int export_len = strlen(export);
     // Chop off the last slash, this is to count the correct number
     // of path elements
@@ -1132,9 +1108,8 @@ static int lookup_true_rootfh(struct virtionfs *vnfs, struct fuse_out_header *ou
     args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
     args.argarray.argarray_val = op;
 
-    if (rpc_nfs4_compound_async(vnfs->rpc, lookup_true_rootfh_cb, &args, cb_data) != 0) {
+    if (rpc_nfs4_compound_async(vnfs->rpc, lookup_true_rootfh_cb, &args, vnfs) != 0) {
     	fprintf(stderr, "Failed to send nfs4 LOOKUP request\n");
-        mpool_free(vnfs->p, cb_data);
         return -1;
     }
 
@@ -1216,7 +1191,7 @@ int init(struct fuse_session *se, struct virtionfs *vnfs,
     // be painful plus give headaches with local libnfs versioning
     // or we simply redo these same two procedures at startup ourselves to
     // retreive and set the values. Luckily this cost is fixed once per startup.
-    if (lookup_true_rootfh(vnfs, out_hdr, cb)) {
+    if (lookup_true_rootfh(vnfs)) {
         printf("Failed to retreive root filehandle for the given export\n");
         out_hdr->error = -ENOENT;
         return 0;
@@ -1229,9 +1204,10 @@ int init(struct fuse_session *se, struct virtionfs *vnfs,
 
     // TODO WARNING
     // By returning 0, we allow the host to imediately start sending us requests,
-    // even though the lookup_true_rootfh might not be done yet
+    // even though the lookup_true_rootfh or setclientid might not be done yet
+    // or even fail!
     // This introduces a race condition, where if the rootfh is not found yet
-    // virtionfs will crash horribly
+    // or there is no clientid virtionfs will crash horribly
     return 0;
 ret_errno:
     if (ret == -1)
