@@ -92,6 +92,94 @@ int nfs4_op_putfh(struct virtionfs *vnfs, nfs_argop4 *op, uint64_t nodeid)
     return 1;
 }
 
+struct fsync_cb_data {
+    struct snap_fs_dev_io_done_ctx *cb;
+    struct virtionfs *vnfs;
+
+    struct fuse_out_header *out_hdr;
+    struct fuse_statfs_out *stat;
+};
+
+void vfsync_cb(struct rpc_context *rpc, int status, void *data,
+                       void *private_data) {
+#ifdef LATENCY_MEASURING_ENABLED
+    ft_stop(&ft[FUSE_FSYNC]);
+#endif
+    struct fsync_cb_data *cb_data = (struct fsync_cb_data *)private_data;
+    struct virtionfs *vnfs = cb_data->vnfs;
+    COMPOUND4res *res = data;
+
+    if (status != RPC_STATUS_SUCCESS) {
+    	fprintf(stderr, "RPC with NFS:COMMIT unsuccessful: rpc error=%d\n", status);
+        cb_data->out_hdr->error = -EREMOTEIO;
+        goto ret;
+    }
+    if (res->status != NFS4_OK) {
+        cb_data->out_hdr->error = -nfs_error_to_fuse_error(res->status);
+    	fprintf(stderr, "NFS:COMMIT unsuccessful: nfs error=%d, fuse error=%d\n",
+                res->status, cb_data->out_hdr->error);
+        goto ret;
+    }
+
+ret:;
+    struct snap_fs_dev_io_done_ctx *cb = cb_data->cb;
+    mpool_free(vnfs->p, cb_data);
+    cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb->user_arg);
+}
+
+
+// FUSE_FSYNC_FDATASYNC is not really adhered to, we always commit metadata
+int vfsync(struct fuse_session *se, struct virtionfs *vnfs,
+           struct fuse_in_header *in_hdr, struct fuse_fsync_in *in_fsync,
+           struct fuse_out_header *out_hdr,
+           struct snap_fs_dev_io_done_ctx *cb)
+{
+    struct fsync_cb_data *cb_data = mpool_alloc(vnfs->p);
+    if (!cb_data) {
+        out_hdr->error = -ENOMEM;
+        return 0;
+    }
+
+    cb_data->cb = cb;
+    cb_data->vnfs = vnfs;
+    cb_data->out_hdr = out_hdr;
+
+    COMPOUND4args args;
+    nfs_argop4 op[2];
+    memset(&args, 0, sizeof(args));
+    args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
+    args.argarray.argarray_val = op;
+
+    // PUTFH
+    int fh_found = nfs4_op_putfh(vnfs, &op[0], in_hdr->nodeid);
+    if (!fh_found) {
+    	fprintf(stderr, "Invalid nodeid supplied to fsync\n");
+        mpool_free(vnfs->p, cb_data);
+        out_hdr->error = -ENOENT;
+        return 0;
+    }
+    // COMMIT
+    op[1].argop = OP_COMMIT;
+    // Fuse doesn't provide offset and count for us, so we commit
+    // the whole file 🤷
+    op[1].nfs_argop4_u.opcommit.offset = 0;
+    op[1].nfs_argop4_u.opcommit.count = 0;
+
+#ifdef LATENCY_MEASURING_ENABLED
+    op_calls[FUSE_FSYNC]++;
+    ft_start(&ft[FUSE_FSYNC]);
+#endif
+
+    if (rpc_nfs4_compound_async(vnfs->rpc, vfsync_cb, &args, cb_data) != 0) {
+    	fprintf(stderr, "Failed to send NFS:commit request\n");
+        mpool_free(vnfs->p, cb_data);
+        out_hdr->error = -EREMOTEIO;
+        return 0;
+    }
+
+    return EWOULDBLOCK;
+}
+
 struct write_cb_data {
     struct snap_fs_dev_io_done_ctx *cb;
     struct virtionfs *vnfs;
@@ -261,7 +349,7 @@ int vread(struct fuse_session *se, struct virtionfs *vnfs,
     args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
     args.argarray.argarray_val = op;
 
-    // PUTFH the root
+    // PUTFH
     int fh_found = nfs4_op_putfh(vnfs, &op[0], in_hdr->nodeid);
     if (!fh_found) {
     	fprintf(stderr, "Invalid nodeid supplied to open\n");
@@ -332,15 +420,23 @@ void vopen_cb(struct rpc_context *rpc, int status, void *data,
     }
     atomic_fetch_add(&i->nlookup, 1);
 
+    nfs_fh4 *fh = &res->resarray.resarray_val[3].nfs_resop4_u.opgetfh.GETFH4res_u.resok4.object;
     if (i->fh.nfs_fh4_len == 0) {
         // Retreive the FH from the res and set it in the inode
         // it's stored in the inode for later use ex. getattr when it uses the nodeid
-        int ret = nfs4_clone_fh(&i->fh, &res->resarray.resarray_val[3].nfs_resop4_u.opgetfh.GETFH4res_u.resok4.object);
+        int ret = nfs4_clone_fh(&i->fh, fh);
         if (ret < 0) {
             fprintf(stderr, "Couldn't clone fh with fileid: %lu\n", fileid);
             cb_data->out_hdr->error = -ENOMEM;
             goto ret;
         }
+#ifdef DEBUG_ENABLED
+    } else {
+        // If the FH returned by the NFS compound != FH in the inode
+        if (i->fh.nfs_fh4_len != fh->nfs_fh4_len || memcmp(i->fh.nfs_fh4_val, fh->nfs_fh4_val, i->fh.nfs_fh4_len)) {
+            printf("%s, FH returned by the OPEN NFS compound != FH in the inode!\n", __func__);
+        }
+#endif
     }
 
 ret:;
@@ -381,13 +477,14 @@ int vopen(struct fuse_session *se, struct virtionfs *vnfs,
     }
     // OPEN
     op[1].argop = OP_OPEN;
-    openflag4 *open = &op[1].nfs_argop4_u.opopen.openhow;
+    memset(&op[1].nfs_argop4_u.opopen, 0, sizeof(OPEN4args));
+    openflag4 *openhow = &op[1].nfs_argop4_u.opopen.openhow;
     if (in_open->flags & O_CREAT) {
-        open->opentype = OPEN4_CREATE;
-        open->openflag4_u.how.mode = UNCHECKED4;
-        nfs4_fill_create_attrs(in_hdr, in_open->flags, &open->openflag4_u.how.createhow4_u.createattrs);
+        openhow->opentype = OPEN4_CREATE;
+        openhow->openflag4_u.how.mode = UNCHECKED4;
+        nfs4_fill_create_attrs(in_hdr, in_open->flags, &openhow->openflag4_u.how.createhow4_u.createattrs);
     } else {
-        open->opentype = OPEN4_NOCREATE;
+        openhow->opentype = OPEN4_NOCREATE;
     }
     // GETATTR attributes
     nfs4_op_getattr(&op[2], fileid_attributes, 2);
@@ -1037,6 +1134,11 @@ void virtionfs_assign_ops(struct fuse_ll_operations *ops) {
     ops->open = (typeof(ops->open)) vopen;
     ops->read = (typeof(ops->read)) vread;
     ops->write = (typeof(ops->write)) vwrite;
+    ops->fsync = (typeof(ops->fsync)) vfsync;
+    // NFS only does fsync(aka COMMIT) on files
+    ops->fsyncdir = NULL;
+    // The concept of flushing
+    ops->flush = NULL;
     //ops->setattr = (typeof(ops->setattr)) setattr;
     ops->statfs = (typeof(ops->statfs)) statfs;
     ops->destroy = (typeof(ops->destroy)) destroy;
