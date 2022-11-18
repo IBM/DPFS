@@ -481,21 +481,21 @@ int vopen(struct fuse_session *se, struct virtionfs *vnfs,
     // OPEN
     op[1].argop = OP_OPEN;
     memset(&op[1].nfs_argop4_u.opopen, 0, sizeof(OPEN4args));
-    // Tell the server we want to open the file of the current FH
-    // instead of a filename
-    // NFS 4.1 specific feature
-    op[1].nfs_argop4_u.opopen.claim.claim = CLAIM_FH;
-    // Don't use this, so set to zero
-    op[1].nfs_argop4_u.opopen.seqid = 0;
     // Windows share stuff, this means normal operation in UNIX world
     op[1].nfs_argop4_u.opopen.share_access = OPEN4_SHARE_ACCESS_BOTH;
     op[1].nfs_argop4_u.opopen.share_deny = OPEN4_SHARE_DENY_NONE;
+    // Don't use this because we don't do anything special with the share, so set to zero
+    op[1].nfs_argop4_u.opopen.seqid = 0;
     // Set the owner with the clientid and the unique owner number (32 bit should be safe)
     // The clientid stems from the setclientid() handshake
     op[1].nfs_argop4_u.opopen.owner.clientid = vnfs->clientid;
-    op[1].nfs_argop4_u.opopen.owner.owner.owner_len = sizeof(vnfs->open_owner_counter);
     cb_data->owner_val = atomic_fetch_add(&vnfs->open_owner_counter, 1);
     op[1].nfs_argop4_u.opopen.owner.owner.owner_val = (char *) &cb_data->owner_val;
+    op[1].nfs_argop4_u.opopen.owner.owner.owner_len = sizeof(vnfs->open_owner_counter);
+    // Tell the server we want to open the file of the current FH
+    // instead of a filename
+    // NFS 4.1 specific feature, but vital here
+    op[1].nfs_argop4_u.opopen.claim.claim = CLAIM_FH;
 
     // Now we determine whether to CREATE or NOCREATE
     openflag4 *openhow = &op[1].nfs_argop4_u.opopen.openhow;
@@ -985,7 +985,7 @@ setclientid_cb_2(struct rpc_context *rpc, int status, void *data,
         return;
     }
 
-    printf("NFS clientid has been set\n");
+    printf("NFS clientid has been set, NFS handshake [1/2]\n");
 }
 
 static void
@@ -1010,13 +1010,14 @@ setclientid_cb_1(struct rpc_context *rpc, int status, void *data,
     args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
     args.argarray.argarray_val = op;
     
-    SETCLIENTID4resok *scidresok;
-    scidresok = &res->resarray.resarray_val[0].nfs_resop4_u.opsetclientid.SETCLIENTID4res_u.resok4;
-    vnfs->clientid = scidresok->clientid;
-    memcpy(vnfs->setclientid_confirm, scidresok->setclientid_confirm, NFS4_VERIFIER_SIZE);
+    SETCLIENTID4resok *ok;
+    ok = &res->resarray.resarray_val[0].nfs_resop4_u.opsetclientid.SETCLIENTID4res_u.resok4;
+    // Set the clientid that we just negotiated with the server
+    vnfs->clientid = ok->clientid;
     
-    nfs4_op_setclientid_confirm(&op[0], vnfs->clientid, vnfs->setclientid_confirm);
-           
+    // Now we confirm that clientid with the same verifier as we used in the previous step
+    nfs4_op_setclientid_confirm(&op[0], vnfs->clientid, ok->setclientid_confirm);
+
     if (rpc_nfs4_compound_async(vnfs->rpc, setclientid_cb_2, &args, vnfs) != 0) {
     	fprintf(stderr, "Failed to send NFS:setclientid_confirm request\n");
         return;
@@ -1035,6 +1036,7 @@ int setclientid(struct virtionfs *vnfs)
     
     memset(op, 0, sizeof(op));
 
+    // TODO make this verifier random and the client name somewhat unique too
     nfs4_op_setclientid(&op[0], verifier, "virtionfs");
     
     if (rpc_nfs4_compound_async(vnfs->rpc, setclientid_cb_1, &args, vnfs) != 0) {
@@ -1073,7 +1075,7 @@ static void lookup_true_rootfh_cb(struct rpc_context *rpc, int status, void *dat
     // Store the filehandle of the TRUE root (aka the filehandle of where our export lives)
     nfs4_clone_fh(&vnfs->rootfh, &res->resarray.resarray_val[i].nfs_resop4_u.opgetfh.GETFH4res_u.resok4.object); 
 
-    printf("True root has been found\n");
+    printf("True root has been found, NFS handshake [1/2]\n");
 }
 
 static int lookup_true_rootfh(struct virtionfs *vnfs)
