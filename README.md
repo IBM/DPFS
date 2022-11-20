@@ -20,6 +20,9 @@ Reflects a local filesystem via the POSIX FS API by implementing the lowlevel FU
 Reflects a local filesystem via the POSIX FS API by implementing the lowlevel FUSE API in `virtiofs_emu_fuse_lowlevel`, with asynchronous reads and writes using Linux AIO systemcalls. Not fully tested.
 ### `virtionfs`
 Reflects a NFS folder with the asynchronous userspace NFS library `libnfs` by implementing the lowlevel FUSE API in `virtiofs_emu_fuse_lowlevel`. Current work in progress. The Linux fuse implementation's FUSE:init timeout is too short for the full NFS connect handshake (RPC connect, setting clientid and resolving the filehandle of the export path), so wait for `virtionfs` to report that the handshake is done before starting a workload!
+
+The NFS server needs to support NFS 4.1 or greater!
+Since upstream `libnfs` does not fully implement yet, [this fork of `libnfs`](https://github.com/Peter-JanGootzen/libnfs) is needed, which implements the missing functionality we need.
 ### `list_emulation_managers`
 Standalone program to find out which RDMA devices have emulation capabilities
 

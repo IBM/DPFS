@@ -42,6 +42,7 @@
 #include <linux/fuse.h>
 #include <sys/stat.h>
 
+#include "virtio_fs_controller.h"
 #include "nvme_emu_log.h"
 #include "compiler.h"
 #include "mlnx_snap_pci_manager.h"
@@ -50,10 +51,13 @@
 struct virtiofs_emu_ll {
     struct virtio_fs_ctrl *snap_ctrl;
     virtiofs_emu_ll_handler_t handlers[VIRTIOFS_EMU_LL_FUSE_HANDLERS_LEN];
-    uint32_t handlers_call_cnts[VIRTIOFS_EMU_LL_FUSE_HANDLERS_LEN];
     void *user_data;
     useconds_t polling_interval_usec;
     uint32_t nthreads;
+
+#ifdef DEBUG_ENABLED
+    uint32_t handlers_call_cnts[VIRTIOFS_EMU_LL_FUSE_HANDLERS_LEN];
+#endif
 };
 
 static volatile int keep_running = 1;
@@ -145,7 +149,7 @@ void virtiofs_emu_ll_loop(struct virtiofs_emu_ll *emu)
     struct virtio_fs_ctrl *ctrl = emu->snap_ctrl;
     useconds_t interval = emu->polling_interval_usec;
     
-    if (emu->nthreads == 0 || emu->nthreads == 1)
+    if (emu->nthreads <= 1)
         virtiofs_emu_ll_loop_singlethreaded(ctrl, interval, 0);
     else { // Multithreaded mode
         virtiofs_emu_ll_loop_multithreaded(ctrl, emu->nthreads, interval);
@@ -172,7 +176,6 @@ static int virtiofs_emu_ll_handle_fuse_req(struct virtio_fs_ctrl *ctrl,
                             struct iovec *fuse_out_iov, int out_iovcnt,
                             struct snap_fs_dev_io_done_ctx *done_ctx) {
     struct virtiofs_emu_ll *emu = ctrl->virtiofs_emu;
-    //printf("virtiofs_emu_ll_handle_fuse__req - in_iovcnt: %d, out_iovcnt: %d\n", in_iovcnt, out_iovcnt);
 
     if (in_iovcnt < 1 || in_iovcnt < 1) {
         fprintf(stderr, "virtiofs_emu_ll_handle_fuse_req: iovecs in and out don't both atleast one iovec\n");
@@ -180,22 +183,25 @@ static int virtiofs_emu_ll_handle_fuse_req(struct virtio_fs_ctrl *ctrl,
     }
 
     struct fuse_in_header *in_hdr = (struct fuse_in_header *) fuse_in_iov[0].iov_base;
-    //printf("FUSE opcode = %u\n", in_hdr->opcode);
 
     if (in_hdr->opcode < 1 || in_hdr->opcode > VIRTIOFS_EMU_LL_FUSE_MAX_OPCODE) {
         fprintf(stderr, "Invalid FUSE opcode!\n");
         return -EINVAL;
     } else {
-        if (in_hdr->opcode == FUSE_INIT) {
-            memset(&emu->handlers_call_cnts, 0, sizeof(emu->handlers_call_cnts));
-        }
         virtiofs_emu_ll_handler_t h = emu->handlers[in_hdr->opcode];
-        emu->handlers_call_cnts[in_hdr->opcode]++;
         if (h == NULL) {
             h = virtiofs_emu_ll_fuse_unknown;
         }
         // Actually call the handler that was provided
         int ret = h(emu->user_data, fuse_in_iov, in_iovcnt, fuse_out_iov, out_iovcnt, done_ctx);
+#ifdef DEBUG_ENABLED
+        // Only log the number of calls with single threading, not thread safe
+        if (emu->nthreads <= 1) {
+            if (in_hdr->opcode == FUSE_INIT) {
+                memset(&emu->handlers_call_cnts, 0, sizeof(emu->handlers_call_cnts));
+            }
+            emu->handlers_call_cnts[in_hdr->opcode]++;
+        }
         if (ret == 0 && out_iovcnt > 0 &&
             fuse_out_iov[0].iov_len >= sizeof(struct fuse_out_header))
         {
@@ -204,6 +210,7 @@ static int virtiofs_emu_ll_handle_fuse_req(struct virtio_fs_ctrl *ctrl,
                 fprintf(stderr, "FUSE OP(%d) request ERROR=%d, %s\n", in_hdr->opcode,
                     out_hdr->error, strerror(-out_hdr->error));
         }
+#endif
         return ret;
     }
 }
@@ -286,11 +293,15 @@ out:
 
 void virtiofs_emu_ll_destroy(struct virtiofs_emu_ll *emu) {
     printf("VirtIO-FS destroy controller %s\n", emu->snap_ctrl->sctx->context->device->name);
+
+#ifdef DEBUG_ENABLED
     printf("Opcode call counts:\n");
     for (uint32_t i = 0; i < VIRTIOFS_EMU_LL_FUSE_MAX_OPCODE; i++) {
         if (emu->handlers_call_cnts[i])
             printf("OP %u : %u\n", i, emu->handlers_call_cnts[i]);
     }
+
+#endif
 
     virtio_fs_ctrl_destroy(emu->snap_ctrl);
     mlnx_snap_pci_manager_clear();
