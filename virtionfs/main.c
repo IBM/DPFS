@@ -41,9 +41,8 @@ int main(int argc, char **argv)
                 export = optarg;
                 break;
             default: /* '?' */
-                usage(1);
+                usage();
                 exit(1);
-        // TODO add dir param
         }
     }
 

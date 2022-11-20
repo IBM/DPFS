@@ -68,27 +68,17 @@ static uint32_t statfs_attributes[2] = {
          1 << (FATTR4_SPACE_TOTAL - 32))
 };
 
-static uint32_t fileid_attributes[2] = {
-        1 << FATTR4_FILEID,
-        0
-};
-
 // supported_attributes = standard_attributes | statfs_attributes
 
 int nfs4_op_putfh(struct virtionfs *vnfs, nfs_argop4 *op, uint64_t nodeid)
 {
     op->argop = OP_PUTFH;
-    if (nodeid == FUSE_ROOT_ID) {
-        op->nfs_argop4_u.opputfh.object.nfs_fh4_val = vnfs->rootfh.nfs_fh4_val;
-        op->nfs_argop4_u.opputfh.object.nfs_fh4_len = vnfs->rootfh.nfs_fh4_len;
-    } else {
-        struct inode *i = inode_table_get(vnfs->inodes, nodeid);
-        if (!i) {
-            return 0;
-        }
-        op->nfs_argop4_u.opputfh.object.nfs_fh4_val = i->fh.nfs_fh4_val;
-        op->nfs_argop4_u.opputfh.object.nfs_fh4_len = i->fh.nfs_fh4_len;
+    struct inode *i = inode_table_get(vnfs->inodes, nodeid);
+    if (!i) {
+        return 0;
     }
+    op->nfs_argop4_u.opputfh.object.nfs_fh4_val = i->fh.nfs_fh4_val;
+    op->nfs_argop4_u.opputfh.object.nfs_fh4_len = i->fh.nfs_fh4_len;
     return 1;
 }
 
@@ -318,6 +308,7 @@ void vread_cb(struct rpc_context *rpc, int status, void *data,
                 .resok4.data.data_val;
     uint32_t len = res->resarray.resarray_val[1].nfs_resop4_u.opread.READ4res_u
                    .resok4.data.data_len;
+    // Fill the iov that we return to the host
     size_t read = iov_write_buf(cb_data->out_iov, buf, len);
     cb_data->out_hdr->len += read;
 
@@ -379,6 +370,9 @@ int vread(struct fuse_session *se, struct virtionfs *vnfs,
 struct open_cb_data {
     struct snap_fs_dev_io_done_ctx *cb;
     struct virtionfs *vnfs;
+
+    struct inode *i;
+
     struct fuse_out_header *out_hdr;
     struct fuse_open_out *out_open;
 
@@ -406,39 +400,26 @@ void vopen_cb(struct rpc_context *rpc, int status, void *data,
         goto ret;
     }
 
-    GETATTR4resok *resok = &res->resarray.resarray_val[2].nfs_resop4_u.opgetattr.GETATTR4res_u.resok4;
-    char *attrs = resok->obj_attributes.attr_vals.attrlist4_val;
-    u_int attrs_len = resok->obj_attributes.attr_vals.attrlist4_len;
-    uint64_t fileid;
-    if (nfs_parse_fileid(&fileid, attrs, attrs_len) != 0) {
-        cb_data->out_hdr->error = -EREMOTEIO;
-    }
+    struct inode *i = cb_data->i;
 
-    struct inode *i = inode_table_getsert(vnfs->inodes, fileid);
-    if (!i) {
-        fprintf(stderr, "Couldn't getsert inode with fileid: %lu\n", fileid);
-        cb_data->out_hdr->error = -ENOMEM;
+    nfs_fh4 *fh = &res->resarray.resarray_val[2].nfs_resop4_u.opgetfh.GETFH4res_u.resok4.object;
+#ifdef DEBUG_ENABLED
+    if (i->fh.nfs_fh4_len != fh->nfs_fh4_len || memcmp(i->fh.nfs_fh4_val, fh->nfs_fh4_val, i->fh.nfs_fh4_len)) {
+        printf("%s, FH returned by the OPEN NFS compound != FH in the inode!\n", __func__);
+    }
+#endif
+    // Store the FH from OPEN as the read write FH in the inode
+    int ret = nfs4_clone_fh(&i->fh_rw, fh);
+    if (ret < 0) {
+        cb_data->out_hdr->error = ret;
         goto ret;
     }
-    atomic_fetch_add(&i->nlookup, 1);
 
-    nfs_fh4 *fh = &res->resarray.resarray_val[3].nfs_resop4_u.opgetfh.GETFH4res_u.resok4.object;
-    if (i->fh.nfs_fh4_len == 0) {
-        // Retreive the FH from the res and set it in the inode
-        // it's stored in the inode for later use ex. getattr when it uses the nodeid
-        int ret = nfs4_clone_fh(&i->fh, fh);
-        if (ret < 0) {
-            fprintf(stderr, "Couldn't clone fh with fileid: %lu\n", fileid);
-            cb_data->out_hdr->error = -ENOMEM;
-            goto ret;
-        }
-#ifdef DEBUG_ENABLED
-    } else {
-        // If the FH returned by the NFS compound != FH in the inode
-        if (i->fh.nfs_fh4_len != fh->nfs_fh4_len || memcmp(i->fh.nfs_fh4_val, fh->nfs_fh4_val, i->fh.nfs_fh4_len)) {
-            printf("%s, FH returned by the OPEN NFS compound != FH in the inode!\n", __func__);
-        }
-#endif
+    OPEN4resok *openok = &res->resarray.resarray_val[1].nfs_resop4_u.opopen.OPEN4res_u.resok4;
+    if (openok->rflags & OPEN4_RESULT_CONFIRM) {
+        printf("TODO OPEN_CONFIRM must be sent\n");
+        cb_data->out_hdr->error = -EREMOTEIO;
+        goto ret;
     }
 
 ret:;
@@ -464,20 +445,22 @@ int vopen(struct fuse_session *se, struct virtionfs *vnfs,
     cb_data->out_open = out_open;
 
     COMPOUND4args args;
-    nfs_argop4 op[4];
+    nfs_argop4 op[3];
     memset(&args, 0, sizeof(args));
     args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
     args.argarray.argarray_val = op;
 
-    // PUTFH the root
-    int fh_found = nfs4_op_putfh(vnfs, &op[0], in_hdr->nodeid);
-    if (!fh_found) {
-    	fprintf(stderr, "Invalid nodeid supplied to open\n");
+    // PUTFH
+    struct inode *i = inode_table_get(vnfs->inodes, in_hdr->nodeid);
+    if (!i) {
+    	fprintf(stderr, "Invalid nodeid supplied to OPEN\n");
         mpool_free(vnfs->p, cb_data);
         out_hdr->error = -ENOENT;
         return 0;
     }
-
+    op[0].argop = OP_PUTFH;
+    op[0].nfs_argop4_u.opputfh.object.nfs_fh4_val = i->parent->fh.nfs_fh4_val;
+    op[0].nfs_argop4_u.opputfh.object.nfs_fh4_len = i->parent->fh.nfs_fh4_len;
     // OPEN
     op[1].argop = OP_OPEN;
     memset(&op[1].nfs_argop4_u.opopen, 0, sizeof(OPEN4args));
@@ -491,25 +474,20 @@ int vopen(struct fuse_session *se, struct virtionfs *vnfs,
     op[1].nfs_argop4_u.opopen.owner.clientid = vnfs->clientid;
     cb_data->owner_val = atomic_fetch_add(&vnfs->open_owner_counter, 1);
     op[1].nfs_argop4_u.opopen.owner.owner.owner_val = (char *) &cb_data->owner_val;
-    op[1].nfs_argop4_u.opopen.owner.owner.owner_len = sizeof(vnfs->open_owner_counter);
-    // Tell the server we want to open the file of the current FH
-    // instead of a filename
-    // NFS 4.1 specific feature, but vital here
-    op[1].nfs_argop4_u.opopen.claim.claim = CLAIM_FH;
+    op[1].nfs_argop4_u.opopen.owner.owner.owner_len = sizeof(cb_data->owner_val);
+    // Tell the server we want to open the file in the current FH dir (aka the parent dir)
+    // with the specified filename
+    op[1].nfs_argop4_u.opopen.claim.claim = CLAIM_NULL;
+    // TODO concurrency bug here if the parent gets changed underneath
+    // Don't know yet how that could happen
+    op[1].nfs_argop4_u.opopen.claim.open_claim4_u.file.utf8string_val = i->filename;
+    op[1].nfs_argop4_u.opopen.claim.open_claim4_u.file.utf8string_len = strlen(i->filename);
 
     // Now we determine whether to CREATE or NOCREATE
-    openflag4 *openhow = &op[1].nfs_argop4_u.opopen.openhow;
-    if (in_open->flags & O_CREAT) {
-        openhow->opentype = OPEN4_CREATE;
-        openhow->openflag4_u.how.mode = UNCHECKED4;
-        // Sets the UID, GID and mode in the attrs of the new file
-        nfs4_fill_create_attrs(in_hdr, in_open->flags, &openhow->openflag4_u.how.createhow4_u.createattrs);
-    } else {
-        openhow->opentype = OPEN4_NOCREATE;
-    }
+    assert(!(in_open->flags & O_CREAT));
+    op[1].nfs_argop4_u.opopen.openhow.opentype = OPEN4_NOCREATE;
     // GETATTR attributes
-    nfs4_op_getattr(&op[2], fileid_attributes, 2);
-    op[3].argop = OP_GETFH;
+    op[2].argop = OP_GETFH;
 
 #ifdef LATENCY_MEASURING_ENABLED
     op_calls[FUSE_OPEN]++;
@@ -754,6 +732,9 @@ struct lookup_cb_data {
     struct snap_fs_dev_io_done_ctx *cb;
     struct virtionfs *vnfs;
 
+    char *in_name;
+    struct inode *parent_inode;
+
     struct fuse_out_header *out_hdr;
     struct fuse_entry_out *out_entry;
 };
@@ -797,7 +778,7 @@ void lookup_cb(struct rpc_context *rpc, int status, void *data,
     cb_data->out_entry->nodeid = fileid;
     cb_data->out_entry->generation = 0;
 
-    struct inode *i = inode_table_getsert(vnfs->inodes, fileid);
+    struct inode *i = inode_table_getsert(vnfs->inodes, fileid, cb_data->in_name, cb_data->parent_inode);
     if (!i) {
         fprintf(stderr, "Couldn't getsert inode with fileid: %lu\n", fileid);
         cb_data->out_hdr->error = -ENOMEM;
@@ -843,13 +824,20 @@ int lookup(struct fuse_session *se, struct virtionfs *vnfs,
     nfs_argop4 op[4];
 
     // PUTFH
-    int fh_found = nfs4_op_putfh(vnfs, &op[0], in_hdr->nodeid);
-    if (!fh_found) {
+    op->argop = OP_PUTFH;
+    // Find the pi (parent inode)
+    struct inode *pi = inode_table_get(vnfs->inodes, in_hdr->nodeid);
+    if (!pi) {
     	fprintf(stderr, "Invalid nodeid supplied to LOOKUP\n");
         mpool_free(vnfs->p, cb_data);
         out_hdr->error = -ENOENT;
         return 0;
     }
+    op->nfs_argop4_u.opputfh.object.nfs_fh4_val = pi->fh.nfs_fh4_val;
+    op->nfs_argop4_u.opputfh.object.nfs_fh4_len = pi->fh.nfs_fh4_len;
+    // Store these two for later use when creating the inode
+    cb_data->parent_inode = pi;
+    cb_data->in_name = in_name;
     // LOOKUP
     nfs4_op_lookup(&op[1], in_name);
     // FH now replaced with in_name's FH
@@ -1012,7 +1000,7 @@ setclientid_cb_1(struct rpc_context *rpc, int status, void *data,
     
     SETCLIENTID4resok *ok;
     ok = &res->resarray.resarray_val[0].nfs_resop4_u.opsetclientid.SETCLIENTID4res_u.resok4;
-    // Set the clientid that we just negotiated with the server
+    // Set the clientid that the server gave us
     vnfs->clientid = ok->clientid;
     
     // Now we confirm that clientid with the same verifier as we used in the previous step
@@ -1073,7 +1061,9 @@ static void lookup_true_rootfh_cb(struct rpc_context *rpc, int status, void *dat
     assert(i >= 0);
 
     // Store the filehandle of the TRUE root (aka the filehandle of where our export lives)
-    nfs4_clone_fh(&vnfs->rootfh, &res->resarray.resarray_val[i].nfs_resop4_u.opgetfh.GETFH4res_u.resok4.object); 
+    struct inode *rooti = inode_new(FUSE_ROOT_ID, NULL, NULL);
+    nfs4_clone_fh(&rooti->fh, &res->resarray.resarray_val[i].nfs_resop4_u.opgetfh.GETFH4res_u.resok4.object); 
+    inode_table_insert(vnfs->inodes, rooti);
 
     printf("True root has been found, NFS handshake [1/2]\n");
 }
@@ -1136,14 +1126,9 @@ int init(struct fuse_session *se, struct virtionfs *vnfs,
     struct fuse_conn_info *conn, struct fuse_out_header *out_hdr,
     struct snap_fs_dev_io_done_ctx *cb)
 {
-    if (conn->capable & FUSE_CAP_EXPORT_SUPPORT)
-        conn->want |= FUSE_CAP_EXPORT_SUPPORT;
-
-    if ((vnfs->timeout_sec || vnfs->timeout_nsec) && conn->capable & FUSE_CAP_WRITEBACK_CACHE)
-        conn->want |= FUSE_CAP_WRITEBACK_CACHE;
-
-    if (conn->capable & FUSE_CAP_FLOCK_LOCKS)
-        conn->want |= FUSE_CAP_FLOCK_LOCKS;
+    // TODO reenable when implementing flock()
+    // if (conn->capable & FUSE_CAP_FLOCK_LOCKS)
+    //     conn->want |= FUSE_CAP_FLOCK_LOCKS;
 
     // FUSE_CAP_SPLICE_READ is enabled in libfuse3 by default,
     // see do_init() in in fuse_lowlevel.c
@@ -1151,31 +1136,34 @@ int init(struct fuse_session *se, struct virtionfs *vnfs,
     conn->want &= ~FUSE_CAP_SPLICE_READ;
     conn->want &= ~FUSE_CAP_SPLICE_WRITE;
 
-    int ret;
-    if (in_hdr->uid != 0 && in_hdr->gid != 0) {
-        ret = seteuid(in_hdr->uid);
-        if (ret == -1) {
-            warn("%s: Could not set uid of fuser to %d", __func__, in_hdr->uid);
-            goto ret_errno;
-        }
-        ret = setegid(in_hdr->gid);
-        if (ret == -1) {
-            warn("%s: Could not set gid of fuser to %d", __func__, in_hdr->gid);
-            goto ret_errno;
-        }
-    } else {
-        printf("%s, init was not supplied with a non-zero uid and gid. "
-        "Thus all operations will go through the name of uid %d and gid %d\n", __func__, getuid(), getgid());
+    vnfs->nfs = nfs_init_context();
+    if (vnfs->nfs == NULL) {
+        warn("Failed to init nfs context\n");
+        out_hdr->error = -EREMOTEIO;
+        return 0;
+    }
+    nfs_set_version(vnfs->nfs, NFS_V4);
+    vnfs->rpc = nfs_get_rpc_context(vnfs->nfs);
+
+    // TODO FUSE:init always supplies uid=0 and gid=0,
+    // so only setting the uid and gid once in the init is not sufficient
+    // as in subsoquent operations different uid and gids can be supplied
+    // however changing the uid and gid for every operations is very inefficient in libnfs
+    // NOTE: the root permissions only properly work if the server has no_root_squash
+    printf("%s, all NFS operations will go through uid %d and gid %d\n", __func__, in_hdr->uid, in_hdr->gid);
+    nfs_set_uid(vnfs->nfs, in_hdr->uid);
+    nfs_set_gid(vnfs->nfs, in_hdr->gid);
+
+    if(nfs_mount(vnfs->nfs, vnfs->server, vnfs->export)) {
+        printf("Failed to mount nfs\n");
+        out_hdr->error = -EREMOTEIO;
+        return 0;
     }
 
-    ret = nfs_mount(vnfs->nfs, vnfs->server, vnfs->export);
-    if (ret != 0) {
-        printf("Failed to mount nfs\n");
-        goto ret_errno;
-    }
     if (nfs_mt_service_thread_start(vnfs->nfs)) {
         printf("Failed to start libnfs service thread\n");
-        goto ret_errno;
+        out_hdr->error = -EREMOTEIO;
+        return 0;
     }
 
 #ifdef LATENCY_MEASURING_ENABLED
@@ -1210,10 +1198,6 @@ int init(struct fuse_session *se, struct virtionfs *vnfs,
     // or even fail!
     // This introduces a race condition, where if the rootfh is not found yet
     // or there is no clientid virtionfs will crash horribly
-    return 0;
-ret_errno:
-    if (ret == -1)
-        out_hdr->error = -errno;
     return 0;
 }
 

@@ -21,18 +21,24 @@
 #include "virtiofs_emu_ll.h"
 #include "common.h"
 
-static struct inode *inode_new(fattr4_fileid fileid) {
+struct inode *inode_new(fattr4_fileid fileid, const char *filename,
+        struct inode *parent)
+{
     struct inode *i = calloc(1, sizeof(struct inode));
     if (!i)
         return NULL;
 
     i->fileid = fileid;
+    if (filename)
+        i->filename = strdup(filename);
+    i->parent = parent;
     // We keep the fh at 0, aka no fh
 
     return i;
 }
 
-static void inode_destroy(struct inode *i) {
+void inode_destroy(struct inode *i) {
+    free(i->filename);
     free(i);
 }
 
@@ -80,16 +86,10 @@ struct inode *inode_table_get(struct inode_table *t, fattr4_fileid fileid) {
     return NULL;
 }
 
-struct inode *inode_table_getsert(struct inode_table *t, fattr4_fileid fileid) {
-    size_t hash = inode_table_hash(t, fileid);
+struct inode *inode_table_insert(struct inode_table *t, struct inode *i) {
+    size_t hash = inode_table_hash(t, i->fileid);
 
-    struct inode *i;
     pthread_mutex_lock(&t->m);
-    for (i = t->array[hash]; i != NULL; i = i->next)
-        if (i->fileid == fileid)
-            goto ret;
-
-    i = inode_new(fileid);
     if (!i)
         goto ret;
 
@@ -102,7 +102,31 @@ ret:
     return i;
 }
 
-static struct inode *inode_table_remove(struct inode_table *t, fattr4_fileid fileid) {
+struct inode *inode_table_getsert(struct inode_table *t, fattr4_fileid fileid,
+        const char *filename, struct inode *parent)
+{
+    size_t hash = inode_table_hash(t, fileid);
+
+    struct inode *i;
+    pthread_mutex_lock(&t->m);
+    for (i = t->array[hash]; i != NULL; i = i->next)
+        if (i->fileid == fileid)
+            goto ret;
+
+    i = inode_new(fileid, filename, parent);
+    if (!i)
+        goto ret;
+
+    if (t->array[hash] != NULL)
+        i->next = t->array[hash];
+    t->array[hash] = i;
+
+ret:
+    pthread_mutex_unlock(&t->m);
+    return i;
+}
+
+struct inode *inode_table_remove(struct inode_table *t, fattr4_fileid fileid) {
     size_t hash = inode_table_hash(t, fileid);
 
     struct inode *prev = NULL;

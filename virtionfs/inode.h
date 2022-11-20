@@ -28,6 +28,9 @@ struct inode {
     fattr4_fileid fileid;
     // A fh.nfs_fh4_len of 0 means that there is no FH
     nfs_fh4 fh;
+    nfs_fh4 fh_rw;
+    struct inode *parent;
+    char *filename;
 
     atomic_size_t generation;
     atomic_size_t nlookup;
@@ -43,10 +46,17 @@ struct inode_table {
 
 #define INODE_TABLE_SIZE 8192
 
+struct inode *inode_new(fattr4_fileid fileid, const char *filename,
+        struct inode *parent);
+void inode_destroy(struct inode *i);
+
 int inode_table_init(struct inode_table *t);
 void inode_table_destroy(struct inode_table *t);
 struct inode *inode_table_get(struct inode_table *, fattr4_fileid);
-struct inode *inode_table_getsert(struct inode_table *, fattr4_fileid);
+struct inode *inode_table_insert(struct inode_table *t, struct inode *i);
+struct inode *inode_table_getsert(struct inode_table *t, fattr4_fileid fileid,
+        const char *filename, struct inode *parent);
+struct inode *inode_table_remove(struct inode_table *t, fattr4_fileid fileid);
 bool inode_table_erase(struct inode_table *, fattr4_fileid);
 
 #endif // VIRTIONFS_INODE_H
