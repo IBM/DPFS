@@ -379,6 +379,17 @@ struct open_cb_data {
     uint32_t owner_val;
 };
 
+void vopen_confirm_cb(struct rpc_context *rpc, int status, void *data,
+                       void *private_data)
+{
+    struct open_cb_data *cb_data = (struct open_cb_data *)private_data;
+    struct virtionfs *vnfs = cb_data->vnfs;
+
+    struct snap_fs_dev_io_done_ctx *cb = cb_data->cb;
+    mpool_free(vnfs->p, cb_data);
+    cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb->user_arg);
+}
+
 void vopen_cb(struct rpc_context *rpc, int status, void *data,
                        void *private_data) {
 #ifdef LATENCY_MEASURING_ENABLED
@@ -416,8 +427,22 @@ void vopen_cb(struct rpc_context *rpc, int status, void *data,
     }
 
     OPEN4resok *openok = &res->resarray.resarray_val[1].nfs_resop4_u.opopen.OPEN4res_u.resok4;
-    if (openok->rflags & OPEN4_RESULT_CONFIRM) {
-        printf("TODO OPEN_CONFIRM must be sent\n");
+    if (!(openok->rflags & OPEN4_RESULT_CONFIRM))
+        goto ret;
+
+    COMPOUND4args args;
+    nfs_argop4 op[1];
+    memset(&args, 0, sizeof(args));
+    args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
+    args.argarray.argarray_val = op;
+
+    op[0].argop = OP_OPEN_CONFIRM;
+    // Give back the same stateid as we received in the OPEN result
+    op[0].nfs_argop4_u.opopen_confirm.open_stateid = openok->stateid;
+    // We always supply 0 in the original open
+    op[0].nfs_argop4_u.opopen_confirm.seqid = 1;
+    if (rpc_nfs4_compound_async(vnfs->rpc, vopen_confirm_cb, &args, cb_data) != 0) {
+    	fprintf(stderr, "Failed to send NFS:open_confirm request\n");
         cb_data->out_hdr->error = -EREMOTEIO;
         goto ret;
     }
