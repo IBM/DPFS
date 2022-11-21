@@ -37,6 +37,7 @@ struct virtionfs {
 #define VIRTIONFS_HANDSHAKE_PROGRESS_COMPLETE 2
     atomic_uint handshake_progress;
     atomic_uint open_owner_counter;
+    atomic_uint seqid;
 
     nfs_fh4 rootfh;
     clientid4 clientid;

@@ -28,6 +28,7 @@ struct inode {
     fattr4_fileid fileid;
     // A fh.nfs_fh4_len of 0 means that there is no FH
     nfs_fh4 fh;
+    // TODO protect this fh with a lock
     nfs_fh4 fh_rw;
     struct inode *parent;
     char *filename;

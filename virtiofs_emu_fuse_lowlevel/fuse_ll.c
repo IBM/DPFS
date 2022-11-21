@@ -1029,8 +1029,8 @@ static int fuse_ll_release(struct fuse_ll *f_ll,
 #ifdef DEBUG_ENABLED
     fuse_ll_debug_print_in_hdr(in_hdr);
     printf("* fh: %lu\n", in_release->fh);
-    printf("* flags: %x\n", in_release->flags);
-    printf("* release_flags: %x\n", in_release->release_flags);
+    printf("* flags: 0x%x\n", in_release->flags);
+    printf("* release_flags: 0x%x\n", in_release->release_flags);
     printf("* lock_owner: %lu\n", in_release->lock_owner);
 #endif
 
