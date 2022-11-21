@@ -253,6 +253,8 @@ int vwrite(struct fuse_session *se, struct virtionfs *vnfs,
     }
     // WRITE
     op[1].argop = OP_WRITE;
+    // Set stateid to 0, we don't use it
+    memset(&op[1].nfs_argop4_u.opwrite.stateid, 0, sizeof(stateid4));
     op[1].nfs_argop4_u.opwrite.offset = in_write->offset;
     op[1].nfs_argop4_u.opwrite.stable = UNSTABLE4;
     op[1].nfs_argop4_u.opwrite.data.data_val = in_iov->iovec[0].iov_base;
@@ -382,17 +384,8 @@ struct open_cb_data {
 void vopen_confirm_cb(struct rpc_context *rpc, int status, void *data,
                        void *private_data)
 {
-    struct open_cb_data *cb_data = (struct open_cb_data *)private_data;
-    struct virtionfs *vnfs = cb_data->vnfs;
-
-    struct snap_fs_dev_io_done_ctx *cb = cb_data->cb;
-    mpool_free(vnfs->p, cb_data);
-    cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb->user_arg);
-}
-
-void vopen_cb(struct rpc_context *rpc, int status, void *data,
-                       void *private_data) {
 #ifdef LATENCY_MEASURING_ENABLED
+    // If the confirm was needed, then the timer wasn't stopped yet
     ft_stop(&ft[FUSE_OPEN]);
 #endif
     struct open_cb_data *cb_data = (struct open_cb_data *)private_data;
@@ -411,15 +404,36 @@ void vopen_cb(struct rpc_context *rpc, int status, void *data,
         goto ret;
     }
 
+ret:;
+    struct snap_fs_dev_io_done_ctx *cb = cb_data->cb;
+    mpool_free(vnfs->p, cb_data);
+    cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb->user_arg);
+}
+
+void vopen_cb(struct rpc_context *rpc, int status, void *data,
+              void *private_data)
+{
+    struct open_cb_data *cb_data = (struct open_cb_data *)private_data;
+    struct virtionfs *vnfs = cb_data->vnfs;
+    COMPOUND4res *res = data;
+
+    if (status != RPC_STATUS_SUCCESS) {
+    	fprintf(stderr, "RPC with NFS:OPEN unsuccessful: rpc error=%d\n", status);
+        cb_data->out_hdr->error = -EREMOTEIO;
+        goto ret;
+    }
+    if (res->status != NFS4_OK) {
+        cb_data->out_hdr->error = -nfs_error_to_fuse_error(res->status);
+    	fprintf(stderr, "NFS:OPEN unsuccessful: nfs error=%d, fuse error=%d\n",
+                res->status, cb_data->out_hdr->error);
+        goto ret;
+    }
+
     struct inode *i = cb_data->i;
 
-    nfs_fh4 *fh = &res->resarray.resarray_val[2].nfs_resop4_u.opgetfh.GETFH4res_u.resok4.object;
-#ifdef DEBUG_ENABLED
-    if (i->fh.nfs_fh4_len != fh->nfs_fh4_len || memcmp(i->fh.nfs_fh4_val, fh->nfs_fh4_val, i->fh.nfs_fh4_len)) {
-        printf("%s, FH returned by the OPEN NFS compound != FH in the inode!\n", __func__);
-    }
-#endif
     // Store the FH from OPEN as the read write FH in the inode
+    // The read-write FH is not the same (can't assume) as the metadata FH
+    nfs_fh4 *fh = &res->resarray.resarray_val[2].nfs_resop4_u.opgetfh.GETFH4res_u.resok4.object;
     int ret = nfs4_clone_fh(&i->fh_rw, fh);
     if (ret < 0) {
         cb_data->out_hdr->error = ret;
@@ -427,25 +441,36 @@ void vopen_cb(struct rpc_context *rpc, int status, void *data,
     }
 
     OPEN4resok *openok = &res->resarray.resarray_val[1].nfs_resop4_u.opopen.OPEN4res_u.resok4;
-    if (!(openok->rflags & OPEN4_RESULT_CONFIRM))
+    if (!(openok->rflags & OPEN4_RESULT_CONFIRM)) {
+#ifdef LATENCY_MEASURING_ENABLED
+        // Only now we can conclude that the OPEN is done
+        ft_stop(&ft[FUSE_OPEN]);
+#endif
         goto ret;
+    }
 
+    // We will have to send a OPEN_CONFIRM
     COMPOUND4args args;
-    nfs_argop4 op[1];
+    nfs_argop4 op[2];
     memset(&args, 0, sizeof(args));
     args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
     args.argarray.argarray_val = op;
 
-    op[0].argop = OP_OPEN_CONFIRM;
+    op[0].argop = OP_PUTFH;
+    op[0].nfs_argop4_u.opputfh.object.nfs_fh4_val = i->fh_rw.nfs_fh4_val;
+    op[0].nfs_argop4_u.opputfh.object.nfs_fh4_len = i->fh_rw.nfs_fh4_len;
+
+    op[1].argop = OP_OPEN_CONFIRM;
     // Give back the same stateid as we received in the OPEN result
-    op[0].nfs_argop4_u.opopen_confirm.open_stateid = openok->stateid;
+    op[1].nfs_argop4_u.opopen_confirm.open_stateid = openok->stateid;
     // We always supply 0 in the original open
-    op[0].nfs_argop4_u.opopen_confirm.seqid = 1;
+    op[1].nfs_argop4_u.opopen_confirm.seqid = 1;
     if (rpc_nfs4_compound_async(vnfs->rpc, vopen_confirm_cb, &args, cb_data) != 0) {
     	fprintf(stderr, "Failed to send NFS:open_confirm request\n");
         cb_data->out_hdr->error = -EREMOTEIO;
         goto ret;
     }
+    return;
 
 ret:;
     struct snap_fs_dev_io_done_ctx *cb = cb_data->cb;
@@ -486,6 +511,7 @@ int vopen(struct fuse_session *se, struct virtionfs *vnfs,
     op[0].argop = OP_PUTFH;
     op[0].nfs_argop4_u.opputfh.object.nfs_fh4_val = i->parent->fh.nfs_fh4_val;
     op[0].nfs_argop4_u.opputfh.object.nfs_fh4_len = i->parent->fh.nfs_fh4_len;
+
     // OPEN
     op[1].argop = OP_OPEN;
     memset(&op[1].nfs_argop4_u.opopen, 0, sizeof(OPEN4args));
@@ -507,11 +533,11 @@ int vopen(struct fuse_session *se, struct virtionfs *vnfs,
     // Don't know yet how that could happen
     op[1].nfs_argop4_u.opopen.claim.open_claim4_u.file.utf8string_val = i->filename;
     op[1].nfs_argop4_u.opopen.claim.open_claim4_u.file.utf8string_len = strlen(i->filename);
-
     // Now we determine whether to CREATE or NOCREATE
     assert(!(in_open->flags & O_CREAT));
     op[1].nfs_argop4_u.opopen.openhow.opentype = OPEN4_NOCREATE;
-    // GETATTR attributes
+
+    // GETFH
     op[2].argop = OP_GETFH;
 
 #ifdef LATENCY_MEASURING_ENABLED
@@ -987,6 +1013,7 @@ static void
 setclientid_cb_2(struct rpc_context *rpc, int status, void *data,
                 void *private_data)
 {
+    struct virtionfs *vnfs = private_data;
     COMPOUND4res *res = data;
     
     if (status != RPC_STATUS_SUCCESS) {
@@ -998,7 +1025,14 @@ setclientid_cb_2(struct rpc_context *rpc, int status, void *data,
         return;
     }
 
-    printf("NFS clientid has been set, NFS handshake [1/2]\n");
+    uint32_t old_handshake_progress = atomic_fetch_add(&vnfs->handshake_progress, 1);
+    printf("NFS clientid has been set, NFS handshake [%u/%u]\n", old_handshake_progress+1, VIRTIONFS_HANDSHAKE_PROGRESS_COMPLETE);
+    if (old_handshake_progress == VIRTIONFS_HANDSHAKE_PROGRESS_COMPLETE-1) {
+        printf("NFS handshake finished, virtio-fs device init done!\n");
+#ifdef LATENCY_MEASURING_ENABLED
+        ft_stop(&ft[FUSE_INIT]);
+#endif
+    }
 }
 
 static void
@@ -1090,7 +1124,14 @@ static void lookup_true_rootfh_cb(struct rpc_context *rpc, int status, void *dat
     nfs4_clone_fh(&rooti->fh, &res->resarray.resarray_val[i].nfs_resop4_u.opgetfh.GETFH4res_u.resok4.object); 
     inode_table_insert(vnfs->inodes, rooti);
 
-    printf("True root has been found, NFS handshake [1/2]\n");
+    uint32_t old_handshake_progress = atomic_fetch_add(&vnfs->handshake_progress, 1);
+    printf("True root has been found, NFS handshake [%u/%u]\n", old_handshake_progress+1, VIRTIONFS_HANDSHAKE_PROGRESS_COMPLETE);
+    if (old_handshake_progress == VIRTIONFS_HANDSHAKE_PROGRESS_COMPLETE-1) {
+        printf("NFS handshake finished, virtio-fs device init done!\n");
+#ifdef LATENCY_MEASURING_ENABLED
+        ft_stop(&ft[FUSE_INIT]);
+#endif
+    }
 }
 
 static int lookup_true_rootfh(struct virtionfs *vnfs)
@@ -1139,8 +1180,9 @@ int destroy(struct fuse_session *se, struct virtionfs *vnfs,
             struct snap_fs_dev_io_done_ctx *cb)
 {
 #ifdef LATENCY_MEASURING_ENABLED
-    for (int i = 1; i < FUSE_REMOVEMAPPING+1; i++) {
-        printf("OP(%d) took %lu averaged over %lu calls\n", i, ft_get_nsec(&ft[i]) / op_calls[i], op_calls[i]);
+    for (int i = 1; i <= FUSE_REMOVEMAPPING; i++) {
+        if (op_calls[i] > 0)
+            printf("OP(%d) took %lu averaged over %lu calls\n", i, ft_get_nsec(&ft[i]) / op_calls[i], op_calls[i]);
     }
 #endif
     return 0;
@@ -1151,6 +1193,13 @@ int init(struct fuse_session *se, struct virtionfs *vnfs,
     struct fuse_conn_info *conn, struct fuse_out_header *out_hdr,
     struct snap_fs_dev_io_done_ctx *cb)
 {
+#ifdef LATENCY_MEASURING_ENABLED
+    for (int i = 0; i < FUSE_REMOVEMAPPING+1; i++) {
+        ft_init(&ft[i]);
+        op_calls[i] = 0;
+    }
+#endif
+
     // TODO reenable when implementing flock()
     // if (conn->capable & FUSE_CAP_FLOCK_LOCKS)
     //     conn->want |= FUSE_CAP_FLOCK_LOCKS;
@@ -1179,6 +1228,10 @@ int init(struct fuse_session *se, struct virtionfs *vnfs,
     nfs_set_uid(vnfs->nfs, in_hdr->uid);
     nfs_set_gid(vnfs->nfs, in_hdr->gid);
 
+#ifdef LATENCY_MEASURING_ENABLED
+    op_calls[FUSE_INIT]++;
+    ft_start(&ft[FUSE_INIT]);
+#endif
     if(nfs_mount(vnfs->nfs, vnfs->server, vnfs->export)) {
         printf("Failed to mount nfs\n");
         out_hdr->error = -EREMOTEIO;
@@ -1191,12 +1244,6 @@ int init(struct fuse_session *se, struct virtionfs *vnfs,
         return 0;
     }
 
-#ifdef LATENCY_MEASURING_ENABLED
-    for (int i = 0; i < FUSE_REMOVEMAPPING+1; i++) {
-        ft_init(&ft[i]);
-        op_calls[i] = 0;
-    }
-#endif
 
     // These two upcomming function calls are in a way redundant...
     // The libnfs mount function also retrieves the true rootfh for the export

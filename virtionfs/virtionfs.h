@@ -31,6 +31,11 @@ struct virtionfs {
     uint64_t timeout_sec;
     uint32_t timeout_nsec;
 
+    // Currently there are two async NFS handshake operations
+    // that need to complete
+    // if this int == 2, then handshake is fully finished
+#define VIRTIONFS_HANDSHAKE_PROGRESS_COMPLETE 2
+    atomic_uint handshake_progress;
     atomic_uint open_owner_counter;
 
     nfs_fh4 rootfh;
