@@ -37,9 +37,8 @@ int main(int argc, char **argv)
                 dir = optarg;
                 break;
             default: /* '?' */
-                usage(1);
+                usage();
                 exit(1);
-        // TODO add dir param
         }
     }
 

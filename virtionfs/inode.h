@@ -29,7 +29,9 @@ struct inode {
     // A fh.nfs_fh4_len of 0 means that there is no FH
     nfs_fh4 fh;
     // TODO protect this fh with a lock
-    nfs_fh4 fh_rw;
+    nfs_fh4 fh_open;
+    stateid4 open_stateid;
+
     struct inode *parent;
     char *filename;
 

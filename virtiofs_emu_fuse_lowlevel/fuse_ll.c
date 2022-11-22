@@ -464,7 +464,7 @@ static int fuse_ll_init(struct fuse_ll *f_ll,
 
     if (se->conn.want & (~se->conn.capable)) {
         fprintf(stderr, "fuse: error: filesystem requested capabilities "
-            "0x%x that are not supported by kernel, aborting.\n",
+            "0x%X that are not supported by kernel, aborting.\n",
             se->conn.want & (~se->conn.capable));
         se->error = -EPROTO;
         //fuse_session_exit(se);
@@ -888,7 +888,7 @@ static int fuse_ll_opendir(struct fuse_ll *f_ll,
 
 #ifdef DEBUG_ENABLED
     fuse_ll_debug_print_in_hdr(in_hdr);
-    printf("* flags: %x\n", in_open->flags);
+    printf("* flags: 0x%X\n", in_open->flags);
 #endif
 
     if (!f_ll->ops.opendir) {
@@ -998,7 +998,7 @@ static int fuse_ll_open(struct fuse_ll *f_ll,
 
 #ifdef DEBUG_ENABLED
     fuse_ll_debug_print_in_hdr(in_hdr);
-    printf("* flags: %x\n", in_open->flags);
+    printf("* flags: 0x%X\n", in_open->flags);
 #endif
 
     if (!f_ll->ops.open) {
@@ -1029,8 +1029,8 @@ static int fuse_ll_release(struct fuse_ll *f_ll,
 #ifdef DEBUG_ENABLED
     fuse_ll_debug_print_in_hdr(in_hdr);
     printf("* fh: %lu\n", in_release->fh);
-    printf("* flags: 0x%x\n", in_release->flags);
-    printf("* release_flags: 0x%x\n", in_release->release_flags);
+    printf("* flags: 0x%X\n", in_release->flags);
+    printf("* release_flags: 0x%X\n", in_release->release_flags);
     printf("* lock_owner: %lu\n", in_release->lock_owner);
 #endif
 
@@ -1062,7 +1062,7 @@ static int fuse_ll_fsync(struct fuse_ll *f_ll,
 #ifdef DEBUG_ENABLED
     fuse_ll_debug_print_in_hdr(in_hdr);
     printf("* fh: %lu\n", in_fsync->fh);
-    printf("* fsync_flags: %x\n", in_fsync->fsync_flags);
+    printf("* fsync_flags: 0x%X\n", in_fsync->fsync_flags);
 #endif
 
     if (!f_ll->ops.fsync) {
@@ -1093,7 +1093,7 @@ static int fuse_ll_fsyncdir(struct fuse_ll *f_ll,
 #ifdef DEBUG_ENABLED
     fuse_ll_debug_print_in_hdr(in_hdr);
     printf("* fh: %lu\n", in_fsync->fh);
-    printf("* fsync_flags: %x\n", in_fsync->fsync_flags);
+    printf("* fsync_flags: 0x%X\n", in_fsync->fsync_flags);
 #endif
 
     if (!f_ll->ops.fsyncdir) {
@@ -1239,7 +1239,7 @@ static int fuse_ll_rename2(struct fuse_ll *f_ll,
     fuse_ll_debug_print_in_hdr(in_hdr);
     printf("* name: %s\n", name);
     printf("* newdir: %lu\n", in_rename2->newdir);
-    printf("* flags: %x\n", in_rename2->flags);
+    printf("* flags: 0x%X\n", in_rename2->flags);
     printf("* new_name: %s\n", new_name);
 #endif
 
@@ -1275,9 +1275,9 @@ static int fuse_ll_read(struct fuse_ll *f_ll,
     printf("* fh: %lu\n", in_read->fh);
     printf("* offset: %lu\n", in_read->offset);
     printf("* size: %u\n", in_read->size);
-    printf("* read_flags: %x\n", in_read->read_flags);
+    printf("* read_flags: 0x%X\n", in_read->read_flags);
     printf("* lock_owner: %lu\n", in_read->lock_owner);
-    printf("* flags: %x\n", in_read->flags);
+    printf("* flags: 0x%X\n", in_read->flags);
 #endif
 
     if (!f_ll->ops.read) {
@@ -1318,9 +1318,9 @@ static int fuse_ll_write(struct fuse_ll *f_ll,
     printf("* fh: %lu\n", in_write->fh);
     printf("* offset: %lu\n", in_write->offset);
     printf("* size: %u\n", in_write->size);
-    printf("* read_flags: %x\n", in_write->write_flags);
+    printf("* read_flags: 0x%X\n", in_write->write_flags);
     printf("* lock_owner: %lu\n", in_write->lock_owner);
-    printf("* flags: %x\n", in_write->flags);
+    printf("* flags: 0x%X\n", in_write->flags);
 #endif
 
     if (!f_ll->ops.write) {
@@ -1373,7 +1373,7 @@ static int fuse_ll_mknod(struct fuse_ll *f_ll,
     printf("* name: %s\n", in_name);
     printf("* mode: %u\n", in_mknod->mode);
     printf("* rdev: %u\n", in_mknod->rdev);
-    printf("* umask: %x\n", in_mknod->umask);
+    printf("* umask: 0x%X\n", in_mknod->umask);
 #endif
 
     return f_ll->ops.mknod(f_ll->se, f_ll->user_data, in_hdr, in_mknod, in_name, out_hdr, out_entry, cb);
@@ -1403,7 +1403,7 @@ static int fuse_ll_mkdir(struct fuse_ll *f_ll,
     fuse_ll_debug_print_in_hdr(in_hdr);
     printf("* name: %s\n", in_name);
     printf("* mode: %u\n", in_mkdir->mode);
-    printf("* umask: %x\n", in_mkdir->umask);
+    printf("* umask: 0x%X\n", in_mkdir->umask);
 #endif
 
     if (!f_ll->ops.mkdir) {

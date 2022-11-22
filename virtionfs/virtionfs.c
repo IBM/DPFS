@@ -112,8 +112,8 @@ void release_cb(struct rpc_context *rpc, int status, void *data,
         goto ret;
     }
 
-    free(cb_data->i->fh_rw.nfs_fh4_val);
-    cb_data->i->fh_rw.nfs_fh4_len = 0;
+    free(cb_data->i->fh_open.nfs_fh4_val);
+    cb_data->i->fh_open.nfs_fh4_len = 0;
 
 ret:;
     struct snap_fs_dev_io_done_ctx *cb = cb_data->cb;
@@ -154,8 +154,8 @@ int release(struct fuse_session *se, struct virtionfs *vnfs,
     // COMMIT
     op[1].argop = OP_CLOSE;
     op[1].nfs_argop4_u.opclose.seqid = atomic_fetch_add(&vnfs->seqid, 1);
-    // In OPEN we provide a zeroed stateid
-    memset(&op[1].nfs_argop4_u.opclose.open_stateid, 0, sizeof(stateid4));
+    // Pass the stateid we received in the corresponding OPEN call
+    memcpy(&op[1].nfs_argop4_u.opclose.open_stateid, &cb_data->i->open_stateid, sizeof(stateid4));
 
     if (in_release->release_flags & FUSE_RELEASE_FLUSH) {
         // TODO
@@ -500,6 +500,9 @@ void vopen_confirm_cb(struct rpc_context *rpc, int status, void *data,
                 res->status, cb_data->out_hdr->error);
         goto ret;
     }
+    OPEN_CONFIRM4resok *ok = &res->resarray.resarray_val[1].nfs_resop4_u.opopen_confirm
+                             .OPEN_CONFIRM4res_u.resok4;
+    cb_data->i->open_stateid = ok->open_stateid;
 
 ret:;
     struct snap_fs_dev_io_done_ctx *cb = cb_data->cb;
@@ -531,7 +534,7 @@ void vopen_cb(struct rpc_context *rpc, int status, void *data,
     // Store the FH from OPEN as the read write FH in the inode
     // The read-write FH is not the same (can't assume) as the metadata FH
     nfs_fh4 *fh = &res->resarray.resarray_val[2].nfs_resop4_u.opgetfh.GETFH4res_u.resok4.object;
-    int ret = nfs4_clone_fh(&i->fh_rw, fh);
+    int ret = nfs4_clone_fh(&i->fh_open, fh);
     if (ret < 0) {
         cb_data->out_hdr->error = ret;
         goto ret;
@@ -539,6 +542,8 @@ void vopen_cb(struct rpc_context *rpc, int status, void *data,
 
     OPEN4resok *openok = &res->resarray.resarray_val[1].nfs_resop4_u.opopen.OPEN4res_u.resok4;
     if (!(openok->rflags & OPEN4_RESULT_CONFIRM)) {
+        // Save the stateid we were given for the opened handle
+        i->open_stateid = openok->stateid;
 #ifdef LATENCY_MEASURING_ENABLED
         // Only now we can conclude that the OPEN is done
         ft_stop(&ft[FUSE_OPEN]);
@@ -554,13 +559,12 @@ void vopen_cb(struct rpc_context *rpc, int status, void *data,
     args.argarray.argarray_val = op;
 
     op[0].argop = OP_PUTFH;
-    op[0].nfs_argop4_u.opputfh.object.nfs_fh4_val = i->fh_rw.nfs_fh4_val;
-    op[0].nfs_argop4_u.opputfh.object.nfs_fh4_len = i->fh_rw.nfs_fh4_len;
+    op[0].nfs_argop4_u.opputfh.object.nfs_fh4_val = i->fh_open.nfs_fh4_val;
+    op[0].nfs_argop4_u.opputfh.object.nfs_fh4_len = i->fh_open.nfs_fh4_len;
 
     op[1].argop = OP_OPEN_CONFIRM;
     // Give back the same stateid as we received in the OPEN result
     op[1].nfs_argop4_u.opopen_confirm.open_stateid = openok->stateid;
-    // We always supply 0 in the original open
     op[1].nfs_argop4_u.opopen_confirm.seqid = atomic_fetch_add(&vnfs->seqid, 1);
     if (rpc_nfs4_compound_async(vnfs->rpc, vopen_confirm_cb, &args, cb_data) != 0) {
     	fprintf(stderr, "Failed to send NFS:open_confirm request\n");
@@ -622,6 +626,7 @@ int vopen(struct fuse_session *se, struct virtionfs *vnfs,
     // Set the owner with the clientid and the unique owner number (32 bit should be safe)
     // The clientid stems from the setclientid() handshake
     op[1].nfs_argop4_u.opopen.owner.clientid = vnfs->clientid;
+    // We store this so that the reference stays alive
     cb_data->owner_val = atomic_fetch_add(&vnfs->open_owner_counter, 1);
     op[1].nfs_argop4_u.opopen.owner.owner.owner_val = (char *) &cb_data->owner_val;
     op[1].nfs_argop4_u.opopen.owner.owner.owner_len = sizeof(cb_data->owner_val);
