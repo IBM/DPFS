@@ -82,6 +82,18 @@ struct inode *nfs4_op_putfh(struct virtionfs *vnfs, nfs_argop4 *op, uint64_t nod
     return i;
 }
 
+struct inode *nfs4_op_putfh_open(struct virtionfs *vnfs, nfs_argop4 *op, uint64_t nodeid)
+{
+    op->argop = OP_PUTFH;
+    struct inode *i = inode_table_get(vnfs->inodes, nodeid);
+    if (!i) {
+        return NULL;
+    }
+    op->nfs_argop4_u.opputfh.object.nfs_fh4_val = i->fh_open.nfs_fh4_val;
+    op->nfs_argop4_u.opputfh.object.nfs_fh4_len = i->fh_open.nfs_fh4_len;
+    return i;
+}
+
 struct release_cb_data {
     struct snap_fs_dev_io_done_ctx *cb;
     struct virtionfs *vnfs;
@@ -155,7 +167,7 @@ int release(struct fuse_session *se, struct virtionfs *vnfs,
     op[1].argop = OP_CLOSE;
     op[1].nfs_argop4_u.opclose.seqid = atomic_fetch_add(&vnfs->seqid, 1);
     // Pass the stateid we received in the corresponding OPEN call
-    memcpy(&op[1].nfs_argop4_u.opclose.open_stateid, &cb_data->i->open_stateid, sizeof(stateid4));
+    op[1].nfs_argop4_u.opclose.open_stateid = cb_data->i->open_stateid;
 
     if (in_release->release_flags & FUSE_RELEASE_FLUSH) {
         // TODO
@@ -339,7 +351,7 @@ int vwrite(struct fuse_session *se, struct virtionfs *vnfs,
     args.argarray.argarray_val = op;
 
     // PUTFH
-    struct inode *i = nfs4_op_putfh(vnfs, &op[0], in_hdr->nodeid);
+    struct inode *i = nfs4_op_putfh_open(vnfs, &op[0], in_hdr->nodeid);
     if (!i) {
     	fprintf(stderr, "Invalid nodeid supplied to write\n");
         mpool_free(vnfs->p, cb_data);
@@ -348,18 +360,27 @@ int vwrite(struct fuse_session *se, struct virtionfs *vnfs,
     }
     // WRITE
     op[1].argop = OP_WRITE;
-    // Set stateid to 0, we don't use it
-    memset(&op[1].nfs_argop4_u.opwrite.stateid, 0, sizeof(stateid4));
+    op[1].nfs_argop4_u.opwrite.stateid = i->open_stateid;
     op[1].nfs_argop4_u.opwrite.offset = in_write->offset;
     op[1].nfs_argop4_u.opwrite.stable = UNSTABLE4;
     op[1].nfs_argop4_u.opwrite.data.data_val = in_iov->iovec[0].iov_base;
     op[1].nfs_argop4_u.opwrite.data.data_len = in_iov->iovec[0].iov_len;
 
+    // libnfs by default allocates a buffer for the fully encoded NFS packet (rpc_pdu)
+    // of sizeof(rpc header) + sizeof(COMPOUNF4args) + ZDR_ENCODEBUF_MINSIZE + alloc_hint
+    // + rounding to 8 bytes twice
+    // where ZDR_ENCODEBUF_MINSIZE is set to 4096 by libnfs
+    // With alloc_hint=0 sending the RPC would fail.
+    // Because this alloc_hint is really naive, the only way to safely make sure there
+    // is enough buffer space, is to set the alloc_hint to our write buffer size...
+    // This allocates way too much, but atleast it is safe
+    uint64_t alloc_hint = in_iov->iovec[0].iov_len; 
+
 #ifdef LATENCY_MEASURING_ENABLED
     op_calls[FUSE_WRITE]++;
     ft_start(&ft[FUSE_WRITE]);
 #endif
-    if (rpc_nfs4_compound_async(vnfs->rpc, vwrite_cb, &args, cb_data) != 0) {
+    if (rpc_nfs4_compound_async2(vnfs->rpc, vwrite_cb, &args, cb_data, alloc_hint) != 0) {
     	fprintf(stderr, "Failed to send NFS:write request\n");
         mpool_free(vnfs->p, cb_data);
         out_hdr->error = -EREMOTEIO;
@@ -438,7 +459,7 @@ int vread(struct fuse_session *se, struct virtionfs *vnfs,
     args.argarray.argarray_val = op;
 
     // PUTFH
-    struct inode *i = nfs4_op_putfh(vnfs, &op[0], in_hdr->nodeid);
+    struct inode *i = nfs4_op_putfh_open(vnfs, &op[0], in_hdr->nodeid);
     if (!i) {
     	fprintf(stderr, "Invalid nodeid supplied to open\n");
         mpool_free(vnfs->p, cb_data);
@@ -447,8 +468,7 @@ int vread(struct fuse_session *se, struct virtionfs *vnfs,
     }
     // OPEN
     op[1].argop = OP_READ;
-    // Set stateid to zero, we don't use it
-    memset(&op[1].nfs_argop4_u.opread.stateid, 0, sizeof(stateid4));
+    op[1].nfs_argop4_u.opread.stateid = i->open_stateid;
     op[1].nfs_argop4_u.opread.count = in_read->size;
     op[1].nfs_argop4_u.opread.offset = in_read->offset;
 
@@ -1343,7 +1363,6 @@ int init(struct fuse_session *se, struct virtionfs *vnfs,
         out_hdr->error = -EREMOTEIO;
         return 0;
     }
-
 
     // These two upcomming function calls are in a way redundant...
     // The libnfs mount function also retrieves the true rootfh for the export
