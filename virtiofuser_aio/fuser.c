@@ -65,6 +65,7 @@ size_t inode_table_hash(struct inode_table *t, fuse_ino_t ino) {
     return ino % t->size;
 }
 
+// TODO not thread-safe
 struct inode *inode_table_get(struct inode_table *t, fuse_ino_t ino) {
     size_t hash = inode_table_hash(t, ino);
 

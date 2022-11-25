@@ -170,7 +170,9 @@ int fuse_ll_reply_entry(struct fuse_session *se, struct fuse_out_header *out_hdr
     out_hdr->len += size;
     return 0;
 }
-int fuse_ll_reply_open(struct fuse_session *se, struct fuse_out_header *out_hdr, struct fuse_open_out *out_open, struct fuse_file_info *fi) {
+int fuse_ll_reply_open(struct fuse_session *se, struct fuse_out_header *out_hdr,
+        struct fuse_open_out *out_open, struct fuse_file_info *fi)
+{
     fill_open(out_open, fi);
 
     out_hdr->len += sizeof(*out_open);
@@ -203,15 +205,24 @@ int fuse_ll_reply_statfs(struct fuse_session *se, struct fuse_out_header *out_hd
     return 0;
 }
 
+int fuse_ll_reply_iov(struct fuse_session *se, struct fuse_out_header *out_hdr,
+    struct iov *iov)
+{
+    out_hdr->len += iov->total_size - iov->bytes_unused;
+    free(iov);
+    return 0;
+}
+
 void iov_init(struct iov *iov, struct iovec *iovec, int iovcnt) {
     iov->iovec = iovec;
     iov->iovcnt = iovcnt;
     iov->iov_idx = 0;
     iov->buf_idx = 0;
-    iov->bytes_unused = 0;
+    iov->total_size = 0;
     for (int i = 0; i < iov->iovcnt; i++) {
-        iov->bytes_unused += iov->iovec[i].iov_len;
+        iov->total_size += iov->iovec[i].iov_len;
     }
+    iov->bytes_unused = iov->total_size;
 }
 
 size_t iov_write_buf(struct iov *iov, void *buf, size_t size) {
@@ -1285,14 +1296,14 @@ static int fuse_ll_read(struct fuse_ll *f_ll,
         return 0;
     }
 
-    struct iov read_iov;
-    iov_init(&read_iov, &fuse_out_iov[1], out_iovcnt-1);
-    if (read_iov.bytes_unused != in_read->size) {
+    struct iov *read_iov = malloc(sizeof(struct iov));
+    iov_init(read_iov, &fuse_out_iov[1], out_iovcnt-1);
+    if (read_iov->bytes_unused != in_read->size) {
         fprintf(stderr, "%s: iovecs not the same size as the amount of data requested!!!\n", __func__);
         return -EINVAL;
     }
 
-    return f_ll->ops.read(f_ll->se, f_ll->user_data, in_hdr, in_read, out_hdr, &read_iov, cb);
+    return f_ll->ops.read(f_ll->se, f_ll->user_data, in_hdr, in_read, out_hdr, read_iov, cb);
 }
 
 static int fuse_ll_write(struct fuse_ll *f_ll,
@@ -1328,14 +1339,14 @@ static int fuse_ll_write(struct fuse_ll *f_ll,
         return 0;
     }
 
-    struct iov write_iov;
-    iov_init(&write_iov, &fuse_in_iov[2], in_iovcnt-2);
-    if (write_iov.bytes_unused != in_write->size) {
+    struct iov *write_iov = malloc(sizeof(struct iov));
+    iov_init(write_iov, &fuse_in_iov[2], in_iovcnt-2);
+    if (write_iov->bytes_unused != in_write->size) {
         fprintf(stderr, "%s: iovecs not the same size as the amount of data requested to write!!!\n", __func__);
         return -EINVAL;
     }
 
-    return f_ll->ops.write(f_ll->se, f_ll->user_data, in_hdr, in_write, &write_iov, out_hdr, out_write, cb);
+    return f_ll->ops.write(f_ll->se, f_ll->user_data, in_hdr, in_write, write_iov, out_hdr, out_write, cb);
 }
 
 static int fuse_ll_mknod(struct fuse_ll *f_ll,

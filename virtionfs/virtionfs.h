@@ -22,7 +22,6 @@ void virtionfs_main(char *server, char *export,
 struct virtionfs {
     struct nfs_context *nfs;
     struct rpc_context *rpc;
-    struct mpool *p;
     struct inode_table *inodes;
 
     char *server;

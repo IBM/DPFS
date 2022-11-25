@@ -19,7 +19,6 @@
 #include "fuse_ll.h"
 #include "config.h"
 #include "virtionfs.h"
-#include "mpool.h"
 #ifdef LATENCY_MEASURING_ENABLED
 #include "ftimer.h"
 #endif
@@ -109,7 +108,6 @@ void release_cb(struct rpc_context *rpc, int status, void *data,
     ft_stop(&ft[FUSE_RELEASE]);
 #endif
     struct release_cb_data *cb_data = (struct release_cb_data *)private_data;
-    struct virtionfs *vnfs = cb_data->vnfs;
     COMPOUND4res *res = data;
 
     if (status != RPC_STATUS_SUCCESS) {
@@ -129,7 +127,7 @@ void release_cb(struct rpc_context *rpc, int status, void *data,
 
 ret:;
     struct snap_fs_dev_io_done_ctx *cb = cb_data->cb;
-    mpool_free(vnfs->p, cb_data);
+    free(cb_data);
     cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb->user_arg);
 }
 
@@ -139,7 +137,7 @@ int release(struct fuse_session *se, struct virtionfs *vnfs,
            struct fuse_out_header *out_hdr,
            struct snap_fs_dev_io_done_ctx *cb)
 {
-    struct release_cb_data *cb_data = mpool_alloc(vnfs->p);
+    struct release_cb_data *cb_data = malloc(sizeof(struct release_cb_data));
     if (!cb_data) {
         out_hdr->error = -ENOMEM;
         return 0;
@@ -159,7 +157,7 @@ int release(struct fuse_session *se, struct virtionfs *vnfs,
     cb_data->i = nfs4_op_putfh(vnfs, &op[0], in_hdr->nodeid);
     if (!cb_data->i) {
     	fprintf(stderr, "Invalid nodeid supplied to release\n");
-        mpool_free(vnfs->p, cb_data);
+        free(cb_data);
         out_hdr->error = -ENOENT;
         return 0;
     }
@@ -181,7 +179,7 @@ int release(struct fuse_session *se, struct virtionfs *vnfs,
 
     if (rpc_nfs4_compound_async(vnfs->rpc, release_cb, &args, cb_data) != 0) {
     	fprintf(stderr, "Failed to send NFS:CLOSE request\n");
-        mpool_free(vnfs->p, cb_data);
+        free(cb_data);
         out_hdr->error = -EREMOTEIO;
         return 0;
     }
@@ -203,7 +201,6 @@ void vfsync_cb(struct rpc_context *rpc, int status, void *data,
     ft_stop(&ft[FUSE_FSYNC]);
 #endif
     struct fsync_cb_data *cb_data = (struct fsync_cb_data *)private_data;
-    struct virtionfs *vnfs = cb_data->vnfs;
     COMPOUND4res *res = data;
 
     if (status != RPC_STATUS_SUCCESS) {
@@ -220,7 +217,7 @@ void vfsync_cb(struct rpc_context *rpc, int status, void *data,
 
 ret:;
     struct snap_fs_dev_io_done_ctx *cb = cb_data->cb;
-    mpool_free(vnfs->p, cb_data);
+    free(cb_data);
     cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb->user_arg);
 }
 
@@ -231,7 +228,7 @@ int vfsync(struct fuse_session *se, struct virtionfs *vnfs,
            struct fuse_out_header *out_hdr,
            struct snap_fs_dev_io_done_ctx *cb)
 {
-    struct fsync_cb_data *cb_data = mpool_alloc(vnfs->p);
+    struct fsync_cb_data *cb_data = malloc(sizeof(struct fsync_cb_data));
     if (!cb_data) {
         out_hdr->error = -ENOMEM;
         return 0;
@@ -251,7 +248,7 @@ int vfsync(struct fuse_session *se, struct virtionfs *vnfs,
     struct inode *i = nfs4_op_putfh(vnfs, &op[0], in_hdr->nodeid);
     if (!i) {
     	fprintf(stderr, "Invalid nodeid supplied to fsync\n");
-        mpool_free(vnfs->p, cb_data);
+        free(cb_data);
         out_hdr->error = -ENOENT;
         return 0;
     }
@@ -269,7 +266,7 @@ int vfsync(struct fuse_session *se, struct virtionfs *vnfs,
 
     if (rpc_nfs4_compound_async(vnfs->rpc, vfsync_cb, &args, cb_data) != 0) {
     	fprintf(stderr, "Failed to send NFS:commit request\n");
-        mpool_free(vnfs->p, cb_data);
+        free(cb_data);
         out_hdr->error = -EREMOTEIO;
         return 0;
     }
@@ -282,6 +279,7 @@ struct write_cb_data {
     struct virtionfs *vnfs;
 
     struct fuse_write_in *in_write;
+    struct iov *in_iov;
 
     struct fuse_out_header *out_hdr;
     struct fuse_write_out *out_write;
@@ -293,7 +291,6 @@ void vwrite_cb(struct rpc_context *rpc, int status, void *data,
 #ifdef LATENCY_MEASURING_ENABLED
     ft_stop(&ft[FUSE_WRITE]);
 #endif
-    struct virtionfs *vnfs = cb_data->vnfs;
     COMPOUND4res *res = data;
 
     if (status != RPC_STATUS_SUCCESS) {
@@ -312,8 +309,10 @@ void vwrite_cb(struct rpc_context *rpc, int status, void *data,
     cb_data->out_write->size = written;
 
 ret:;
+    // In write we are required to free the in_iov
+    free(cb_data->in_iov);
     struct snap_fs_dev_io_done_ctx *cb = cb_data->cb;
-    mpool_free(vnfs->p, cb_data);
+    free(cb_data);
     cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb->user_arg);
 }
 
@@ -332,7 +331,7 @@ int vwrite(struct fuse_session *se, struct virtionfs *vnfs,
                 __func__);
 #endif
 
-    struct write_cb_data *cb_data = mpool_alloc(vnfs->p);
+    struct write_cb_data *cb_data = malloc(sizeof(struct write_cb_data));
     if (!cb_data) {
         out_hdr->error = -ENOMEM;
         return 0;
@@ -341,6 +340,7 @@ int vwrite(struct fuse_session *se, struct virtionfs *vnfs,
     cb_data->cb = cb;
     cb_data->vnfs = vnfs;
     cb_data->in_write = in_write;
+    cb_data->in_iov = in_iov;
     cb_data->out_hdr = out_hdr;
     cb_data->out_write = out_write;
 
@@ -354,7 +354,7 @@ int vwrite(struct fuse_session *se, struct virtionfs *vnfs,
     struct inode *i = nfs4_op_putfh_open(vnfs, &op[0], in_hdr->nodeid);
     if (!i) {
     	fprintf(stderr, "Invalid nodeid supplied to write\n");
-        mpool_free(vnfs->p, cb_data);
+        free(cb_data);
         out_hdr->error = -ENOENT;
         return 0;
     }
@@ -382,7 +382,7 @@ int vwrite(struct fuse_session *se, struct virtionfs *vnfs,
 #endif
     if (rpc_nfs4_compound_async2(vnfs->rpc, vwrite_cb, &args, cb_data, alloc_hint) != 0) {
     	fprintf(stderr, "Failed to send NFS:write request\n");
-        mpool_free(vnfs->p, cb_data);
+        free(cb_data);
         out_hdr->error = -EREMOTEIO;
         return 0;
     }
@@ -393,9 +393,8 @@ int vwrite(struct fuse_session *se, struct virtionfs *vnfs,
 
 struct read_cb_data {
     struct snap_fs_dev_io_done_ctx *cb;
+    struct fuse_session *se;
     struct virtionfs *vnfs;
-
-    struct fuse_read_in *in_read;
 
     struct fuse_out_header *out_hdr;
     struct iov *out_iov;
@@ -404,10 +403,6 @@ struct read_cb_data {
 void vread_cb(struct rpc_context *rpc, int status, void *data,
            void *private_data) {
     struct read_cb_data *cb_data = (struct read_cb_data *)private_data;
-#ifdef LATENCY_MEASURING_ENABLED
-    ft_stop(&ft[FUSE_READ]);
-#endif
-    struct virtionfs *vnfs = cb_data->vnfs;
     COMPOUND4res *res = data;
 
     if (status != RPC_STATUS_SUCCESS) {
@@ -428,11 +423,15 @@ void vread_cb(struct rpc_context *rpc, int status, void *data,
                    .resok4.data.data_len;
     // Fill the iov that we return to the host
     size_t read = iov_write_buf(cb_data->out_iov, buf, len);
-    cb_data->out_hdr->len += read;
 
+    // This will increment the len of the FUSE response with the bytes written
+    // and free the iov for us which is required in read
+    fuse_ll_reply_iov(cb_data->se, cb_data->out_hdr, cb_data->out_iov);
+
+    printf("READ:%lu completed with read=%lu!\n", cb_data->out_hdr->unique, read);
 ret:;
     struct snap_fs_dev_io_done_ctx *cb = cb_data->cb;
-    mpool_free(vnfs->p, cb_data);
+    free(cb_data);
     cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb->user_arg);
 }
 
@@ -440,15 +439,15 @@ int vread(struct fuse_session *se, struct virtionfs *vnfs,
          struct fuse_in_header *in_hdr, struct fuse_read_in *in_read,
          struct fuse_out_header *out_hdr, struct iov *out_iov,
          struct snap_fs_dev_io_done_ctx *cb) {
-    struct read_cb_data *cb_data = mpool_alloc(vnfs->p);
+    struct read_cb_data *cb_data = malloc(sizeof(struct read_cb_data));
     if (!cb_data) {
         out_hdr->error = -ENOMEM;
         return 0;
     }
 
     cb_data->cb = cb;
+    cb_data->se = se;
     cb_data->vnfs = vnfs;
-    cb_data->in_read = in_read;
     cb_data->out_hdr = out_hdr;
     cb_data->out_iov = out_iov;
 
@@ -462,7 +461,7 @@ int vread(struct fuse_session *se, struct virtionfs *vnfs,
     struct inode *i = nfs4_op_putfh_open(vnfs, &op[0], in_hdr->nodeid);
     if (!i) {
     	fprintf(stderr, "Invalid nodeid supplied to open\n");
-        mpool_free(vnfs->p, cb_data);
+        free(cb_data);
         out_hdr->error = -ENOENT;
         return 0;
     }
@@ -472,13 +471,9 @@ int vread(struct fuse_session *se, struct virtionfs *vnfs,
     op[1].nfs_argop4_u.opread.count = in_read->size;
     op[1].nfs_argop4_u.opread.offset = in_read->offset;
 
-#ifdef LATENCY_MEASURING_ENABLED
-    op_calls[FUSE_READ]++;
-    ft_start(&ft[FUSE_READ]);
-#endif
     if (rpc_nfs4_compound_async(vnfs->rpc, vread_cb, &args, cb_data) != 0) {
     	fprintf(stderr, "Failed to send NFS:READ request\n");
-        mpool_free(vnfs->p, cb_data);
+        free(cb_data);
         out_hdr->error = -EREMOTEIO;
         return 0;
     }
@@ -506,7 +501,6 @@ void vopen_confirm_cb(struct rpc_context *rpc, int status, void *data,
     ft_stop(&ft[FUSE_OPEN]);
 #endif
     struct open_cb_data *cb_data = (struct open_cb_data *)private_data;
-    struct virtionfs *vnfs = cb_data->vnfs;
     COMPOUND4res *res = data;
 
     if (status != RPC_STATUS_SUCCESS) {
@@ -526,7 +520,7 @@ void vopen_confirm_cb(struct rpc_context *rpc, int status, void *data,
 
 ret:;
     struct snap_fs_dev_io_done_ctx *cb = cb_data->cb;
-    mpool_free(vnfs->p, cb_data);
+    free(cb_data);
     cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb->user_arg);
 }
 
@@ -560,6 +554,10 @@ void vopen_cb(struct rpc_context *rpc, int status, void *data,
         goto ret;
     }
 
+    // We don't use the FUSE:fh, nor do we have any open flags at the moment
+    // so set the out_open to zeros
+    memset(cb_data->out_open, 0, sizeof(*cb_data->out_open));
+    cb_data->out_hdr->len += sizeof(*cb_data->out_open);
     OPEN4resok *openok = &res->resarray.resarray_val[1].nfs_resop4_u.opopen.OPEN4res_u.resok4;
     if (!(openok->rflags & OPEN4_RESULT_CONFIRM)) {
         // Save the stateid we were given for the opened handle
@@ -595,7 +593,7 @@ void vopen_cb(struct rpc_context *rpc, int status, void *data,
 
 ret:;
     struct snap_fs_dev_io_done_ctx *cb = cb_data->cb;
-    mpool_free(vnfs->p, cb_data);
+    free(cb_data);
     cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb->user_arg);
 }
 
@@ -604,7 +602,7 @@ int vopen(struct fuse_session *se, struct virtionfs *vnfs,
          struct fuse_out_header *out_hdr, struct fuse_open_out *out_open,
          struct snap_fs_dev_io_done_ctx *cb)
 {
-    struct open_cb_data *cb_data = mpool_alloc(vnfs->p);
+    struct open_cb_data *cb_data = malloc(sizeof(struct open_cb_data));
     if (!cb_data) {
         out_hdr->error = -ENOMEM;
         return 0;
@@ -627,7 +625,7 @@ int vopen(struct fuse_session *se, struct virtionfs *vnfs,
     cb_data->i = i;
     if (!i) {
     	fprintf(stderr, "Invalid nodeid supplied to OPEN\n");
-        mpool_free(vnfs->p, cb_data);
+        free(cb_data);
         out_hdr->error = -ENOENT;
         return 0;
     }
@@ -670,7 +668,7 @@ int vopen(struct fuse_session *se, struct virtionfs *vnfs,
 #endif
     if (rpc_nfs4_compound_async(vnfs->rpc, vopen_cb, &args, cb_data) != 0) {
     	fprintf(stderr, "Failed to send NFS:open request\n");
-        mpool_free(vnfs->p, cb_data);
+        free(cb_data);
         out_hdr->error = -EREMOTEIO;
         return 0;
     }
@@ -695,7 +693,6 @@ void setattr_cb(struct rpc_context *rpc, int status, void *data,
     ft_stop(&ft[FUSE_SETATTR]);
 #endif
     struct setattr_cb_data *cb_data = (struct setattr_cb_data *)private_data;
-    struct virtionfs *vnfs = cb_data->vnfs;
     COMPOUND4res *res = data;
 
     if (status != RPC_STATUS_SUCCESS) {
@@ -726,7 +723,7 @@ ret:;
     free(cb_data->bitmap);
     free(cb_data->attrlist);
     struct snap_fs_dev_io_done_ctx *cb = cb_data->cb;
-    mpool_free(vnfs->p, cb_data);
+    free(cb_data);
     cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb->user_arg);
 }
 
@@ -735,7 +732,7 @@ int setattr(struct fuse_session *se, struct virtionfs *vnfs,
             struct fuse_out_header *out_hdr, struct fuse_attr_out *out_attr,
             struct snap_fs_dev_io_done_ctx *cb)
 {
-    struct setattr_cb_data *cb_data = mpool_alloc(vnfs->p);
+    struct setattr_cb_data *cb_data = malloc(sizeof(struct setattr_cb_data));
     if (!cb_data) {
         out_hdr->error = -ENOMEM;
         return 0;
@@ -755,7 +752,7 @@ int setattr(struct fuse_session *se, struct virtionfs *vnfs,
     struct inode *i = nfs4_op_putfh(vnfs, &op[0], in_hdr->nodeid);
     if (!i) {
     	fprintf(stderr, "Invalid nodeid supplied to GETATTR\n");
-        mpool_free(vnfs->p, cb_data);
+        free(cb_data);
         out_hdr->error = -ENOENT;
         return 0;
     }
@@ -806,7 +803,7 @@ int setattr(struct fuse_session *se, struct virtionfs *vnfs,
 #endif
     if (rpc_nfs4_compound_async(vnfs->rpc, setattr_cb, &args, cb_data) != 0) {
     	fprintf(stderr, "Failed to send nfs4 SETATTR request\n");
-        mpool_free(vnfs->p, cb_data);
+        free(cb_data);
         out_hdr->error = -EREMOTEIO;
         return 0;
     }
@@ -828,7 +825,6 @@ void statfs_cb(struct rpc_context *rpc, int status, void *data,
     ft_stop(&ft[FUSE_STATFS]);
 #endif
     struct statfs_cb_data *cb_data = (struct statfs_cb_data *)private_data;
-    struct virtionfs *vnfs = cb_data->vnfs;
     COMPOUND4res *res = data;
 
     if (status != RPC_STATUS_SUCCESS) {
@@ -853,7 +849,7 @@ void statfs_cb(struct rpc_context *rpc, int status, void *data,
 
 ret:;
     struct snap_fs_dev_io_done_ctx *cb = cb_data->cb;
-    mpool_free(vnfs->p, cb_data);
+    free(cb_data);
     cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb->user_arg);
 }
 
@@ -863,7 +859,7 @@ int statfs(struct fuse_session *se, struct virtionfs *vnfs,
            struct fuse_out_header *out_hdr, struct fuse_statfs_out *stat,
            struct snap_fs_dev_io_done_ctx *cb)
 {
-    struct statfs_cb_data *cb_data = mpool_alloc(vnfs->p);
+    struct statfs_cb_data *cb_data = malloc(sizeof(struct statfs_cb_data));
     if (!cb_data) {
         out_hdr->error = -ENOMEM;
         return 0;
@@ -895,7 +891,7 @@ int statfs(struct fuse_session *se, struct virtionfs *vnfs,
 
     if (rpc_nfs4_compound_async(vnfs->rpc, statfs_cb, &args, cb_data) != 0) {
     	fprintf(stderr, "Failed to send FUSE:statfs request\n");
-        mpool_free(vnfs->p, cb_data);
+        free(cb_data);
         out_hdr->error = -EREMOTEIO;
         return 0;
     }
@@ -975,7 +971,7 @@ void lookup_cb(struct rpc_context *rpc, int status, void *data,
 
 ret:;
     struct snap_fs_dev_io_done_ctx *cb = cb_data->cb;
-    mpool_free(vnfs->p, cb_data);
+    free(cb_data);
     cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb->user_arg);
 }
 
@@ -984,7 +980,7 @@ int lookup(struct fuse_session *se, struct virtionfs *vnfs,
                         struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry,
                         struct snap_fs_dev_io_done_ctx *cb)
 {
-    struct lookup_cb_data *cb_data = mpool_alloc(vnfs->p);
+    struct lookup_cb_data *cb_data = malloc(sizeof(struct lookup_cb_data));
     if (!cb_data) {
         out_hdr->error = -ENOMEM;
         return 0;
@@ -1002,7 +998,7 @@ int lookup(struct fuse_session *se, struct virtionfs *vnfs,
     struct inode *pi = nfs4_op_putfh(vnfs, &op[0], in_hdr->nodeid);
     if (!pi) {
     	fprintf(stderr, "Invalid nodeid supplied to LOOKUP\n");
-        mpool_free(vnfs->p, cb_data);
+        free(cb_data);
         out_hdr->error = -ENOENT;
         return 0;
     }
@@ -1028,7 +1024,7 @@ int lookup(struct fuse_session *se, struct virtionfs *vnfs,
 
     if (rpc_nfs4_compound_async(vnfs->rpc, lookup_cb, &args, cb_data) != 0) {
     	fprintf(stderr, "Failed to send nfs4 LOOKUP request\n");
-        mpool_free(vnfs->p, cb_data);
+        free(cb_data);
         out_hdr->error = -EREMOTEIO;
         return 0;
     }
@@ -1050,7 +1046,6 @@ void getattr_cb(struct rpc_context *rpc, int status, void *data,
     ft_stop(&ft[FUSE_GETATTR]);
 #endif
     struct getattr_cb_data *cb_data = (struct getattr_cb_data *)private_data;
-    struct virtionfs *vnfs = cb_data->vnfs;
     COMPOUND4res *res = data;
 
     if (status != RPC_STATUS_SUCCESS) {
@@ -1079,7 +1074,7 @@ void getattr_cb(struct rpc_context *rpc, int status, void *data,
 
 ret:;
     struct snap_fs_dev_io_done_ctx *cb = cb_data->cb;
-    mpool_free(vnfs->p, cb_data);
+    free(cb_data);
     cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb->user_arg);
 }
 
@@ -1088,7 +1083,7 @@ int getattr(struct fuse_session *se, struct virtionfs *vnfs,
                       struct fuse_out_header *out_hdr, struct fuse_attr_out *out_attr,
                     struct snap_fs_dev_io_done_ctx *cb)
 {
-    struct getattr_cb_data *cb_data = mpool_alloc(vnfs->p);
+    struct getattr_cb_data *cb_data = malloc(sizeof(struct getattr_cb_data));
     if (!cb_data) {
         out_hdr->error = -ENOMEM;
         return 0;
@@ -1105,7 +1100,7 @@ int getattr(struct fuse_session *se, struct virtionfs *vnfs,
     struct inode *i = nfs4_op_putfh(vnfs, &op[0], in_hdr->nodeid);
     if (!i) {
     	fprintf(stderr, "Invalid nodeid supplied to GETATTR\n");
-        mpool_free(vnfs->p, cb_data);
+        free(cb_data);
         out_hdr->error = -ENOENT;
         return 0;
     }
@@ -1121,7 +1116,7 @@ int getattr(struct fuse_session *se, struct virtionfs *vnfs,
 #endif
     if (rpc_nfs4_compound_async(vnfs->rpc, getattr_cb, &args, cb_data) != 0) {
     	fprintf(stderr, "Failed to send nfs4 GETATTR request\n");
-        mpool_free(vnfs->p, cb_data);
+        free(cb_data);
         out_hdr->error = -EREMOTEIO;
         return 0;
     }
@@ -1439,24 +1434,14 @@ void virtionfs_main(char *server, char *export,
     nfs_set_version(vnfs->nfs, NFS_V4);
     vnfs->rpc = nfs_get_rpc_context(vnfs->nfs);
 
-    vnfs->p = calloc(1, sizeof(struct mpool));
-    if (!vnfs->p) {
-        warn("Failed to init virtionfs");
-        goto ret_b;
-    }
-    if (mpool_init(vnfs->p, sizeof(struct lookup_cb_data), 10) < 0) {
-        warn("Failed to init virtionfs");
-        goto ret_c;
-    }
-
     vnfs->inodes = calloc(1, sizeof(struct inode_table));
     if (!vnfs->inodes) {
         warn("Failed to init virtionfs");
-        goto ret_d;
+        goto ret_b;
     }
     if (inode_table_init(vnfs->inodes) < 0) {
         warn("Failed to init virtionfs");
-        goto ret_e;
+        goto ret_c;
     }
 
     struct fuse_ll_operations ops;
@@ -1467,12 +1452,8 @@ void virtionfs_main(char *server, char *export,
     printf("nfsclient finished\n");
 
     inode_table_destroy(vnfs->inodes);
-ret_e:
-    free(vnfs->inodes);
-ret_d:
-    mpool_destroy(vnfs->p);
 ret_c:
-    free(vnfs->p);
+    free(vnfs->inodes);
 ret_b:
     nfs_destroy_context(vnfs->nfs);
 ret_a:

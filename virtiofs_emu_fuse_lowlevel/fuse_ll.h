@@ -117,8 +117,9 @@ struct iov {
     struct iovec *iovec;
     int iovcnt;
     int iov_idx;
-    int buf_idx;
+    size_t buf_idx;
     size_t bytes_unused;
+    size_t total_size;
 };
 void iov_init(struct iov *, struct iovec *, int);
 size_t iov_write_buf(struct iov*, void *, size_t);
@@ -132,7 +133,8 @@ int fuse_ll_reply_open(struct fuse_session *se, struct fuse_out_header *out_hdr,
 int fuse_ll_reply_create(struct fuse_session *se, struct fuse_out_header *out_hdr,
     struct fuse_entry_out *out_entry, struct fuse_open_out *out_open,
     const struct fuse_entry_param *e, const struct fuse_file_info *fi);
-
+int fuse_ll_reply_iov(struct fuse_session *se, struct fuse_out_header *out_hdr,
+    struct iov *iov);
 int fuse_ll_reply_statfs(struct fuse_session *se, struct fuse_out_header *out_hdr,
     struct fuse_statfs_out *out_statfs, const struct statvfs *stbuf);
 
@@ -223,10 +225,12 @@ struct fuse_ll_operations {
                    fuse_ino_t in_new_parentdir, const char *const in_new_name, uint32_t in_flags,
                    struct fuse_out_header *,
                    struct snap_fs_dev_io_done_ctx *cb);
+    // free(out_iov) before using cb or return 0!
     int (*read) (struct fuse_session *, void *user_data,
                  struct fuse_in_header *, struct fuse_read_in *,
                  struct fuse_out_header *, struct iov *,
                  struct snap_fs_dev_io_done_ctx *cb);
+    // free(in_iov) before using cb or return 0!
     int (*write) (struct fuse_session *, void *user_data,
                   struct fuse_in_header *, struct fuse_write_in *, struct iov *,
                   struct fuse_out_header *, struct fuse_write_out *,
