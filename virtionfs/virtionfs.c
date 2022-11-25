@@ -1441,7 +1441,7 @@ void virtionfs_main(char *server, char *export,
     }
     if (inode_table_init(vnfs->inodes) < 0) {
         warn("Failed to init virtionfs");
-        goto ret_c;
+        goto ret_b;
     }
 
     struct fuse_ll_operations ops;
@@ -1452,8 +1452,6 @@ void virtionfs_main(char *server, char *export,
     printf("nfsclient finished\n");
 
     inode_table_destroy(vnfs->inodes);
-ret_c:
-    free(vnfs->inodes);
 ret_b:
     nfs_destroy_context(vnfs->nfs);
 ret_a:
