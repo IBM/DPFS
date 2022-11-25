@@ -76,7 +76,7 @@ static void virtiofs_emu_ll_loop_singlethreaded(struct virtio_fs_ctrl *ctrl, use
     sigaction(SIGTERM, &act, 0);
 
     bool suspending = false;
-    int count = 0;
+    uint32_t count = 0;
 
     while (keep_running || !virtio_fs_ctrl_is_suspended(ctrl)) {
         /*
@@ -118,6 +118,7 @@ static void *virtiofs_emu_ll_loop_thread(void *arg)
 {
     struct emu_ll_tdata *tdata = (struct emu_ll_tdata *)arg;
 
+    // poll as fast as we can! Someone else is doing mmio polling
     while (keep_running || !virtio_fs_ctrl_is_suspended(tdata->ctrl))
         virtio_fs_ctrl_progress_io(tdata->ctrl, tdata->thread_id);
 
@@ -129,19 +130,27 @@ static void virtiofs_emu_ll_loop_multithreaded(struct virtio_fs_ctrl *ctrl,
 {
     struct emu_ll_tdata tdatas[nthreads];
 
-    for (int i = 0; i < nthreads; i++) {
+    for (int i = 1; i < nthreads; i++) {
         tdatas[i].thread_id = i;
         tdatas[i].ctrl = ctrl;
+        // Only the first thread does mmio polling (sometimes)
         if (pthread_create(&tdatas[i].thread, NULL, virtiofs_emu_ll_loop_thread, &tdatas[i])) {
             warn("Failed to create thread for io %d", i);
             for (int j = i - 1; j >= 0; j--) {
-                (void)pthread_cancel(tdatas[j].thread);
-                (void)pthread_join(tdatas[j].thread, NULL);
+                pthread_cancel(tdatas[j].thread);
+                pthread_join(tdatas[j].thread, NULL);
             }
         }
     }
 
+    // The main thread also does mmio polling and signal handling
     virtiofs_emu_ll_loop_singlethreaded(ctrl, interval, 0);
+
+    // The main thread exited, the other threads should exit soon
+    // let's wait for them
+    for (int i = 1; i < nthreads; i++) {
+        pthread_join(tdatas[i].thread, NULL);
+    }
 }
 
 void virtiofs_emu_ll_loop(struct virtiofs_emu_ll *emu)
@@ -231,10 +240,6 @@ struct virtiofs_emu_ll *virtiofs_emu_ll_new(struct virtiofs_emu_ll_params *param
     }
     if (emu_params.vf_id < -1) {
         fprintf(stderr, "virtiofs_emu_new: vf_id requires a value >=-1!");
-        return NULL;
-    }
-    if (emu_params.nthreads > 0) {
-        fprintf(stderr, "virtiofs_emu_new: Multithreaded mode currently not supported!");
         return NULL;
     }
     struct virtiofs_emu_ll *emu = calloc(sizeof(struct virtiofs_emu_ll), 1);

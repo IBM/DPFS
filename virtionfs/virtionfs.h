@@ -29,6 +29,7 @@ struct virtionfs {
     bool debug;
     uint64_t timeout_sec;
     uint32_t timeout_nsec;
+    uint32_t nthreads;
 
     // Currently there are two async NFS handshake operations
     // that need to complete

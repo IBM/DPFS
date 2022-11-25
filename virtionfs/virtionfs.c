@@ -422,13 +422,11 @@ void vread_cb(struct rpc_context *rpc, int status, void *data,
     uint32_t len = res->resarray.resarray_val[1].nfs_resop4_u.opread.READ4res_u
                    .resok4.data.data_len;
     // Fill the iov that we return to the host
-    size_t read = iov_write_buf(cb_data->out_iov, buf, len);
+    iov_write_buf(cb_data->out_iov, buf, len);
 
     // This will increment the len of the FUSE response with the bytes written
     // and free the iov for us which is required in read
     fuse_ll_reply_iov(cb_data->se, cb_data->out_hdr, cb_data->out_iov);
-    
-    printf("READ:%lu completed with read=%lu!\n", cb_data->out_hdr->unique, read);
 
 ret:;
     struct snap_fs_dev_io_done_ctx *cb = cb_data->cb;
@@ -1133,11 +1131,11 @@ setclientid_cb_2(struct rpc_context *rpc, int status, void *data,
     COMPOUND4res *res = data;
     
     if (status != RPC_STATUS_SUCCESS) {
-        fprintf(stderr, "RPC with NFS:COMMIT unsuccessful: rpc error=%d\n", status);
+        fprintf(stderr, "RPC with NFS:setclientid_confirm unsuccessful: rpc error=%d\n", status);
         return;
     }
     if (res->status != NFS4_OK) {
-        fprintf(stderr, "NFS:COMMIT unsuccessful: nfs error=%d\n", res->status);
+        fprintf(stderr, "NFS:setclientid_confirm unsuccessful: nfs error=%d\n", res->status);
         return;
     }
 
@@ -1159,7 +1157,7 @@ setclientid_cb_1(struct rpc_context *rpc, int status, void *data,
     COMPOUND4res *res = data;
     
     if (status != RPC_STATUS_SUCCESS) {
-    	fprintf(stderr, "RPC with NFS:setclientid unsuccessful: rpc error=%d\n", status);
+    	fprintf(stderr, "RPC with NFS:setclientid unsuccessful: rpc error=%d, error string=%s\n", status, (char *) data);
         return;
     }
     if (res->status != NFS4_OK) {
@@ -1426,6 +1424,7 @@ void virtionfs_main(char *server, char *export,
     vnfs->debug = debug;
     vnfs->timeout_sec = calc_timeout_sec(timeout);
     vnfs->timeout_nsec = calc_timeout_nsec(timeout);
+    vnfs->nthreads = nthreads;
 
     vnfs->nfs = nfs_init_context();
     if (vnfs->nfs == NULL) {
