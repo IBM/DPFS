@@ -18,6 +18,8 @@
 #define VIRTIOFS_EMU_LL_FUSE_HANDLERS_LEN VIRTIOFS_EMU_LL_FUSE_MAX_OPCODE+1
 #define VIRTIOFS_EMU_LL_NUM_QUEUES 64
 #define VIRTIOFS_EMU_LL_QUEUE_DEPTH 64
+// The maximum number of outstanding requests the virtiofs consumer is allowed to have
+#define VIRTIOFS_EMU_LL_MAX_BACKGROUND (VIRTIOFS_EMU_LL_NUM_QUEUES * VIRTIOFS_EMU_LL_QUEUE_DEPTH)
 
 // return int EWOULDBLOCK indicates that the done_ctx callback
 // will be used to indicate when the request is fully handled

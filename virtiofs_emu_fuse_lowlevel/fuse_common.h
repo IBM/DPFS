@@ -505,6 +505,7 @@ struct fuse_conn_info {
 	 * thread), asynchronous read requests (Linux's io_submit(2)
 	 * call actually blocks, so these are also limited to one per
 	 * thread).
+	 * !! virtiofs_emu_fuse_ll Emperically: doesn't seem to do anything
 	 */
 	unsigned max_background;
 

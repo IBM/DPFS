@@ -427,8 +427,9 @@ void vread_cb(struct rpc_context *rpc, int status, void *data,
     // This will increment the len of the FUSE response with the bytes written
     // and free the iov for us which is required in read
     fuse_ll_reply_iov(cb_data->se, cb_data->out_hdr, cb_data->out_iov);
-
+    
     printf("READ:%lu completed with read=%lu!\n", cb_data->out_hdr->unique, read);
+
 ret:;
     struct snap_fs_dev_io_done_ctx *cb = cb_data->cb;
     free(cb_data);

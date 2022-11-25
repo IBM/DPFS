@@ -321,7 +321,7 @@ static int fuse_ll_init(struct fuse_ll *f_ll,
     out_hdr->unique = in_hdr->unique;
     out_hdr->len = sizeof(*out_hdr);
     out_hdr->error = 0;
-    struct fuse_init_in *arg = (struct fuse_init_in *) fuse_in_iov[1].iov_base;
+    struct fuse_init_in *inarg = (struct fuse_init_in *) fuse_in_iov[1].iov_base;
     struct fuse_init_out *outarg = (struct fuse_init_out *) fuse_out_iov[1].iov_base;
 
     struct fuse_session *se = f_ll->se;
@@ -331,83 +331,83 @@ static int fuse_ll_init(struct fuse_ll *f_ll,
     }
 
     size_t bufsize = se->bufsize;
-    size_t outargsize = sizeof(*arg);
-    uint64_t inargflags = 0;
-    uint64_t outargflags = 0;
+    size_t outargsize = sizeof(*inarg);
     if (f_ll->debug) {
-        printf("INIT: %u.%u\n", arg->major, arg->minor);
-        if (arg->major == 7 && arg->minor >= 6) {
-            printf("flags=0x%08x\n", arg->flags);
+        printf("INIT: %u.%u\n", inarg->major, inarg->minor);
+        if (inarg->major == 7 && inarg->minor >= 6) {
+            printf("flags=0x%08x\n", inarg->flags);
             printf("max_readahead=0x%08x\n",
-                arg->max_readahead);
+                inarg->max_readahead);
         }
     }
-    se->conn.proto_major = arg->major;
-    se->conn.proto_minor = arg->minor;
+    se->conn.proto_major = inarg->major;
+    se->conn.proto_minor = inarg->minor;
     se->conn.capable = 0;
     se->conn.want = 0;
-    se->conn.max_background = VIRTIOFS_EMU_LL_NUM_QUEUES * VIRTIOFS_EMU_LL_QUEUE_DEPTH;
+    se->conn.max_background = VIRTIOFS_EMU_LL_MAX_BACKGROUND;
 
     memset(outarg, 0, sizeof(*outarg));
     outarg->major = FUSE_KERNEL_VERSION;
     outarg->minor = FUSE_KERNEL_MINOR_VERSION;
 
-    if (arg->major < 7) {
+    if (inarg->major < 7) {
         printf("fuse: unsupported protocol version: %u.%u\n",
-            arg->major, arg->minor);
+            inarg->major, inarg->minor);
         out_hdr->error = -EPROTO;
         return 0;
     }
 
-    if (arg->major > 7) {
+    if (inarg->major > 7) {
         /* Wait for a second INIT request with a 7.X version */
         out_hdr->len+=outargsize;
         return 0;
     }
 
-    if (arg->minor >= 6) {
-        if (arg->max_readahead < se->conn.max_readahead)
-            se->conn.max_readahead = arg->max_readahead;
-        inargflags = arg->flags;
-        //if (inargflags & FUSE_INIT_EXT)
-        //	inargflags = inargflags | (uint64_t) arg->flags2 << 32;
-        if (inargflags & FUSE_ASYNC_READ)
+    if (inarg->minor >= 6) {
+        // Settle for the smallest max_readahead size of the two parties
+        if (inarg->max_readahead < se->conn.max_readahead)
+            se->conn.max_readahead = inarg->max_readahead;
+        else
+            inarg->max_readahead = se->conn.max_readahead;
+        //if (inarg->flags & FUSE_INIT_EXT)
+        //	inarg->flags = inargflags | (uint64_t) arg->flags2 << 32;
+        if (inarg->flags & FUSE_ASYNC_READ)
             se->conn.capable |= FUSE_CAP_ASYNC_READ;
-        if (inargflags & FUSE_POSIX_LOCKS)
+        if (inarg->flags & FUSE_POSIX_LOCKS)
             se->conn.capable |= FUSE_CAP_POSIX_LOCKS;
-        if (inargflags & FUSE_ATOMIC_O_TRUNC)
+        if (inarg->flags & FUSE_ATOMIC_O_TRUNC)
             se->conn.capable |= FUSE_CAP_ATOMIC_O_TRUNC;
-        if (inargflags & FUSE_EXPORT_SUPPORT)
+        if (inarg->flags & FUSE_EXPORT_SUPPORT)
             se->conn.capable |= FUSE_CAP_EXPORT_SUPPORT;
-        if (inargflags & FUSE_DONT_MASK)
+        if (inarg->flags & FUSE_DONT_MASK)
             se->conn.capable |= FUSE_CAP_DONT_MASK;
-        if (inargflags & FUSE_FLOCK_LOCKS)
+        if (inarg->flags & FUSE_FLOCK_LOCKS)
             se->conn.capable |= FUSE_CAP_FLOCK_LOCKS;
-        if (inargflags & FUSE_AUTO_INVAL_DATA)
+        if (inarg->flags & FUSE_AUTO_INVAL_DATA)
             se->conn.capable |= FUSE_CAP_AUTO_INVAL_DATA;
-        if (inargflags & FUSE_DO_READDIRPLUS)
+        if (inarg->flags & FUSE_DO_READDIRPLUS)
             se->conn.capable |= FUSE_CAP_READDIRPLUS;
-        if (inargflags & FUSE_READDIRPLUS_AUTO)
+        if (inarg->flags & FUSE_READDIRPLUS_AUTO)
             se->conn.capable |= FUSE_CAP_READDIRPLUS_AUTO;
-        if (inargflags & FUSE_ASYNC_DIO)
+        if (inarg->flags & FUSE_ASYNC_DIO)
             se->conn.capable |= FUSE_CAP_ASYNC_DIO;
-        if (inargflags & FUSE_WRITEBACK_CACHE)
+        if (inarg->flags & FUSE_WRITEBACK_CACHE)
             se->conn.capable |= FUSE_CAP_WRITEBACK_CACHE;
-        if (inargflags & FUSE_NO_OPEN_SUPPORT)
+        if (inarg->flags & FUSE_NO_OPEN_SUPPORT)
             se->conn.capable |= FUSE_CAP_NO_OPEN_SUPPORT;
-        if (inargflags & FUSE_PARALLEL_DIROPS)
+        if (inarg->flags & FUSE_PARALLEL_DIROPS)
             se->conn.capable |= FUSE_CAP_PARALLEL_DIROPS;
-        if (inargflags & FUSE_POSIX_ACL)
+        if (inarg->flags & FUSE_POSIX_ACL)
             se->conn.capable |= FUSE_CAP_POSIX_ACL;
-        if (inargflags & FUSE_HANDLE_KILLPRIV)
+        if (inarg->flags & FUSE_HANDLE_KILLPRIV)
             se->conn.capable |= FUSE_CAP_HANDLE_KILLPRIV;
-        if (inargflags & FUSE_CACHE_SYMLINKS)
+        if (inarg->flags & FUSE_CACHE_SYMLINKS)
             se->conn.capable |= FUSE_CAP_CACHE_SYMLINKS;
-        if (inargflags & FUSE_NO_OPENDIR_SUPPORT)
+        if (inarg->flags & FUSE_NO_OPENDIR_SUPPORT)
             se->conn.capable |= FUSE_CAP_NO_OPENDIR_SUPPORT;
-        if (inargflags & FUSE_EXPLICIT_INVAL_DATA)
+        if (inarg->flags & FUSE_EXPLICIT_INVAL_DATA)
             se->conn.capable |= FUSE_CAP_EXPLICIT_INVAL_DATA;
-        if (!(inargflags & FUSE_MAX_PAGES)) {
+        if (!(inarg->flags & FUSE_MAX_PAGES)) {
             size_t max_bufsize =
                 FUSE_DEFAULT_MAX_PAGES_PER_REQ * getpagesize()
                 + FUSE_BUFFER_HEADER_SIZE;
@@ -465,7 +465,7 @@ static int fuse_ll_init(struct fuse_ll *f_ll,
 
     se->got_init = 1;
     if (f_ll->ops.init) {
-         int op_res = f_ll->ops.init(se, f_ll->user_data, in_hdr, arg, &se->conn, out_hdr, cb);
+         int op_res = f_ll->ops.init(se, f_ll->user_data, in_hdr, inarg, &se->conn, out_hdr, cb);
         if (out_hdr->error != 0 || op_res != 0) {
             se->error = -EPROTO;
             se->got_destroy = 1;
@@ -495,53 +495,47 @@ static int fuse_ll_init(struct fuse_ll *f_ll,
     //	return -EPROTO;
     //}
 
-    if (se->conn.max_write < bufsize - FUSE_BUFFER_HEADER_SIZE) {
-        se->bufsize = se->conn.max_write + FUSE_BUFFER_HEADER_SIZE;
-    }
-    if (arg->flags & FUSE_MAX_PAGES) {
+    if (inarg->flags & FUSE_MAX_PAGES) {
         outarg->flags |= FUSE_MAX_PAGES;
         outarg->max_pages = (se->conn.max_write - 1) / getpagesize() + 1;
     }
-    outargflags = outarg->flags;
     /* Always enable big writes, this is superseded
        by the max_write option */
-    outargflags |= FUSE_BIG_WRITES;
+    outarg->flags |= FUSE_BIG_WRITES;
 
     if (se->conn.want & FUSE_CAP_ASYNC_READ)
-        outargflags |= FUSE_ASYNC_READ;
+        outarg->flags |= FUSE_ASYNC_READ;
     if (se->conn.want & FUSE_CAP_POSIX_LOCKS)
-        outargflags |= FUSE_POSIX_LOCKS;
+        outarg->flags |= FUSE_POSIX_LOCKS;
     if (se->conn.want & FUSE_CAP_ATOMIC_O_TRUNC)
-        outargflags |= FUSE_ATOMIC_O_TRUNC;
+        outarg->flags |= FUSE_ATOMIC_O_TRUNC;
     if (se->conn.want & FUSE_CAP_EXPORT_SUPPORT)
-        outargflags |= FUSE_EXPORT_SUPPORT;
+        outarg->flags |= FUSE_EXPORT_SUPPORT;
     if (se->conn.want & FUSE_CAP_DONT_MASK)
-        outargflags |= FUSE_DONT_MASK;
+        outarg->flags |= FUSE_DONT_MASK;
     if (se->conn.want & FUSE_CAP_FLOCK_LOCKS)
-        outargflags |= FUSE_FLOCK_LOCKS;
+        outarg->flags |= FUSE_FLOCK_LOCKS;
     if (se->conn.want & FUSE_CAP_AUTO_INVAL_DATA)
-        outargflags |= FUSE_AUTO_INVAL_DATA;
+        outarg->flags |= FUSE_AUTO_INVAL_DATA;
     if (se->conn.want & FUSE_CAP_READDIRPLUS)
-        outargflags |= FUSE_DO_READDIRPLUS;
+        outarg->flags |= FUSE_DO_READDIRPLUS;
     if (se->conn.want & FUSE_CAP_READDIRPLUS_AUTO)
-        outargflags |= FUSE_READDIRPLUS_AUTO;
+        outarg->flags |= FUSE_READDIRPLUS_AUTO;
     if (se->conn.want & FUSE_CAP_ASYNC_DIO)
-        outargflags |= FUSE_ASYNC_DIO;
+        outarg->flags |= FUSE_ASYNC_DIO;
     if (se->conn.want & FUSE_CAP_WRITEBACK_CACHE)
-        outargflags |= FUSE_WRITEBACK_CACHE;
+        outarg->flags |= FUSE_WRITEBACK_CACHE;
     if (se->conn.want & FUSE_CAP_POSIX_ACL)
-        outargflags |= FUSE_POSIX_ACL;
+        outarg->flags |= FUSE_POSIX_ACL;
     if (se->conn.want & FUSE_CAP_CACHE_SYMLINKS)
-        outargflags |= FUSE_CACHE_SYMLINKS;
+        outarg->flags |= FUSE_CACHE_SYMLINKS;
     if (se->conn.want & FUSE_CAP_EXPLICIT_INVAL_DATA)
-        outargflags |= FUSE_EXPLICIT_INVAL_DATA;
+        outarg->flags |= FUSE_EXPLICIT_INVAL_DATA;
 
-    //if (inargflags & FUSE_INIT_EXT) {
+    //if (inarg->flags & FUSE_INIT_EXT) {
     //	outarg->flags |= FUSE_INIT_EXT;
-    //	outarg->flags2 = outargflags >> 32;
+    //	outarg->flags2 = outarg->flags >> 32;
     //}
-
-    outarg->flags = outargflags;
 
     outarg->max_readahead = se->conn.max_readahead;
     outarg->max_write = se->conn.max_write;
@@ -574,9 +568,9 @@ static int fuse_ll_init(struct fuse_ll *f_ll,
         printf("   time_gran=%u\n",
             outarg->time_gran);
     }
-    if (arg->minor < 5)
+    if (inarg->minor < 5)
         outargsize = FUSE_COMPAT_INIT_OUT_SIZE;
-    else if (arg->minor < 23)
+    else if (inarg->minor < 23)
         outargsize = FUSE_COMPAT_22_INIT_OUT_SIZE;
 
     out_hdr->len+=outargsize;
