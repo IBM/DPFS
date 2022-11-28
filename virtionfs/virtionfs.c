@@ -1357,6 +1357,8 @@ int init(struct fuse_session *se, struct virtionfs *vnfs,
         return 0;
     }
 
+    // We want to poll as fast as possible, MAX PERFORMANCE
+    nfs_set_poll_timeout(vnfs->nfs, -1);
     if (nfs_mt_service_thread_start(vnfs->nfs)) {
         printf("Failed to start libnfs service thread\n");
         out_hdr->error = -EREMOTEIO;
