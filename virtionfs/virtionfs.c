@@ -1146,6 +1146,7 @@ setclientid_cb_2(struct rpc_context *rpc, int status, void *data,
 #ifdef LATENCY_MEASURING_ENABLED
         ft_stop(&ft[FUSE_INIT]);
 #endif
+        vnfs->init_done_ctx->cb(vnfs->init_done_ctx);
     }
 }
 
@@ -1245,6 +1246,7 @@ static void lookup_true_rootfh_cb(struct rpc_context *rpc, int status, void *dat
 #ifdef LATENCY_MEASURING_ENABLED
         ft_stop(&ft[FUSE_INIT]);
 #endif
+        vnfs->init_done_ctx->cb(vnfs->init_done_ctx);
     }
 }
 
@@ -1299,13 +1301,16 @@ int destroy(struct fuse_session *se, struct virtionfs *vnfs,
             printf("OP(%d) took %lu averaged over %lu calls\n", i, ft_get_nsec(&ft[i]) / op_calls[i], op_calls[i]);
     }
 #endif
+
+    nfs_mt_service_thread_stop(vnfs->nfs);
+
     return 0;
 }
 
 int init(struct fuse_session *se, struct virtionfs *vnfs,
     struct fuse_in_header *in_hdr, struct fuse_init_in *in_init,
     struct fuse_conn_info *conn, struct fuse_out_header *out_hdr,
-    struct snap_fs_dev_io_done_ctx *cb)
+    struct fuse_init_done_ctx *cb)
 {
 #ifdef LATENCY_MEASURING_ENABLED
     for (int i = 0; i < FUSE_REMOVEMAPPING+1; i++) {
@@ -1358,6 +1363,7 @@ int init(struct fuse_session *se, struct virtionfs *vnfs,
         return 0;
     }
 
+    vnfs->init_done_ctx = cb;
     // These two upcomming function calls are in a way redundant...
     // The libnfs mount function also retrieves the true rootfh for the export
     // and it negotiates a clientid with the server.
@@ -1383,7 +1389,7 @@ int init(struct fuse_session *se, struct virtionfs *vnfs,
     // or even fail!
     // This introduces a race condition, where if the rootfh is not found yet
     // or there is no clientid virtionfs will crash horribly
-    return 0;
+    return EWOULDBLOCK;
 }
 
 void virtionfs_assign_ops(struct fuse_ll_operations *ops) {

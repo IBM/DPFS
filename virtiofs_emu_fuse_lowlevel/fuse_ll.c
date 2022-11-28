@@ -16,6 +16,7 @@
  */
 
 #include <stdint.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <errno.h>
 #include <limits.h>
@@ -307,6 +308,8 @@ size_t fuse_add_direntry_plus(struct iov *read_iov,
     return iov_write_buf(read_iov, buf, entlen_padded);
 }
 
+void fuse_ll_init_cb(struct fuse_init_done_ctx *init_cb);
+
 static int fuse_ll_init(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
@@ -331,7 +334,6 @@ static int fuse_ll_init(struct fuse_ll *f_ll,
     }
 
     size_t bufsize = se->bufsize;
-    size_t outargsize = sizeof(*inarg);
     if (f_ll->debug) {
         printf("INIT: %u.%u\n", inarg->major, inarg->minor);
         if (inarg->major == 7 && inarg->minor >= 6) {
@@ -359,7 +361,7 @@ static int fuse_ll_init(struct fuse_ll *f_ll,
 
     if (inarg->major > 7) {
         /* Wait for a second INIT request with a 7.X version */
-        out_hdr->len+=outargsize;
+        out_hdr->len+=sizeof(*outarg);
         return 0;
     }
 
@@ -465,13 +467,43 @@ static int fuse_ll_init(struct fuse_ll *f_ll,
 
     se->got_init = 1;
     if (f_ll->ops.init) {
-         int op_res = f_ll->ops.init(se, f_ll->user_data, in_hdr, inarg, &se->conn, out_hdr, cb);
-        if (out_hdr->error != 0 || op_res != 0) {
+        struct fuse_init_done_ctx *init_cb = malloc(sizeof(*init_cb));
+        init_cb->cb = fuse_ll_init_cb;
+        init_cb->f_ll = f_ll;
+        init_cb->in_hdr = in_hdr;
+        init_cb->out_hdr = out_hdr;
+        init_cb->inarg = inarg;
+        init_cb->outarg = outarg;
+        init_cb->snap_cb = cb;
+        int op_res = f_ll->ops.init(se, f_ll->user_data, in_hdr, inarg,
+                                    &se->conn, out_hdr, init_cb);
+        // The fuse implementation will call the cb for us
+        // if they return EWOULDBLOCK.
+        // Thus if they return 0 and no error occured (aka impl is running
+        // synchronously) we call the next part of the init handler for them
+        if (out_hdr->error != 0 || op_res == 0) {
+            init_cb->cb(init_cb);
+        // If an error occured we return early
+        } else if (out_hdr->error != 0 || op_res != 0) {
             se->error = -EPROTO;
             se->got_destroy = 1;
             return op_res;
-        }
+        } // In all other cases the fuse implementation will call the cb for us
     }
+
+    return EWOULDBLOCK;
+}
+
+void fuse_ll_init_cb(struct fuse_init_done_ctx *init_cb)
+{
+    // Transfer all of the variables back into the function
+    // and free the init callback context
+    struct fuse_ll *f_ll = init_cb->f_ll;
+    //struct fuse_in_header *in_hdr = init_cb->in_hdr;
+    struct fuse_out_header *out_hdr = init_cb->out_hdr;
+    struct fuse_init_in *inarg = init_cb->inarg;
+    struct fuse_init_out *outarg = init_cb->outarg;
+    struct fuse_session *se = init_cb->f_ll->se;
 
     if (se->conn.want & (~se->conn.capable)) {
         fprintf(stderr, "fuse: error: filesystem requested capabilities "
@@ -481,7 +513,7 @@ static int fuse_ll_init(struct fuse_ll *f_ll,
         //fuse_session_exit(se);
         se->got_destroy = 1;
         out_hdr->error = -EPROTO;
-        return 0;
+        goto ret;
     }
 
     // There is no server-side mounting point
@@ -568,13 +600,17 @@ static int fuse_ll_init(struct fuse_ll *f_ll,
         printf("   time_gran=%u\n",
             outarg->time_gran);
     }
+    size_t outargsize = sizeof(*outarg);
     if (inarg->minor < 5)
         outargsize = FUSE_COMPAT_INIT_OUT_SIZE;
     else if (inarg->minor < 23)
         outargsize = FUSE_COMPAT_22_INIT_OUT_SIZE;
 
     out_hdr->len+=outargsize;
-    return 0;
+ret:;
+    struct snap_fs_dev_io_done_ctx *snap_cb = init_cb->snap_cb;
+    free(init_cb);
+    snap_cb->cb(SNAP_FS_DEV_OP_SUCCESS, snap_cb->user_arg);
 }
 
 static int fuse_ll_destroy(struct fuse_ll *f_ll,

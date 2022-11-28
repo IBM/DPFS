@@ -24,6 +24,7 @@ struct virtionfs {
     struct rpc_context *rpc;
     struct inode_table *inodes;
 
+
     char *server;
     char *export;
     bool debug;
@@ -34,8 +35,12 @@ struct virtionfs {
     // Currently there are two async NFS handshake operations
     // that need to complete
     // if this int == 2, then handshake is fully finished
+    // and the init_done_ctx can be called to send the init result
+    // to the host
 #define VIRTIONFS_HANDSHAKE_PROGRESS_COMPLETE 2
     atomic_uint handshake_progress;
+    struct fuse_init_done_ctx *init_done_ctx;
+
     atomic_uint open_owner_counter;
     atomic_uint seqid;
 
