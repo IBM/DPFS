@@ -24,7 +24,6 @@ struct virtionfs {
     struct rpc_context *rpc;
     struct inode_table *inodes;
 
-
     char *server;
     char *export;
     bool debug;
@@ -44,7 +43,6 @@ struct virtionfs {
     atomic_uint open_owner_counter;
     atomic_uint seqid;
 
-    nfs_fh4 rootfh;
     clientid4 clientid;
     verifier4 setclientid_confirm;
 };

@@ -874,8 +874,9 @@ int statfs(struct fuse_session *se, struct virtionfs *vnfs,
 
     // PUTFH the root
     op[0].argop = OP_PUTFH;
-    op[0].nfs_argop4_u.opputfh.object.nfs_fh4_val = vnfs->rootfh.nfs_fh4_val;
-    op[0].nfs_argop4_u.opputfh.object.nfs_fh4_len = vnfs->rootfh.nfs_fh4_len;
+    struct inode *rooti = inode_table_get(vnfs->inodes, FUSE_ROOT_ID);
+    op[0].nfs_argop4_u.opputfh.object.nfs_fh4_val = rooti->fh.nfs_fh4_val;
+    op[0].nfs_argop4_u.opputfh.object.nfs_fh4_len = rooti->fh.nfs_fh4_len;
     // GETATTR statfs attributes
     nfs4_op_getattr(&op[1], statfs_attributes, 2);
 
