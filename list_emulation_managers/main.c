@@ -13,6 +13,12 @@
 #include "nvme_emu_log.h"
 #include "mlnx_snap_pci_manager.h"
 
+void print_pfs_vfs(struct snap_pfs_ctx *ctx) {
+    for (int i = 0; i < ctx->max_pfs; i++) {
+        printf("    * PF %d with pci_number %s has %d VFs\n", i, ctx->pfs[i].pci_number, ctx->pfs[i].num_vfs);
+    }
+}
+
 int main(void) {
     if (nvme_init_logger())
         err(1, "Failed to open logger. Does /var/log/mlnx_snap exist?");
@@ -26,7 +32,7 @@ int main(void) {
     struct ibv_device **ibv_list = ibv_get_device_list(&ibv_count);
     if (!ibv_list) {
         fprintf(stderr, "Failed to open IB device list.\n");
-    goto err_pci;
+        goto err_pci;
     }
 
     for (int i = 0; i < ibv_count; i++) {
@@ -36,16 +42,25 @@ int main(void) {
         if (!sctx)
             continue;
 
+        printf("The reported number of VFs is incorrect\n");
         printf("Emulation manager \"%s\" supports:\n", rdma_device);
 
-        if (sctx->emulation_caps & SNAP_VIRTIO_FS)
+        if (sctx->emulation_caps & SNAP_VIRTIO_FS) {
             printf("* virtio_fs\n");
-        if (sctx->emulation_caps & SNAP_VIRTIO_BLK)
-                printf("* virtio_blk\n");
-        if (sctx->emulation_caps & SNAP_VIRTIO_NET)
-                printf("* virtio_net\n");
-        if (sctx->emulation_caps & SNAP_NVME)
-        printf("* nvme\n");
+            print_pfs_vfs(&sctx->virtio_fs_pfs);
+        }
+        if (sctx->emulation_caps & SNAP_VIRTIO_BLK) {
+            printf("* virtio_blk\n");
+            print_pfs_vfs(&sctx->virtio_blk_pfs);
+        }
+        if (sctx->emulation_caps & SNAP_VIRTIO_NET) {
+            printf("* virtio_net\n");
+            print_pfs_vfs(&sctx->virtio_net_pfs);
+        }
+        if (sctx->emulation_caps & SNAP_NVME) {
+            printf("* nvme\n");
+            print_pfs_vfs(&sctx->nvme_pfs);
+        }
     } 
 
     free(ibv_list);
