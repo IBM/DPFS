@@ -257,8 +257,8 @@ struct virtiofs_emu_ll *virtiofs_emu_ll_new(struct virtiofs_emu_ll_params *param
     param.vf_id = emu_params.vf_id;
 
     param.dev_type = "virtiofs_emu";
-    param.num_queues = VIRTIOFS_EMU_LL_NUM_QUEUES;
-    param.queue_depth = VIRTIOFS_EMU_LL_QUEUE_DEPTH;
+    param.num_queues = 2;
+    param.queue_depth = 64;
     param.force_in_order = true;
     param.recover = false; // See snap_virtio_fs_ctrl.c:811, if enabled this controller is supposed to be recovered from the dead
     param.suspended = false;

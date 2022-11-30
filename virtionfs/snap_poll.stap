@@ -1,0 +1,42 @@
+global io_calls, mmio_calls
+
+probe begin
+{
+  printf("begin\n")
+  stop_stopwatch("poll_io")
+  stop_stopwatch("poll_mmio")
+}
+
+probe end
+{
+  if (io_calls > 0) {
+    io = read_stopwatch_us("poll_io") / io_calls
+    printf ("poll_io lat %12dus over %12 calls\n", io, io_calls);
+  }
+  if (mmio_calls > 0) {
+    mmio = read_stopwatch_us("poll_mmio") / mmio_calls
+    printf ("poll_mmio lat %12dus over %12 calls\n", mmio, mmio_calls);
+  }
+
+  delete_stopwatch("poll_io")
+  delete_stopwatch("poll_mmio")
+}
+
+probe process("./virtionfs").function("virtio_fs_ctrl_progress_io") {
+  start_stopwatch("poll_io")
+}
+
+probe process("./virtionfs").function("virtio_fs_ctrl_progress_io").return {
+  stop_stopwatch("poll_io")
+  io_calls += 1
+}
+
+probe process("./virtionfs").function("virtio_fs_ctrl_progress") {
+  start_stopwatch("poll_mmio")
+}
+
+probe process("./virtionfs").function("virtio_fs_ctrl_progress").return {
+  stop_stopwatch("poll_mmio")
+  mmio_calls += 1
+}
+

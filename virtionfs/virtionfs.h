@@ -14,6 +14,7 @@
 #include <nfsc/libnfs.h>
 #include <nfsc/libnfs-raw-nfs4.h>
 #include "virtiofs_emu_ll.h"
+#include "mpool.h"
 
 void virtionfs_main(char *server, char *export,
                bool debug, double timeout, uint32_t nthreads,
@@ -23,6 +24,7 @@ struct virtionfs {
     struct nfs_context *nfs;
     struct rpc_context *rpc;
     struct inode_table *inodes;
+    struct mpool *p;
 
     char *server;
     char *export;
