@@ -16,6 +16,8 @@
 #include <linux/fuse.h>
 #include <arpa/inet.h>
 
+#include "nfs_v4.h"
+
 static uint32_t create_attributes[2] = {
     0,
     (1 << (FATTR4_MODE - 32) |
@@ -348,8 +350,8 @@ int nfs_parse_attributes(struct fuse_attr *attr,
     buf += 4;
     len -= 4;
     
-    attr->blksize = NFS_BLKSIZE;
-    attr->blocks  = (space_used + NFS_BLKSIZE -1) / NFS_BLKSIZE;
+    attr->blksize = VNFS_BLKSIZE;
+    attr->blocks  = (space_used + VNFS_BLKSIZE -1) / VNFS_BLKSIZE;
 
     // We don't have information for this field
     attr->rdev = 0;
@@ -362,8 +364,8 @@ int nfs_parse_statfs(struct fuse_kstatfs *stat, const char *buf, int len)
     uint64_t u64;
     uint32_t u32;
 
-    stat->bsize   = NFS_BLKSIZE;
-    stat->frsize  = NFS_BLKSIZE;
+    stat->bsize   = VNFS_BLKSIZE;
+    stat->frsize  = VNFS_BLKSIZE;
 
     /* Files Free */
     CHECK_GETATTR_BUF_SPACE(len, 8);

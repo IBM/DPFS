@@ -334,14 +334,13 @@ static int fuse_ll_init(struct fuse_ll *f_ll,
     }
 
     size_t bufsize = se->bufsize;
-    if (f_ll->debug) {
-        printf("INIT: %u.%u\n", inarg->major, inarg->minor);
+#ifdef DEBUG_ENABLED
+        printf("INIT in: %u.%u\n", inarg->major, inarg->minor);
         if (inarg->major == 7 && inarg->minor >= 6) {
-            printf("flags=0x%08x\n", inarg->flags);
-            printf("max_readahead=0x%08x\n",
-                inarg->max_readahead);
+            printf("* flags=0x%08x\n", inarg->flags);
+            printf("* max_readahead=0x%08x\n", inarg->max_readahead);
         }
-    }
+#endif
     se->conn.proto_major = inarg->major;
     se->conn.proto_minor = inarg->minor;
     se->conn.capable = 0;
@@ -498,7 +497,7 @@ void fuse_ll_init_cb(struct fuse_init_done_ctx *init_cb)
 {
     // Transfer all of the variables back into the function
     // and free the init callback context
-    struct fuse_ll *f_ll = init_cb->f_ll;
+    //struct fuse_ll *f_ll = init_cb->f_ll;
     //struct fuse_in_header *in_hdr = init_cb->in_hdr;
     struct fuse_out_header *out_hdr = init_cb->out_hdr;
     struct fuse_init_in *inarg = init_cb->inarg;
@@ -587,19 +586,16 @@ void fuse_ll_init_cb(struct fuse_init_done_ctx *init_cb)
     if (se->conn.proto_minor >= 23)
         outarg->time_gran = se->conn.time_gran;
 
-    if (f_ll->debug) {
-        printf("   INIT: %u.%u\n", outarg->major, outarg->minor);
-        printf("   flags=0x%08x\n", outarg->flags);
-        printf("   max_readahead=0x%08x\n",
-            outarg->max_readahead);
-        printf("   max_write=0x%08x\n", outarg->max_write);
-        printf("   max_background=%i\n",
-            outarg->max_background);
-        printf("   congestion_threshold=%i\n",
-            outarg->congestion_threshold);
-        printf("   time_gran=%u\n",
-            outarg->time_gran);
-    }
+#ifdef DEBUG_ENABLED
+    printf("INIT out: %u.%u\n", outarg->major, outarg->minor);
+    printf("* flags=0x%08x\n", outarg->flags);
+    printf("* max_readahead=0x%08x\n", outarg->max_readahead);
+    printf("* max_write=0x%08x\n", outarg->max_write);
+    printf("* max_background=%i\n", outarg->max_background);
+    printf("* congestion_threshold=%i\n", outarg->congestion_threshold);
+    printf("* time_gran=%u\n", outarg->time_gran);
+#endif
+
     size_t outargsize = sizeof(*outarg);
     if (inarg->minor < 5)
         outargsize = FUSE_COMPAT_INIT_OUT_SIZE;

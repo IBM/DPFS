@@ -11,6 +11,8 @@
 #include <linux/fuse.h>
 #include <nfsc/libnfs-raw-nfs4.h>
 
+#define VNFS_BLKSIZE 8192
+
 // Empirically verified with Linux kernel 5.11
 #define NFS_ROOT_FILEID 2
 
