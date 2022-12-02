@@ -282,7 +282,8 @@ struct write_cb_data {
     struct virtionfs *vnfs;
 
     struct fuse_write_in *in_write;
-    struct iov *in_iov;
+    struct iovec *in_iov;
+    int *in_iovcnt;
 
     struct fuse_out_header *out_hdr;
     struct fuse_write_out *out_write;
@@ -325,7 +326,8 @@ ret:;
 // When the host receives the written len of just the first iov, it will retry with the others
 // TLDR: Not efficient (but functional) with multiple I/O vectors!
 int vwrite(struct fuse_session *se, struct virtionfs *vnfs,
-         struct fuse_in_header *in_hdr, struct fuse_write_in *in_write, struct iov *in_iov,
+         struct fuse_in_header *in_hdr, struct fuse_write_in *in_write,
+         struct iovec *in_iov, int in_iov_cnt,
          struct fuse_out_header *out_hdr, struct fuse_write_out *out_write,
          struct snap_fs_dev_io_done_ctx *cb)
 {
@@ -367,8 +369,8 @@ int vwrite(struct fuse_session *se, struct virtionfs *vnfs,
     op[1].nfs_argop4_u.opwrite.stateid = i->open_stateid;
     op[1].nfs_argop4_u.opwrite.offset = in_write->offset;
     op[1].nfs_argop4_u.opwrite.stable = UNSTABLE4;
-    op[1].nfs_argop4_u.opwrite.data.data_val = in_iov->iovec[0].iov_base;
-    op[1].nfs_argop4_u.opwrite.data.data_len = in_iov->iovec[0].iov_len;
+    op[1].nfs_argop4_u.opwrite.data.data_val = in_iov->iov_base;
+    op[1].nfs_argop4_u.opwrite.data.data_len = in_iov->iov_len;
 
     // libnfs by default allocates a buffer for the fully encoded NFS packet (rpc_pdu)
     // of sizeof(rpc header) + sizeof(COMPOUNF4args) + ZDR_ENCODEBUF_MINSIZE + alloc_hint
@@ -378,7 +380,7 @@ int vwrite(struct fuse_session *se, struct virtionfs *vnfs,
     // Because this alloc_hint is really naive, the only way to safely make sure there
     // is enough buffer space, is to set the alloc_hint to our write buffer size...
     // This allocates way too much, but atleast it is safe
-    uint64_t alloc_hint = in_iov->iovec[0].iov_len; 
+    uint64_t alloc_hint = in_iov->iov_len; 
 
 #ifdef LATENCY_MEASURING_ENABLED
     op_calls[FUSE_WRITE]++;
@@ -394,6 +396,26 @@ int vwrite(struct fuse_session *se, struct virtionfs *vnfs,
     return EWOULDBLOCK;
 }
 
+#define MIN(x, y) x < y ? x : y
+
+static size_t iovec_write_buf(struct iovec *iov, int iovcnt, void *buf, size_t size) {
+    int i = 0;
+    size_t written = 0;
+    while (written != size && i < iovcnt) {
+        struct iovec *v = &iov[i];
+        // copy all the remaining bytes or till the current end of iovec
+        size_t to_cpy = MIN(size-written, v->iov_len);
+        memcpy(v->iov_base, buf+written, to_cpy);
+
+        // we hit the end of the iovec
+        if (to_cpy == v->iov_len){
+            // goto the next iovec
+            i++;
+        }
+        written += to_cpy;
+    }
+    return written;
+}
 
 struct read_cb_data {
     struct snap_fs_dev_io_done_ctx *cb;
@@ -401,7 +423,8 @@ struct read_cb_data {
     struct virtionfs *vnfs;
 
     struct fuse_out_header *out_hdr;
-    struct iov *out_iov;
+    struct iovec *out_iov;
+    int out_iovcnt;
 };
 
 void vread_cb(struct rpc_context *rpc, int status, void *data,
@@ -427,11 +450,8 @@ void vread_cb(struct rpc_context *rpc, int status, void *data,
     uint32_t len = res->resarray.resarray_val[1].nfs_resop4_u.opread.READ4res_u
                    .resok4.data.data_len;
     // Fill the iov that we return to the host
-    iov_write_buf(cb_data->out_iov, buf, len);
-
-    // This will increment the len of the FUSE response with the bytes written
-    // and free the iov for us which is required in read
-    fuse_ll_reply_iov(cb_data->se, cb_data->out_hdr, cb_data->out_iov);
+    size_t written = iovec_write_buf(cb_data->out_iov, cb_data->out_iovcnt, buf, len);
+    cb_data->out_hdr->len += written;
 
 ret:;
     struct snap_fs_dev_io_done_ctx *cb = cb_data->cb;
@@ -441,7 +461,7 @@ ret:;
 
 int vread(struct fuse_session *se, struct virtionfs *vnfs,
          struct fuse_in_header *in_hdr, struct fuse_read_in *in_read,
-         struct fuse_out_header *out_hdr, struct iov *out_iov,
+         struct fuse_out_header *out_hdr, struct iovec *out_iov, int out_iovcnt,
          struct snap_fs_dev_io_done_ctx *cb) {
     struct read_cb_data *cb_data = mpool_alloc(vnfs->p);
     if (!cb_data) {
@@ -454,6 +474,7 @@ int vread(struct fuse_session *se, struct virtionfs *vnfs,
     cb_data->vnfs = vnfs;
     cb_data->out_hdr = out_hdr;
     cb_data->out_iov = out_iov;
+    cb_data->out_iovcnt = out_iovcnt;
 
     COMPOUND4args args;
     nfs_argop4 op[2];
