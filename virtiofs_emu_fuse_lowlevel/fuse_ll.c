@@ -535,8 +535,7 @@ static int fuse_ll_init(struct fuse_ll *f_ll,
         if (se->conn.congestion_threshold > se->conn.max_background)
             se->conn.congestion_threshold = se->conn.max_background;
         if (!se->conn.congestion_threshold) {
-            se->conn.congestion_threshold =
-                se->conn.max_background * 3 / 4;
+            se->conn.congestion_threshold = se->conn.max_background * 3 / 4;
         }
 
         outarg->max_background = se->conn.max_background;
@@ -1277,13 +1276,13 @@ static int fuse_ll_read(struct fuse_ll *f_ll,
         return 0;
     }
 
-    size_t total_write_iov_size = 0;
-    for (int i = 2; i < in_iovcnt; i++) {
-        total_write_iov_size += fuse_in_iov[i].iov_len;
+    size_t total_read_iov_size = 0;
+    for (int i = 1; i < out_iovcnt; i++) {
+        total_read_iov_size += fuse_out_iov[i].iov_len;
     }
 
-    if (total_write_iov_size != in_read->size) {
-        fprintf(stderr, "%s: iovecs not the same size as the amount of data requested to write!!!\n", __func__);
+    if (total_read_iov_size != in_read->size) {
+        fprintf(stderr, "%s: iovecs not the same size as the amount of data requested to read!!!\n", __func__);
         return -EINVAL;
     }
 
