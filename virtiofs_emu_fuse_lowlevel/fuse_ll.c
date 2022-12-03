@@ -465,31 +465,41 @@ static int fuse_ll_init(struct fuse_ll *f_ll,
         se->conn.max_write = bufsize - FUSE_BUFFER_HEADER_SIZE;
 
     se->got_init = 1;
+    struct fuse_init_done_ctx *init_cb = malloc(sizeof(*init_cb));
+    init_cb->cb = fuse_ll_init_cb;
+    init_cb->f_ll = f_ll;
+    init_cb->in_hdr = in_hdr;
+    init_cb->out_hdr = out_hdr;
+    init_cb->inarg = inarg;
+    init_cb->outarg = outarg;
+    init_cb->snap_cb = cb;
     if (f_ll->ops.init) {
-        struct fuse_init_done_ctx *init_cb = malloc(sizeof(*init_cb));
-        init_cb->cb = fuse_ll_init_cb;
-        init_cb->f_ll = f_ll;
-        init_cb->in_hdr = in_hdr;
-        init_cb->out_hdr = out_hdr;
-        init_cb->inarg = inarg;
-        init_cb->outarg = outarg;
-        init_cb->snap_cb = cb;
         int op_res = f_ll->ops.init(se, f_ll->user_data, in_hdr, inarg,
                                     &se->conn, out_hdr, init_cb);
         // The fuse implementation will call the cb for us
         // if they return EWOULDBLOCK.
         // Thus if they return 0 and no error occured (aka impl is running
         // synchronously) we call the next part of the init handler for them
-        if (out_hdr->error != 0 || op_res == 0) {
+        if (out_hdr->error == 0 && op_res == 0) {
             init_cb->cb(init_cb);
         // If an error occured we return early
-        } else if (out_hdr->error != 0 || op_res != 0) {
+        } else if (out_hdr->error != 0 && op_res <= 0) {
             se->error = -EPROTO;
             se->got_destroy = 1;
             return op_res;
-        } // In all other cases the fuse implementation will call the cb for us
+        } else if (op_res == EWOULDBLOCK) {
+            // The fuse implementation will call the cb for us
+            return op_res;
+        } else { // op_res == unknown return var
+            fprintf(stderr, "FUSE_INIT: fuse impl returned an unknown result int %d\n", op_res);
+            fprintf(stderr, "FUSE_INIT: We'll try our best to salvage the situation by continuing the init\n");
+            init_cb->cb(init_cb);
+        }
+    } else {
+        init_cb->cb(init_cb);
     }
 
+    free(init_cb);
     return EWOULDBLOCK;
 }
 

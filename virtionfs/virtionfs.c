@@ -332,7 +332,7 @@ int vwrite(struct fuse_session *se, struct virtionfs *vnfs,
          struct snap_fs_dev_io_done_ctx *cb)
 {
 #ifdef DEBUG_ENABLED
-    if (in_iov->iovcnt > 1)
+    if (in_iov_cnt > 1)
         fprintf(stderr, "virtionfs:%s was called with >1 iovecs, this is not supported!\n",
                 __func__);
 #endif
