@@ -77,8 +77,8 @@ struct inode *nfs4_op_putfh(struct virtionfs *vnfs, nfs_argop4 *op, uint64_t nod
     if (!i) {
         return NULL;
     }
-    op->nfs_argop4_u.opputfh.object.nfs_fh4_val = i->fh.nfs_fh4_val;
-    op->nfs_argop4_u.opputfh.object.nfs_fh4_len = i->fh.nfs_fh4_len;
+    op->nfs_argop4_u.opputfh.object.nfs_fh4_val = i->fh.val;
+    op->nfs_argop4_u.opputfh.object.nfs_fh4_len = i->fh.len;
     return i;
 }
 
@@ -89,8 +89,8 @@ struct inode *nfs4_op_putfh_open(struct virtionfs *vnfs, nfs_argop4 *op, uint64_
     if (!i) {
         return NULL;
     }
-    op->nfs_argop4_u.opputfh.object.nfs_fh4_val = i->fh_open.nfs_fh4_val;
-    op->nfs_argop4_u.opputfh.object.nfs_fh4_len = i->fh_open.nfs_fh4_len;
+    op->nfs_argop4_u.opputfh.object.nfs_fh4_val = i->fh_open.val;
+    op->nfs_argop4_u.opputfh.object.nfs_fh4_len = i->fh_open.len;
     return i;
 }
 
@@ -124,8 +124,7 @@ void release_cb(struct rpc_context *rpc, int status, void *data,
         goto ret;
     }
 
-    free(cb_data->i->fh_open.nfs_fh4_val);
-    cb_data->i->fh_open.nfs_fh4_len = 0;
+    cb_data->i->fh_open.len = 0;
 
 ret:;
     struct snap_fs_dev_io_done_ctx *cb = cb_data->cb;
@@ -314,8 +313,6 @@ void vwrite_cb(struct rpc_context *rpc, int status, void *data,
     cb_data->out_write->size = written;
 
 ret:;
-    // In write we are required to free the in_iov
-    free(cb_data->in_iov);
     struct snap_fs_dev_io_done_ctx *cb = cb_data->cb;
     mpool_free(vnfs->p, cb_data);
     cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb->user_arg);
@@ -603,8 +600,8 @@ void vopen_cb(struct rpc_context *rpc, int status, void *data,
     args.argarray.argarray_val = op;
 
     op[0].argop = OP_PUTFH;
-    op[0].nfs_argop4_u.opputfh.object.nfs_fh4_val = i->fh_open.nfs_fh4_val;
-    op[0].nfs_argop4_u.opputfh.object.nfs_fh4_len = i->fh_open.nfs_fh4_len;
+    op[0].nfs_argop4_u.opputfh.object.nfs_fh4_val = i->fh_open.val;
+    op[0].nfs_argop4_u.opputfh.object.nfs_fh4_len = i->fh_open.len;
 
     op[1].argop = OP_OPEN_CONFIRM;
     // Give back the same stateid as we received in the OPEN result
@@ -656,8 +653,8 @@ int vopen(struct fuse_session *se, struct virtionfs *vnfs,
         return 0;
     }
     op[0].argop = OP_PUTFH;
-    op[0].nfs_argop4_u.opputfh.object.nfs_fh4_val = i->parent->fh.nfs_fh4_val;
-    op[0].nfs_argop4_u.opputfh.object.nfs_fh4_len = i->parent->fh.nfs_fh4_len;
+    op[0].nfs_argop4_u.opputfh.object.nfs_fh4_val = i->parent->fh.val;
+    op[0].nfs_argop4_u.opputfh.object.nfs_fh4_len = i->parent->fh.len;
 
     // OPEN
     op[1].argop = OP_OPEN;
@@ -904,8 +901,8 @@ int statfs(struct fuse_session *se, struct virtionfs *vnfs,
     // PUTFH the root
     op[0].argop = OP_PUTFH;
     struct inode *rooti = inode_table_get(vnfs->inodes, FUSE_ROOT_ID);
-    op[0].nfs_argop4_u.opputfh.object.nfs_fh4_val = rooti->fh.nfs_fh4_val;
-    op[0].nfs_argop4_u.opputfh.object.nfs_fh4_len = rooti->fh.nfs_fh4_len;
+    op[0].nfs_argop4_u.opputfh.object.nfs_fh4_val = rooti->fh.val;
+    op[0].nfs_argop4_u.opputfh.object.nfs_fh4_len = rooti->fh.len;
     // GETATTR statfs attributes
     nfs4_op_getattr(&op[1], statfs_attributes, 2);
 
@@ -987,7 +984,7 @@ void lookup_cb(struct rpc_context *rpc, int status, void *data,
     atomic_fetch_add(&i->nlookup, 1);
     cb_data->out_entry->generation = i->generation;
 
-    if (i->fh.nfs_fh4_len == 0) {
+    if (i->fh.len == 0) {
         // Retreive the FH from the res and set it in the inode
         // it's stored in the inode for later use ex. getattr when it uses the nodeid
         int ret = nfs4_clone_fh(&i->fh, &res->resarray.resarray_val[3].nfs_resop4_u.opgetfh.GETFH4res_u.resok4.object);
@@ -1177,7 +1174,6 @@ setclientid_cb_2(struct rpc_context *rpc, int status, void *data,
 #ifdef LATENCY_MEASURING_ENABLED
         ft_stop(&ft[FUSE_INIT]);
 #endif
-        vnfs->init_done_ctx->cb(vnfs->init_done_ctx);
     }
 }
 
@@ -1277,7 +1273,6 @@ static void lookup_true_rootfh_cb(struct rpc_context *rpc, int status, void *dat
 #ifdef LATENCY_MEASURING_ENABLED
         ft_stop(&ft[FUSE_INIT]);
 #endif
-        vnfs->init_done_ctx->cb(vnfs->init_done_ctx);
     }
 }
 
@@ -1340,8 +1335,7 @@ int destroy(struct fuse_session *se, struct virtionfs *vnfs,
 
 int init(struct fuse_session *se, struct virtionfs *vnfs,
     struct fuse_in_header *in_hdr, struct fuse_init_in *in_init,
-    struct fuse_conn_info *conn, struct fuse_out_header *out_hdr,
-    struct fuse_init_done_ctx *cb)
+    struct fuse_conn_info *conn, struct fuse_out_header *out_hdr)
 {
 #ifdef LATENCY_MEASURING_ENABLED
     for (int i = 0; i < FUSE_REMOVEMAPPING+1; i++) {
@@ -1396,9 +1390,6 @@ int init(struct fuse_session *se, struct virtionfs *vnfs,
         return 0;
     }
 
-    // Setting the init done callback so that the two upcomming async functions
-    // can call it when they are both finished
-    vnfs->init_done_ctx = cb;
     // These two upcomming function calls are in a way redundant...
     // The libnfs mount function also retrieves the true rootfh for the export
     // and it negotiates a clientid with the server.
@@ -1424,7 +1415,7 @@ int init(struct fuse_session *se, struct virtionfs *vnfs,
     // or even fail!
     // This introduces a race condition, where if the rootfh is not found yet
     // or there is no clientid virtionfs will crash horribly
-    return EWOULDBLOCK;
+    return 0;
 }
 
 void virtionfs_assign_ops(struct fuse_ll_operations *ops) {

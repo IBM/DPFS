@@ -308,8 +308,6 @@ size_t fuse_add_direntry_plus(struct iov *read_iov,
     return iov_write_buf(read_iov, buf, entlen_padded);
 }
 
-void fuse_ll_init_cb(struct fuse_init_done_ctx *init_cb);
-
 static int fuse_ll_init(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
@@ -334,12 +332,13 @@ static int fuse_ll_init(struct fuse_ll *f_ll,
     }
 
     size_t bufsize = se->bufsize;
+    size_t outargsize = sizeof(*inarg);
 #ifdef DEBUG_ENABLED
-        printf("INIT in: %u.%u\n", inarg->major, inarg->minor);
-        if (inarg->major == 7 && inarg->minor >= 6) {
-            printf("* flags=0x%08x\n", inarg->flags);
-            printf("* max_readahead=0x%08x\n", inarg->max_readahead);
-        }
+    printf("INIT in: %u.%u\n", inarg->major, inarg->minor);
+    if (inarg->major == 7 && inarg->minor >= 6) {
+        printf("* flags=0x%08x\n", inarg->flags);
+        printf("* max_readahead=0x%08x\n", inarg->max_readahead);
+    }
 #endif
     se->conn.proto_major = inarg->major;
     se->conn.proto_minor = inarg->minor;
@@ -360,7 +359,7 @@ static int fuse_ll_init(struct fuse_ll *f_ll,
 
     if (inarg->major > 7) {
         /* Wait for a second INIT request with a 7.X version */
-        out_hdr->len+=sizeof(*outarg);
+        out_hdr->len+=outargsize;
         return 0;
     }
 
@@ -465,54 +464,15 @@ static int fuse_ll_init(struct fuse_ll *f_ll,
         se->conn.max_write = bufsize - FUSE_BUFFER_HEADER_SIZE;
 
     se->got_init = 1;
-    struct fuse_init_done_ctx *init_cb = malloc(sizeof(*init_cb));
-    init_cb->cb = fuse_ll_init_cb;
-    init_cb->f_ll = f_ll;
-    init_cb->in_hdr = in_hdr;
-    init_cb->out_hdr = out_hdr;
-    init_cb->inarg = inarg;
-    init_cb->outarg = outarg;
-    init_cb->snap_cb = cb;
     if (f_ll->ops.init) {
-        int op_res = f_ll->ops.init(se, f_ll->user_data, in_hdr, inarg,
-                                    &se->conn, out_hdr, init_cb);
-        // The fuse implementation will call the cb for us
-        // if they return EWOULDBLOCK.
-        // Thus if they return 0 and no error occured (aka impl is running
-        // synchronously) we call the next part of the init handler for them
-        if (out_hdr->error == 0 && op_res == 0) {
-            init_cb->cb(init_cb);
-        // If an error occured we return early
-        } else if (out_hdr->error != 0 && op_res <= 0) {
+
+        int op_res = f_ll->ops.init(se, f_ll->user_data, in_hdr, inarg, &se->conn, out_hdr);
+        if (out_hdr->error != 0 || op_res != 0) {
             se->error = -EPROTO;
             se->got_destroy = 1;
             return op_res;
-        } else if (op_res == EWOULDBLOCK) {
-            // The fuse implementation will call the cb for us
-            return op_res;
-        } else { // op_res == unknown return var
-            fprintf(stderr, "FUSE_INIT: fuse impl returned an unknown result int %d\n", op_res);
-            fprintf(stderr, "FUSE_INIT: We'll try our best to salvage the situation by continuing the init\n");
-            init_cb->cb(init_cb);
         }
-    } else {
-        init_cb->cb(init_cb);
     }
-
-    free(init_cb);
-    return EWOULDBLOCK;
-}
-
-void fuse_ll_init_cb(struct fuse_init_done_ctx *init_cb)
-{
-    // Transfer all of the variables back into the function
-    // and free the init callback context
-    //struct fuse_ll *f_ll = init_cb->f_ll;
-    //struct fuse_in_header *in_hdr = init_cb->in_hdr;
-    struct fuse_out_header *out_hdr = init_cb->out_hdr;
-    struct fuse_init_in *inarg = init_cb->inarg;
-    struct fuse_init_out *outarg = init_cb->outarg;
-    struct fuse_session *se = init_cb->f_ll->se;
 
     if (se->conn.want & (~se->conn.capable)) {
         fprintf(stderr, "fuse: error: filesystem requested capabilities "
@@ -522,19 +482,8 @@ void fuse_ll_init_cb(struct fuse_init_done_ctx *init_cb)
         //fuse_session_exit(se);
         se->got_destroy = 1;
         out_hdr->error = -EPROTO;
-        goto ret;
+        return 0;
     }
-
-    // There is no server-side mounting point
-    //unsigned max_read_mo = get_max_read(se->mo);
-    //if (se->conn.max_read != max_read_mo) {
-    //	fuse_log(FUSE_LOG_ERR, "fuse: error: init() and fuse_session_new() "
-    //		"requested different maximum read size (%u vs %u)\n",
-    //		se->conn.max_read, max_read_mo);
-    //	se->error = -EPROTO;
-    //	fuse_session_exit(se);
-    //	return -EPROTO;
-    //}
 
     if (inarg->flags & FUSE_MAX_PAGES) {
         outarg->flags |= FUSE_MAX_PAGES;
@@ -598,6 +547,7 @@ void fuse_ll_init_cb(struct fuse_init_done_ctx *init_cb)
 
 #ifdef DEBUG_ENABLED
     printf("INIT out: %u.%u\n", outarg->major, outarg->minor);
+
     printf("* flags=0x%08x\n", outarg->flags);
     printf("* max_readahead=0x%08x\n", outarg->max_readahead);
     printf("* max_write=0x%08x\n", outarg->max_write);
@@ -605,18 +555,13 @@ void fuse_ll_init_cb(struct fuse_init_done_ctx *init_cb)
     printf("* congestion_threshold=%i\n", outarg->congestion_threshold);
     printf("* time_gran=%u\n", outarg->time_gran);
 #endif
-
-    size_t outargsize = sizeof(*outarg);
     if (inarg->minor < 5)
         outargsize = FUSE_COMPAT_INIT_OUT_SIZE;
     else if (inarg->minor < 23)
         outargsize = FUSE_COMPAT_22_INIT_OUT_SIZE;
 
     out_hdr->len+=outargsize;
-ret:;
-    struct snap_fs_dev_io_done_ctx *snap_cb = init_cb->snap_cb;
-    free(init_cb);
-    snap_cb->cb(SNAP_FS_DEV_OP_SUCCESS, snap_cb->user_arg);
+    return 0;
 }
 
 static int fuse_ll_destroy(struct fuse_ll *f_ll,

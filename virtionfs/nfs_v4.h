@@ -16,7 +16,14 @@
 // Empirically verified with Linux kernel 5.11
 #define NFS_ROOT_FILEID 2
 
-int nfs4_clone_fh(nfs_fh4 *dst, nfs_fh4 *src);
+// No malloc needed
+struct vnfs_fh4 {
+    u_int len;
+    char val[NFS4_FHSIZE];
+};
+typedef struct vnfs_fh4 vnfs_fh4;
+
+int nfs4_clone_fh(vnfs_fh4 *dst, nfs_fh4 *src);
 int nfs4_find_op(COMPOUND4res *res, int op);
 int nfs4_fill_create_attrs(struct fuse_in_header *in_hdr, uint32_t flags, fattr4 *attr);
 int nfs4_op_setclientid(nfs_argop4 *op, verifier4 verifier, const char *client_name);

@@ -141,25 +141,10 @@ size_t fuse_add_direntry(struct iov *read_iov, const char *name,
 size_t fuse_add_direntry_plus(struct iov *read_iov, const char *name,
                   const struct fuse_entry_param *e, off_t off);
 
-struct fuse_init_done_ctx {
-    // fn pointer with arg itself
-    void (*cb)(struct fuse_init_done_ctx *);
-
-    struct fuse_ll *f_ll;
-    struct fuse_in_header *in_hdr;
-    struct fuse_out_header *out_hdr;
-    struct fuse_init_in *inarg;
-    struct fuse_init_out *outarg;
-    struct fuse_session *se;
-
-    struct snap_fs_dev_io_done_ctx *snap_cb;
-};
-
 struct fuse_ll_operations {
     int (*init) (struct fuse_session *, void *user_data,
                  struct fuse_in_header *, struct fuse_init_in *,
-                 struct fuse_conn_info *, struct fuse_out_header *,
-                 struct fuse_init_done_ctx *cb);
+                 struct fuse_conn_info *, struct fuse_out_header *);
     int (*destroy) (struct fuse_session *, void *user_data,
                     struct fuse_in_header *,
                     struct fuse_out_header *,

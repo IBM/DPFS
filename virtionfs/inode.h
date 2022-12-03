@@ -15,6 +15,8 @@
 #include "fuse_ll.h"
 #include "virtiofs_emu_ll.h"
 
+#include "nfs_v4.h"
+
 struct inode {
     // We return the fileid as fuse_ino_t
     // This is only possible under the assumption that FUSE_ROOT_ID (=1)
@@ -27,9 +29,9 @@ struct inode {
     // AKA this assumption is NOT battle-tested
     fattr4_fileid fileid;
     // A fh.nfs_fh4_len of 0 means that there is no FH
-    nfs_fh4 fh;
+    vnfs_fh4 fh;
     // TODO protect this fh with a lock
-    nfs_fh4 fh_open;
+    vnfs_fh4 fh_open;
     stateid4 open_stateid;
 
     struct inode *parent;

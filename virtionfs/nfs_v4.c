@@ -25,13 +25,10 @@ static uint32_t create_attributes[2] = {
      1 << (FATTR4_OWNER_GROUP - 32))
 };
 
-int nfs4_clone_fh(nfs_fh4 *dst, nfs_fh4 *src) {
-    dst->nfs_fh4_len = src->nfs_fh4_len;
-    dst->nfs_fh4_val = malloc(dst->nfs_fh4_len);
-    if (!dst->nfs_fh4_val) {
-        return -ENOMEM;
-    }
-    memcpy(dst->nfs_fh4_val, src->nfs_fh4_val, dst->nfs_fh4_len);
+int nfs4_clone_fh(vnfs_fh4 *dst, nfs_fh4 *src) {
+    if (src->nfs_fh4_len > NFS4_FHSIZE) return -ENOMEM;
+    dst->len = src->nfs_fh4_len;
+    memcpy(dst->val, src->nfs_fh4_val, dst->len);
 
     return 0;
 }

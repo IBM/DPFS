@@ -40,7 +40,6 @@ struct virtionfs {
     // to the host
 #define VIRTIONFS_HANDSHAKE_PROGRESS_COMPLETE 2
     atomic_uint handshake_progress;
-    struct fuse_init_done_ctx *init_done_ctx;
 
     atomic_uint open_owner_counter;
     atomic_uint seqid;
