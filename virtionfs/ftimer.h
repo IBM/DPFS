@@ -1,12 +1,14 @@
 #ifndef FTIMER_HEADER
 #define FTIMER_HEADER
 #include <time.h>
+#include <stdbool.h>
 
 struct ftimer {
     struct timespec begin;
     struct timespec end;
     double sec;
     long nsec;
+    bool running;
 };
 
 void ft_init(struct ftimer *ft);

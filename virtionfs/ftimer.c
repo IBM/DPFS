@@ -3,13 +3,16 @@
 void ft_init(struct ftimer *ft) {
     ft->sec = 0;
     ft->nsec = 0;
+    ft->running = false;
 }
 
 void ft_start(struct ftimer *ft) {
     clock_gettime(CLOCK_MONOTONIC, &ft->begin);
+    ft->running = true;
 }
 void ft_stop(struct ftimer *ft) {
     clock_gettime(CLOCK_MONOTONIC, &ft->end);
+    ft->running = false;
     ft->sec += (double)(ft->end.tv_sec - ft->begin.tv_sec);
     ft->nsec += (double)(ft->end.tv_nsec - ft->begin.tv_nsec);
 }

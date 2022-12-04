@@ -939,7 +939,7 @@ struct lookup_cb_data {
 void lookup_cb(struct rpc_context *rpc, int status, void *data,
                        void *private_data) {
 #ifdef LATENCY_MEASURING_ENABLED
-    ft_stop(&ft[FUSE_GETATTR]);
+    ft_stop(&ft[FUSE_LOOKUP]);
 #endif
     struct lookup_cb_data *cb_data = (struct lookup_cb_data *)private_data;
     struct virtionfs *vnfs = cb_data->vnfs;
@@ -1323,6 +1323,9 @@ int destroy(struct fuse_session *se, struct virtionfs *vnfs,
 {
 #ifdef LATENCY_MEASURING_ENABLED
     for (int i = 1; i <= FUSE_REMOVEMAPPING; i++) {
+        if (ft[i].running) {
+            fprintf(stderr, "OP(%d) timer is still running!?\n", i);
+        }
         if (op_calls[i] > 0)
             printf("OP(%d) took %lu averaged over %lu calls\n", i, ft_get_nsec(&ft[i]) / op_calls[i], op_calls[i]);
     }
