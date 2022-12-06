@@ -19,7 +19,7 @@ void *mpool_alloc(struct mpool *p) {
 alloc:
     if (p->head) {
         r = p->head;        
-        if (p->head->next)
+        if (p->head)
             p->head = p->head->next;
         goto ret;
     } else {
