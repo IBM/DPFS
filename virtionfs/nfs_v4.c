@@ -45,7 +45,7 @@ int32_t nfs_error_to_fuse_error(nfsstat4 status) {
 int fuse_stat_to_nfs_attrlist(int valid) { return 0;}
 
 #define CREATE_ATTRS_SIZE 32 + 32 + sizeof(uint32_t)
-int nfs4_fill_create_attrs(struct fuse_in_header *in_hdr, uint32_t flags, fattr4 *attr) {
+int nfs4_fill_create_attrs(struct fuse_in_header *in_hdr, uint32_t mode, fattr4 *attr) {
     attr->attr_vals.attrlist4_val = malloc(CREATE_ATTRS_SIZE);
 
     if (!attr->attr_vals.attrlist4_val) {
@@ -61,7 +61,6 @@ int nfs4_fill_create_attrs(struct fuse_in_header *in_hdr, uint32_t flags, fattr4
     char *str = attr->attr_vals.attrlist4_val;
 
     /* Mode */
-    uint32_t mode = S_IFREG | S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP;
     mode = htonl(mode);
     memcpy(str, &mode, sizeof(uint32_t));
     i += sizeof(uint32_t);

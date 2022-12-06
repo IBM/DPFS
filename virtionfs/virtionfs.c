@@ -94,6 +94,142 @@ struct inode *nfs4_op_putfh_open(struct virtionfs *vnfs, nfs_argop4 *op, uint64_
     return i;
 }
 
+struct create_cb_data {
+    struct snap_fs_dev_io_done_ctx *cb;
+    struct virtionfs *vnfs;
+
+    struct inode *i;
+
+    struct fuse_out_header *out_hdr;
+    struct fuse_entry_out *out_entry;
+    struct fuse_open_out *out_open;
+
+    uint32_t owner_val;
+};
+
+void create_cb(struct rpc_context *rpc, int status, void *data,
+                       void *private_data) {
+#ifdef LATENCY_MEASURING_ENABLED
+    ft_stop(&ft[FUSE_CREATE]);
+#endif
+    struct create_cb_data *cb_data = (struct create_cb_data *)private_data;
+    struct virtionfs *vnfs = cb_data->vnfs;
+    COMPOUND4res *res = data;
+
+    if (status != RPC_STATUS_SUCCESS) {
+    	fprintf(stderr, "RPC with NFS:OPEN (with create) unsuccessful: rpc error=%d\n", status);
+        cb_data->out_hdr->error = -EREMOTEIO;
+        goto ret;
+    }
+    if (res->status != NFS4_OK) {
+        cb_data->out_hdr->error = -nfs_error_to_fuse_error(res->status);
+    	fprintf(stderr, "NFS:OPEN (with create) unsuccessful: nfs error=%d, fuse error=%d\n",
+                res->status, cb_data->out_hdr->error);
+        goto ret;
+    }
+
+    // TODO
+
+ret:;
+    struct snap_fs_dev_io_done_ctx *cb = cb_data->cb;
+    mpool_free(vnfs->p, cb_data);
+    cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb->user_arg);
+}
+
+
+int create(struct fuse_session *se, struct virtionfs *vnfs,
+           struct fuse_in_header *in_hdr, struct fuse_create_in *in_create, const char *in_name,
+           struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry, struct fuse_open_out *out_open,
+           struct snap_fs_dev_io_done_ctx *cb)
+{
+    struct create_cb_data *cb_data = mpool_alloc(vnfs->p);
+    if (!cb_data) {
+        out_hdr->error = -ENOMEM;
+        return 0;
+    }
+
+    cb_data->cb = cb;
+    cb_data->vnfs = vnfs;
+    cb_data->out_hdr = out_hdr;
+    cb_data->out_entry = out_entry;
+    cb_data->out_open = out_open;
+
+    COMPOUND4args args;
+    nfs_argop4 op[4];
+    memset(&args, 0, sizeof(args));
+    args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
+    args.argarray.argarray_val = op;
+
+    // PUTFH: parent
+    // OPEN: create, attrs = flags, mode, usmask
+    // GETATTR: out_entry
+    // GETFH: out_open
+
+
+    // PUTFH
+    // Get the inode manually because we want the FH of the parent
+    struct inode *i = inode_table_get(vnfs->inodes, in_hdr->nodeid);
+    cb_data->i = i;
+    if (!i) {
+    	fprintf(stderr, "Invalid nodeid supplied to OPEN\n");
+        mpool_free(vnfs->p, cb_data);
+        out_hdr->error = -ENOENT;
+        return 0;
+    }
+    op[0].argop = OP_PUTFH;
+    op[0].nfs_argop4_u.opputfh.object.nfs_fh4_val = i->parent->fh.val;
+    op[0].nfs_argop4_u.opputfh.object.nfs_fh4_len = i->parent->fh.len;
+
+    // OPEN
+    op[1].argop = OP_OPEN;
+    memset(&op[1].nfs_argop4_u.opopen, 0, sizeof(OPEN4args));
+    // Windows share stuff, this means normal operation in UNIX world
+    op[1].nfs_argop4_u.opopen.share_access = OPEN4_SHARE_ACCESS_BOTH;
+    op[1].nfs_argop4_u.opopen.share_deny = OPEN4_SHARE_DENY_NONE;
+    // Don't use this because we don't do anything special with the share, so set to zero
+    op[1].nfs_argop4_u.opopen.seqid = atomic_fetch_add(&vnfs->seqid, 1);
+    // Set the owner with the clientid and the unique owner number (32 bit should be safe)
+    // The clientid stems from the setclientid() handshake
+    op[1].nfs_argop4_u.opopen.owner.clientid = vnfs->clientid;
+    // We store this so that the reference stays alive
+    cb_data->owner_val = atomic_fetch_add(&vnfs->open_owner_counter, 1);
+    op[1].nfs_argop4_u.opopen.owner.owner.owner_val = (char *) &cb_data->owner_val;
+    op[1].nfs_argop4_u.opopen.owner.owner.owner_len = sizeof(cb_data->owner_val);
+    // Tell the server we want to open the file in the current FH dir (aka the parent dir)
+    // with the specified filename
+    op[1].nfs_argop4_u.opopen.claim.claim = CLAIM_NULL;
+    // TODO concurrency bug here if the parent gets changed underneath
+    // Don't know yet how that could happen
+    op[1].nfs_argop4_u.opopen.claim.open_claim4_u.file.utf8string_val = i->filename;
+    op[1].nfs_argop4_u.opopen.claim.open_claim4_u.file.utf8string_len = strlen(i->filename);
+    // Now we determine whether to CREATE or NOCREATE
+    op[1].nfs_argop4_u.opopen.openhow.opentype = OPEN4_CREATE;
+    op[1].nfs_argop4_u.opopen.openhow.openflag4_u.how.mode = UNCHECKED4;
+
+    fattr4 *attr = &op[1].nfs_argop4_u.opopen.openhow.openflag4_u.how.createhow4_u.createattrs;
+    // TODO this does a malloc, remove malloc it!
+    nfs4_fill_create_attrs(in_hdr, in_create->mode, attr);
+
+    // GETATTR
+    nfs4_op_getattr(&op[2], standard_attributes, 2);
+    // GETFH
+    op[3].argop = OP_GETFH;
+
+#ifdef LATENCY_MEASURING_ENABLED
+    op_calls[FUSE_CREATE]++;
+    ft_start(&ft[FUSE_CREATE]);
+#endif
+
+    if (rpc_nfs4_compound_async(vnfs->rpc, create_cb, &args, cb_data) != 0) {
+    	fprintf(stderr, "Failed to send NFS:OPEN (with create) request\n");
+        mpool_free(vnfs->p, cb_data);
+        out_hdr->error = -EREMOTEIO;
+        return 0;
+    }
+
+    return EWOULDBLOCK;
+}
+
 struct release_cb_data {
     struct snap_fs_dev_io_done_ctx *cb;
     struct virtionfs *vnfs;
@@ -395,7 +531,9 @@ int vwrite(struct fuse_session *se, struct virtionfs *vnfs,
 
 #define MIN(x, y) x < y ? x : y
 
-static size_t iovec_write_buf(struct iovec *iov, int iovcnt, void *buf, size_t size) {
+__attribute__((unused)) static size_t iovec_write_buf(struct iovec *iov, int iovcnt,
+        void *buf, size_t size)
+{
     int i = 0;
     size_t written = 0;
     while (written != size && i < iovcnt) {
@@ -425,7 +563,8 @@ struct read_cb_data {
 };
 
 void vread_cb(struct rpc_context *rpc, int status, void *data,
-           void *private_data) {
+              void *private_data)
+{
     struct read_cb_data *cb_data = (struct read_cb_data *)private_data;
     struct virtionfs *vnfs = cb_data->vnfs;
     COMPOUND4res *res = data;
@@ -447,8 +586,11 @@ void vread_cb(struct rpc_context *rpc, int status, void *data,
     uint32_t len = res->resarray.resarray_val[1].nfs_resop4_u.opread.READ4res_u
                    .resok4.data.data_len;
     // Fill the iov that we return to the host
-    size_t written = iovec_write_buf(cb_data->out_iov, cb_data->out_iovcnt, buf, len);
-    cb_data->out_hdr->len += written;
+    if (cb_data->out_iovcnt >= 1) {
+        size_t to_cpy = MIN(len, cb_data->out_iov->iov_len);
+        memcpy(cb_data->out_iov->iov_base, buf, to_cpy);
+        cb_data->out_hdr->len += to_cpy;
+    }
 
 ret:;
     struct snap_fs_dev_io_done_ctx *cb = cb_data->cb;
@@ -527,13 +669,13 @@ void vopen_confirm_cb(struct rpc_context *rpc, int status, void *data,
     COMPOUND4res *res = data;
 
     if (status != RPC_STATUS_SUCCESS) {
-    	fprintf(stderr, "RPC with NFS:OPEN unsuccessful: rpc error=%d\n", status);
+    	fprintf(stderr, "RPC with NFS:OPEN_CONFIRM unsuccessful: rpc error=%d\n", status);
         cb_data->out_hdr->error = -EREMOTEIO;
         goto ret;
     }
     if (res->status != NFS4_OK) {
         cb_data->out_hdr->error = -nfs_error_to_fuse_error(res->status);
-    	fprintf(stderr, "NFS:OPEN unsuccessful: nfs error=%d, fuse error=%d\n",
+    	fprintf(stderr, "NFS:OPEN_CONFIRM unsuccessful: nfs error=%d, fuse error=%d\n",
                 res->status, cb_data->out_hdr->error);
         goto ret;
     }
