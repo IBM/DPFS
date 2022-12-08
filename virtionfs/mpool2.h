@@ -9,17 +9,18 @@
 #define MPOOL2_H
 
 #include <stdint.h>
-#include <ck_fifo.h>
+#include <ck_ring.h>
 
 /*
-    mpool is a minimal thread-safe memory pool that can NOT increase in size,
+    mpool2 is a minimal thread-safe memory pool that can NOT increase in size,
     specialized for Single-Producer Single-Consumer
     it is basically a glorified concurrencykit fifo
 */
 
+#define MPOOL2_SIZE 256
 struct mpool2 {
-    ck_fifo_spsc_t fifo;
-    ck_fifo_spsc_entry_t fifo_head;
+    ck_ring_t ring;
+    ck_ring_buffer_t *buffer;
 };
 
 void *mpool2_alloc(struct mpool2 *p);
