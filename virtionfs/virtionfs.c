@@ -1309,6 +1309,137 @@ int getattr(struct fuse_session *se, struct virtionfs *vnfs,
     return EWOULDBLOCK;
 }
 
+static void create_session_cb(struct rpc_context *rpc, int status, void *data, void *private_data)
+{
+    struct virtionfs *vnfs = private_data;
+    COMPOUND4res *res = data;
+    
+    if (status != RPC_STATUS_SUCCESS) {
+        fprintf(stderr, "RPC with NFS:CREATE_SESSION unsuccessful: rpc error=%d\n", status);
+        return;
+    }
+    if (res->status != NFS4_OK) {
+        fprintf(stderr, "NFS:CREATE_SESSION unsuccessful: nfs error=%d\n", res->status);
+        return;
+    }
+}
+
+static int create_session(struct virtionfs *vnfs)
+{
+    COMPOUND4args args;
+    nfs_argop4 op[1];
+    memset(&args, 0, sizeof(args));
+    args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
+    args.argarray.argarray_val = op;
+    memset(op, 0, sizeof(op));
+
+    nfs4_op_createsession(&op[0], &vnfs->sessionid, CDFC4_FORE_OR_BOTH, false);
+    
+    if (rpc_nfs4_compound_async(vnfs->rpc, create_session_cb, &args, vnfs) != 0) {
+    	fprintf(stderr, "Failed to send NFS:create_session request\n");
+        return -1;
+    }
+
+    return 0;
+}
+
+static void bind_conn_cb(struct rpc_context *rpc, int status, void *data, void *private_data)
+{
+    struct virtionfs *vnfs = private_data;
+    COMPOUND4res *res = data;
+    
+    if (status != RPC_STATUS_SUCCESS) {
+        fprintf(stderr, "RPC with NFS:bind_conn_to_session unsuccessful: rpc error=%d\n", status);
+        return;
+    }
+    if (res->status != NFS4_OK) {
+        fprintf(stderr, "NFS:bind_conn_to_session unsuccessful: nfs error=%d\n", res->status);
+        return;
+    }
+
+    BIND_CONN_TO_SESSION4resok *ok = &res->resarray.resarray_val[0].nfs_resop4_u.opbindconntosession.BIND_CONN_TO_SESSION4res_u.bctsr_resok4;
+
+    if (memcmp(ok->bctsr_sessid, vnfs->sessionid, sizeof(sessionid4)) == 0) {
+        vnfs->connections++;
+        if (vnfs->connections < vnfs->nthreads) {
+            // Another thread and mount
+        }
+    }
+}
+
+static int bind_conn(struct virtionfs *vnfs)
+{
+    COMPOUND4args args;
+    nfs_argop4 op[1];
+    memset(&args, 0, sizeof(args));
+    args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
+    args.argarray.argarray_val = op;
+    memset(op, 0, sizeof(op));
+
+    nfs4_op_bindconntosession(&op[0], &vnfs->sessionid, CDFC4_FORE_OR_BOTH, false);
+    
+    if (rpc_nfs4_compound_async(vnfs->rpc, bind_conn_cb, &args, vnfs) != 0) {
+    	fprintf(stderr, "Failed to send NFS:setclientid request\n");
+        return -1;
+    }
+
+    return 0;
+}
+
+static verifier4 default_verifier = {'0', '1', '2', '3', '4', '5', '6', '7'};
+
+static void exchangeid_cb(struct rpc_context *rpc, int status, void *data, void *private_data)
+{
+    struct virtionfs *vnfs = private_data;
+    COMPOUND4res *res = data;
+    
+    if (status != RPC_STATUS_SUCCESS) {
+        fprintf(stderr, "RPC with NFS:exchange_id unsuccessful: rpc error=%d\n", status);
+        return;
+    }
+    if (res->status != NFS4_OK) {
+        fprintf(stderr, "NFS:exchange_id unsuccessful: nfs error=%d\n", res->status);
+        return;
+    }
+
+    EXCHANGE_ID4resok *ok = &res->resarray.resarray_val[0].nfs_resop4_u.opexchangeid.EXCHANGE_ID4res_u.eir_resok4;
+
+    if (vnfs->connections == 0) {
+        memcpy(&vnfs->first_exchangeid, ok, sizeof(*ok));
+        create_session(vnfs);
+    } else {
+        if (nfs4_check_session_trunking_allowed(&vnfs->first_exchangeid, ok)) {
+            bind_conn(vnfs);
+        } else {
+            // TODO handle can't trunking
+            // close connection
+        }
+    }
+}
+
+static int exchangeid(struct virtionfs *vnfs)
+{
+    COMPOUND4args args;
+    nfs_argop4 op[1];
+    memset(&args, 0, sizeof(args));
+    args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
+    args.argarray.argarray_val = op;
+    memset(op, 0, sizeof(op));
+
+
+    verifier4 v;
+    memcpy(default_verifier, v, sizeof(v));
+    v[0] = vnfs->connections;
+    nfs4_op_exchangeid(&op[0], default_verifier, "virtionfs");
+    
+    if (rpc_nfs4_compound_async(vnfs->rpc, exchangeid_cb, &args, vnfs) != 0) {
+    	fprintf(stderr, "Failed to send NFS:exchange_id request\n");
+        return -1;
+    }
+
+    return 0;
+}
+
 static void
 setclientid_cb_2(struct rpc_context *rpc, int status, void *data,
                 void *private_data)
@@ -1371,7 +1502,6 @@ setclientid_cb_1(struct rpc_context *rpc, int status, void *data,
     }
 }
 
-static verifier4 verifier = {'0', '1', '2', '3', '4', '5', '6', '7'};
 
 int setclientid(struct virtionfs *vnfs)
 {
@@ -1384,7 +1514,7 @@ int setclientid(struct virtionfs *vnfs)
     memset(op, 0, sizeof(op));
 
     // TODO make this verifier random and the client name somewhat unique too
-    nfs4_op_setclientid(&op[0], verifier, "virtionfs");
+    nfs4_op_setclientid(&op[0], default_verifier, "virtionfs");
     
     if (rpc_nfs4_compound_async(vnfs->rpc, setclientid_cb_1, &args, vnfs) != 0) {
     	fprintf(stderr, "Failed to send NFS:setclientid request\n");

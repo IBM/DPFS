@@ -20,9 +20,38 @@ void virtionfs_main(char *server, char *export,
                bool debug, double timeout, uint32_t nthreads,
                struct virtiofs_emu_params *emu_params);
 
+enum NFS_CONN_STATE {
+    UNINIT,
+    ESTABLISHED,
+    CLOSED
+};
+
+struct nfs_slot {
+    // Starts at 1
+    sequenceid4 seqid;
+};
+
+struct nfs_conn {
+    enum NFS_CONN_STATE state;
+    // The settings we negotiated with the server
+    channel_attrs4 attrs;
+    // Index is slotid4
+    struct nfs_slot *slots;
+    slotid4 cl_highest_slot;
+    slotid4 sr_highest_slot;
+    slotid4 sr_target_highest_slot;
+
+};
+
 struct virtionfs {
     struct nfs_context *nfs;
     struct rpc_context *rpc;
+    // We open connections on the main thread
+    struct nfs_conn connections;
+    sessionid4 sessionid;
+    // We receive the first sequenceid from EXCHANGE_ID
+    atomic_uint seqid;
+
     struct inode_table *inodes;
     struct mpool2 *p;
 
@@ -42,7 +71,8 @@ struct virtionfs {
     atomic_uint handshake_progress;
 
     atomic_uint open_owner_counter;
-    atomic_uint seqid;
+
+    struct EXCHANGE_ID4resok first_exchangeid;
 
     clientid4 clientid;
     verifier4 setclientid_confirm;
