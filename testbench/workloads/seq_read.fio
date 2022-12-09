@@ -1,0 +1,15 @@
+[global]
+name=fio-seq-reads
+filename=/mnt/dpu/fio-10g
+rw=read
+bs=4096
+direct=1
+numjobs=1
+time_based
+runtime=15s
+ramp_time=5s
+
+[file1]
+size=10G
+ioengine=libaio
+iodepth=16
