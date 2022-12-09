@@ -448,6 +448,8 @@ void vwrite_cb(struct rpc_context *rpc, int status, void *data,
     uint32_t written =  res->resarray.resarray_val[1].nfs_resop4_u.opwrite.WRITE4res_u.resok4.count;
     cb_data->out_write->size = written;
 
+    cb_data->out_hdr->len += sizeof(*cb_data->out_write);
+
 ret:;
     struct snap_fs_dev_io_done_ctx *cb = cb_data->cb;
     mpool2_free(vnfs->p, cb_data);
@@ -531,7 +533,7 @@ int vwrite(struct fuse_session *se, struct virtionfs *vnfs,
 
 #define MIN(x, y) x < y ? x : y
 
-__attribute__((unused)) static size_t iovec_write_buf(struct iovec *iov, int iovcnt,
+static size_t iovec_write_buf(struct iovec *iov, int iovcnt,
         void *buf, size_t size)
 {
     int i = 0;
@@ -587,9 +589,8 @@ void vread_cb(struct rpc_context *rpc, int status, void *data,
                    .resok4.data.data_len;
     // Fill the iov that we return to the host
     if (cb_data->out_iovcnt >= 1) {
-        size_t to_cpy = MIN(len, cb_data->out_iov->iov_len);
-        memcpy(cb_data->out_iov->iov_base, buf, to_cpy);
-        cb_data->out_hdr->len += to_cpy;
+        size_t written = iovec_write_buf(cb_data->out_iov, cb_data->out_iovcnt, buf, len);
+        cb_data->out_hdr->len += written;
     }
 
 ret:;
@@ -844,6 +845,8 @@ int vopen(struct fuse_session *se, struct virtionfs *vnfs,
 struct setattr_cb_data {
     struct snap_fs_dev_io_done_ctx *cb;
     struct virtionfs *vnfs;
+    struct fuse_session *se;
+
     struct fuse_out_header *out_hdr;
     struct fuse_attr_out *out_attr;
 
@@ -881,6 +884,8 @@ void setattr_cb(struct rpc_context *rpc, int status, void *data,
         cb_data->out_attr->attr.rdev = 0;
         cb_data->out_attr->attr_valid = 0;
         cb_data->out_attr->attr_valid_nsec = 0;
+        cb_data->out_hdr->len += cb_data->se->conn.proto_minor < 9 ?
+            FUSE_COMPAT_ATTR_OUT_SIZE : sizeof(*cb_data->out_attr);
     } else {
         cb_data->out_hdr->error = -EREMOTEIO;
     }
@@ -894,7 +899,7 @@ ret:;
 }
 
 int setattr(struct fuse_session *se, struct virtionfs *vnfs,
-            struct fuse_in_header *in_hdr, struct stat *s, int valid, struct fuse_file_info *fi,
+            struct fuse_in_header *in_hdr, struct fuse_setattr_in *in_setattr,
             struct fuse_out_header *out_hdr, struct fuse_attr_out *out_attr,
             struct snap_fs_dev_io_done_ctx *cb)
 {
@@ -906,6 +911,7 @@ int setattr(struct fuse_session *se, struct virtionfs *vnfs,
 
     cb_data->cb = cb;
     cb_data->vnfs = vnfs;
+    cb_data->se = se;
     cb_data->out_hdr = out_hdr;
     cb_data->out_attr = out_attr;
 
@@ -937,21 +943,21 @@ int setattr(struct fuse_session *se, struct virtionfs *vnfs,
     attrsmask.bitmap4_val = (uint32_t *) bitmap;
 
     size_t attrlist_len = 0;
-    if (valid & FUSE_SET_ATTR_MODE) {
+    if (in_setattr->valid & FUSE_SET_ATTR_MODE) {
         *bitmap |= (1UL << FATTR4_MODE);
         attrlist_len += 4;
     }
-    if (valid & FUSE_SET_ATTR_SIZE) {
+    if (in_setattr->valid & FUSE_SET_ATTR_SIZE) {
         *bitmap |= (1UL << FATTR4_SIZE);
     }
     char *attrlist = malloc(attrlist_len);
 
-    if (valid & FUSE_SET_ATTR_MODE) {
-        *(uint32_t *) attrlist = htonl(s->st_mode);
+    if (in_setattr->valid & FUSE_SET_ATTR_MODE) {
+        *(uint32_t *) attrlist = htonl(in_setattr->mode);
         attrlist += 4;
     }
-    if (valid & FUSE_SET_ATTR_SIZE) {
-        *(uint32_t *) attrlist = nfs_hton64(s->st_size);
+    if (in_setattr->valid & FUSE_SET_ATTR_SIZE) {
+        *(uint32_t *) attrlist = nfs_hton64(in_setattr->size);
         attrlist += 8;
     }
 
@@ -980,9 +986,10 @@ int setattr(struct fuse_session *se, struct virtionfs *vnfs,
 struct statfs_cb_data {
     struct snap_fs_dev_io_done_ctx *cb;
     struct virtionfs *vnfs;
+    struct fuse_session *se;
 
     struct fuse_out_header *out_hdr;
-    struct fuse_statfs_out *stat;
+    struct fuse_statfs_out *out_statfs;
 };
 
 void statfs_cb(struct rpc_context *rpc, int status, void *data,
@@ -1009,10 +1016,11 @@ void statfs_cb(struct rpc_context *rpc, int status, void *data,
     GETATTR4resok *resok = &res->resarray.resarray_val[1].nfs_resop4_u.opgetattr.GETATTR4res_u.resok4;
     char *attrs = resok->obj_attributes.attr_vals.attrlist4_val;
     u_int attrs_len = resok->obj_attributes.attr_vals.attrlist4_len;
-    if (nfs_parse_statfs(&cb_data->stat->st, attrs, attrs_len) != 0) {
+    if (nfs_parse_statfs(&cb_data->out_statfs->st, attrs, attrs_len) != 0) {
         cb_data->out_hdr->error = -EREMOTEIO;
     }
-    cb_data->out_hdr->len += sizeof(*cb_data->stat);
+    cb_data->out_hdr->len = cb_data->se->conn.proto_minor < 4 ?
+        FUSE_COMPAT_STATFS_SIZE : sizeof(*cb_data->out_statfs);
 
 ret:;
     struct snap_fs_dev_io_done_ctx *cb = cb_data->cb;
@@ -1035,7 +1043,7 @@ int statfs(struct fuse_session *se, struct virtionfs *vnfs,
     cb_data->cb = cb;
     cb_data->vnfs = vnfs;
     cb_data->out_hdr = out_hdr;
-    cb_data->stat = stat;
+    cb_data->out_statfs = stat;
 
     COMPOUND4args args;
     nfs_argop4 op[2];
@@ -1070,6 +1078,7 @@ int statfs(struct fuse_session *se, struct virtionfs *vnfs,
 struct lookup_cb_data {
     struct snap_fs_dev_io_done_ctx *cb;
     struct virtionfs *vnfs;
+    struct fuse_session *se;
 
     char *in_name;
     struct inode *parent_inode;
@@ -1136,6 +1145,8 @@ void lookup_cb(struct rpc_context *rpc, int status, void *data,
             goto ret;
         }
     }
+    cb_data->out_hdr->len += cb_data->se->conn.proto_minor < 9 ?
+        FUSE_COMPAT_ENTRY_OUT_SIZE : sizeof(*cb_data->out_entry);
 
 ret:;
     struct snap_fs_dev_io_done_ctx *cb = cb_data->cb;
@@ -1144,9 +1155,9 @@ ret:;
 }
 
 int lookup(struct fuse_session *se, struct virtionfs *vnfs,
-                        struct fuse_in_header *in_hdr, char *in_name,
-                        struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry,
-                        struct snap_fs_dev_io_done_ctx *cb)
+           struct fuse_in_header *in_hdr, char *in_name,
+           struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry,
+           struct snap_fs_dev_io_done_ctx *cb)
 {
     struct lookup_cb_data *cb_data = mpool2_alloc(vnfs->p);
     if (!cb_data) {
@@ -1156,6 +1167,7 @@ int lookup(struct fuse_session *se, struct virtionfs *vnfs,
 
     cb_data->cb = cb;
     cb_data->vnfs = vnfs;
+    cb_data->se = se;
     cb_data->out_hdr = out_hdr;
     cb_data->out_entry = out_entry;
 
@@ -1203,6 +1215,7 @@ int lookup(struct fuse_session *se, struct virtionfs *vnfs,
 struct getattr_cb_data {
     struct snap_fs_dev_io_done_ctx *cb;
     struct virtionfs *vnfs;
+    struct fuse_session *se;
 
     struct fuse_out_header *out_hdr;
     struct fuse_attr_out *out_attr;
@@ -1237,6 +1250,8 @@ void getattr_cb(struct rpc_context *rpc, int status, void *data,
         cb_data->out_attr->attr.rdev = 0;
         cb_data->out_attr->attr_valid = 0;
         cb_data->out_attr->attr_valid_nsec = 0;
+        cb_data->out_hdr->len += cb_data->se->conn.proto_minor < 9 ?
+            FUSE_COMPAT_ATTR_OUT_SIZE : sizeof(*cb_data->out_attr);
     } else {
         cb_data->out_hdr->error = -EREMOTEIO;
     }
@@ -1248,9 +1263,9 @@ ret:;
 }
 
 int getattr(struct fuse_session *se, struct virtionfs *vnfs,
-                      struct fuse_in_header *in_hdr, struct fuse_getattr_in *in_getattr,
-                      struct fuse_out_header *out_hdr, struct fuse_attr_out *out_attr,
-                    struct snap_fs_dev_io_done_ctx *cb)
+            struct fuse_in_header *in_hdr, struct fuse_getattr_in *in_getattr,
+            struct fuse_out_header *out_hdr, struct fuse_attr_out *out_attr,
+            struct snap_fs_dev_io_done_ctx *cb)
 {
     struct getattr_cb_data *cb_data = mpool2_alloc(vnfs->p);
     if (!cb_data) {
@@ -1260,6 +1275,7 @@ int getattr(struct fuse_session *se, struct virtionfs *vnfs,
 
     cb_data->cb = cb;
     cb_data->vnfs = vnfs;
+    cb_data->se = se;
     cb_data->out_hdr = out_hdr;
     cb_data->out_attr = out_attr;
 

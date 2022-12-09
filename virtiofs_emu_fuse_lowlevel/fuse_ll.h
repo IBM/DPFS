@@ -154,11 +154,14 @@ struct fuse_ll_operations {
                    struct fuse_in_header *, const char *const in_name,
                    struct fuse_out_header *, struct fuse_entry_out *out_entry,
                    struct snap_fs_dev_io_done_ctx *cb);
-
     int (*setattr) (struct fuse_session *, void *user_data,
                     struct fuse_in_header *in_hdr, struct stat *s, int valid, struct fuse_file_info *fi,
                     struct fuse_out_header *out_hdr, struct fuse_attr_out *out_attr,
                     struct snap_fs_dev_io_done_ctx *cb);
+    int (*setattr_async) (struct fuse_session *, void *user_data,
+                          struct fuse_in_header *in_hdr, struct fuse_setattr_in *,
+                          struct fuse_out_header *out_hdr, struct fuse_attr_out *,
+                          struct snap_fs_dev_io_done_ctx *cb);
     int (*create) (struct fuse_session *, void *user_data,
                    struct fuse_in_header *in_hdr, struct fuse_create_in *in_create, const char *in_name,
                    struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry, struct fuse_open_out *out_open,

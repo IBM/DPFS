@@ -154,6 +154,7 @@ int fuse_ll_reply_attr(struct fuse_session *se, struct fuse_out_header *out_hdr,
     out_hdr->len += size;
     return 0;
 }
+
 int fuse_ll_reply_entry(struct fuse_session *se, struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry, struct fuse_entry_param *e) {
     size_t size = se->conn.proto_minor < 9 ?
         FUSE_COMPAT_ENTRY_OUT_SIZE : sizeof(*out_entry);
@@ -640,34 +641,36 @@ static int fuse_ll_setattr(struct fuse_ll *f_ll,
     printf("* fh: %lu", in_setattr->fh);
 #endif
 
-    if (!f_ll->ops.setattr) {
+    if (f_ll->ops.setattr) {
+        struct fuse_file_info *fi = NULL;
+        struct fuse_file_info fi_store;
+        struct stat s;
+        memset(&s, 0, sizeof(s));
+        convert_attr(in_setattr, &s);
+        if (in_setattr->valid & FATTR_FH) {
+            in_setattr->valid &= ~FATTR_FH;
+            memset(&fi_store, 0, sizeof(fi_store));
+            fi = &fi_store;
+            fi->fh = in_setattr->fh;
+        }
+        in_setattr->valid &=
+            FUSE_SET_ATTR_MODE	|
+            FUSE_SET_ATTR_UID	|
+            FUSE_SET_ATTR_GID	|
+            FUSE_SET_ATTR_SIZE	|
+            FUSE_SET_ATTR_ATIME	|
+            FUSE_SET_ATTR_MTIME	|
+            FUSE_SET_ATTR_ATIME_NOW	|
+            FUSE_SET_ATTR_MTIME_NOW |
+            FUSE_SET_ATTR_CTIME;
+
+        return f_ll->ops.setattr(f_ll->se, f_ll->user_data, in_hdr, &s, in_setattr->valid, fi, out_hdr, out_attr, cb);
+    } else if (f_ll->ops.setattr_async) {
+        return f_ll->ops.setattr_async(f_ll->se, f_ll->user_data, in_hdr, in_setattr, out_hdr, out_attr, cb);
+    } else {
         out_hdr->error = -ENOSYS;
         return 0;
     }
-
-    struct fuse_file_info *fi = NULL;
-    struct fuse_file_info fi_store;
-    struct stat s;
-    memset(&s, 0, sizeof(s));
-    convert_attr(in_setattr, &s);
-    if (in_setattr->valid & FATTR_FH) {
-        in_setattr->valid &= ~FATTR_FH;
-        memset(&fi_store, 0, sizeof(fi_store));
-        fi = &fi_store;
-        fi->fh = in_setattr->fh;
-    }
-    in_setattr->valid &=
-        FUSE_SET_ATTR_MODE	|
-        FUSE_SET_ATTR_UID	|
-        FUSE_SET_ATTR_GID	|
-        FUSE_SET_ATTR_SIZE	|
-        FUSE_SET_ATTR_ATIME	|
-        FUSE_SET_ATTR_MTIME	|
-        FUSE_SET_ATTR_ATIME_NOW	|
-        FUSE_SET_ATTR_MTIME_NOW |
-        FUSE_SET_ATTR_CTIME;
-
-    return f_ll->ops.setattr(f_ll->se, f_ll->user_data, in_hdr, &s, in_setattr->valid, fi, out_hdr, out_attr, cb);
 }
     
 

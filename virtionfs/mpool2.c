@@ -28,7 +28,7 @@ void mpool2_free(struct mpool2 *p, void *e) {
 
 // Not thread-safe!
 int mpool2_init(struct mpool2 *p, uint64_t chunk_size, uint64_t chunks) {
-    if (chunks < 4 || (chunks < 4 && (chunks & (chunks - 1)) == 1)) {
+    if (chunks < 4 || (chunks & (chunks - 1)) == 1) {
         fprintf(stderr, "mpool2: chunks must be >= 4 and a power of 2\n");
         return -EINVAL;
     }
