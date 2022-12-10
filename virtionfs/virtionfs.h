@@ -32,13 +32,8 @@ struct vnfs_slot {
     sequenceid4 seqid;
 };
 
-struct vnfs_conn {
-    struct nfs_context *nfs;
-    struct rpc_context *rpc;
-
-    // The session under which this connection is operating
+struct vnfs_session {
     sessionid4 sessionid;
-    enum vnfs_conn_state state;
     // The settings we negotiated with the server
     channel_attrs4 attrs;
     // Index is slotid4
@@ -48,14 +43,21 @@ struct vnfs_conn {
     slotid4 target_highest_slot;
 };
 
+struct vnfs_conn {
+    enum vnfs_conn_state state;
+    struct nfs_context *nfs;
+    struct rpc_context *rpc;
+    // The session under which this connection is operating
+    struct vnfs_session session;
+};
+
 struct virtionfs {
     struct nfs_context *nfs;
     struct rpc_context *rpc;
-    // We open connections on the main thread
+    // We open connections on the main thread and when running
+    // each thread gets its own connection
     struct vnfs_conn *conns;
     uint32_t conn_cntr;
-    // We receive the first sequenceid from EXCHANGE_ID
-    atomic_uint seqid;
 
     struct inode_table *inodes;
     struct mpool2 *p;
@@ -69,14 +71,6 @@ struct virtionfs {
     // TODO change uid and gid on a per-request basis
     uint32_t uid;
     uint32_t gid;
-
-    // Currently there are two async NFS handshake operations
-    // that need to complete
-    // if this int == 2, then handshake is fully finished
-    // and the init_done_ctx can be called to send the init result
-    // to the host
-#define VIRTIONFS_HANDSHAKE_PROGRESS_COMPLETE 2
-    atomic_uint handshake_progress;
 
     atomic_uint open_owner_counter;
 

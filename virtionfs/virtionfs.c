@@ -19,6 +19,7 @@
 #include "fuse_ll.h"
 #include "config.h"
 #include "virtionfs.h"
+#include "vnfs_connect.h"
 #include "mpool2.h"
 #ifdef LATENCY_MEASURING_ENABLED
 #include "ftimer.h"
@@ -101,14 +102,14 @@ int vnfs4_op_sequence(nfs_argop4 *op, struct vnfs_conn *conn, bool cachethis)
     
     arg->sa_cachethis = cachethis;
     // sessionid
-    memcpy(arg->sa_sessionid, conn->sessionid, sizeof(sessionid4));
-    arg->sa_slotid = conn->target_highest_slot;
-    struct vnfs_slot *slot = &conn->slots[arg->sa_slotid];
+    memcpy(arg->sa_sessionid, conn->session.sessionid, sizeof(sessionid4));
+    arg->sa_slotid = conn->session.target_highest_slot;
+    struct vnfs_slot *slot = &conn->session.slots[arg->sa_slotid];
     arg->sa_sequenceid = ++slot->seqid;
-    if (arg->sa_slotid > conn->highest_slot) {
-        conn->highest_slot = arg->sa_slotid;
+    if (arg->sa_slotid > conn->session.highest_slot) {
+        conn->session.highest_slot = arg->sa_slotid;
     }
-    arg->sa_highest_slotid = conn->highest_slot;
+    arg->sa_highest_slotid = conn->session.highest_slot;
     
     return 1;
 }
@@ -206,7 +207,7 @@ int create(struct fuse_session *se, struct virtionfs *vnfs,
     op[1].nfs_argop4_u.opopen.share_access = OPEN4_SHARE_ACCESS_BOTH;
     op[1].nfs_argop4_u.opopen.share_deny = OPEN4_SHARE_DENY_NONE;
     // Don't use this because we don't do anything special with the share, so set to zero
-    op[1].nfs_argop4_u.opopen.seqid = atomic_fetch_add(&vnfs->seqid, 1);
+    op[1].nfs_argop4_u.opopen.seqid = 0;
     // Set the owner with the clientid and the unique owner number (32 bit should be safe)
     // The clientid stems from the setclientid() handshake
     op[1].nfs_argop4_u.opopen.owner.clientid = vnfs->clientid;
@@ -319,7 +320,7 @@ int release(struct fuse_session *se, struct virtionfs *vnfs,
     }
     // COMMIT
     op[1].argop = OP_CLOSE;
-    op[1].nfs_argop4_u.opclose.seqid = atomic_fetch_add(&vnfs->seqid, 1);
+    op[1].nfs_argop4_u.opclose.seqid = 0;
     // Pass the stateid we received in the corresponding OPEN call
     op[1].nfs_argop4_u.opclose.open_stateid = cb_data->i->open_stateid;
 
@@ -768,7 +769,7 @@ void vopen_cb(struct rpc_context *rpc, int status, void *data,
     op[1].argop = OP_OPEN_CONFIRM;
     // Give back the same stateid as we received in the OPEN result
     op[1].nfs_argop4_u.opopen_confirm.open_stateid = openok->stateid;
-    op[1].nfs_argop4_u.opopen_confirm.seqid = atomic_fetch_add(&vnfs->seqid, 1);
+    op[1].nfs_argop4_u.opopen_confirm.seqid = 0;
     if (rpc_nfs4_compound_async(vnfs->rpc, vopen_confirm_cb, &args, cb_data) != 0) {
     	fprintf(stderr, "Failed to send NFS:open_confirm request\n");
         cb_data->out_hdr->error = -EREMOTEIO;
@@ -825,7 +826,7 @@ int vopen(struct fuse_session *se, struct virtionfs *vnfs,
     op[1].nfs_argop4_u.opopen.share_access = OPEN4_SHARE_ACCESS_BOTH;
     op[1].nfs_argop4_u.opopen.share_deny = OPEN4_SHARE_DENY_NONE;
     // Don't use this because we don't do anything special with the share, so set to zero
-    op[1].nfs_argop4_u.opopen.seqid = atomic_fetch_add(&vnfs->seqid, 1);
+    op[1].nfs_argop4_u.opopen.seqid = 0;
     // Set the owner with the clientid and the unique owner number (32 bit should be safe)
     // The clientid stems from the setclientid() handshake
     op[1].nfs_argop4_u.opopen.owner.clientid = vnfs->clientid;
@@ -1368,6 +1369,7 @@ int init(struct fuse_session *se, struct virtionfs *vnfs,
     conn->want &= ~FUSE_CAP_SPLICE_READ;
     conn->want &= ~FUSE_CAP_SPLICE_WRITE;
 
+    vnfs_new_connection(vnfs);
 
     // TODO WARNING
     // By returning 0, we allow the host to imediately start sending us requests,

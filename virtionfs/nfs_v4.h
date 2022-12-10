@@ -65,6 +65,7 @@ int nfs4_clone_fh(vnfs_fh4 *dst, nfs_fh4 *src);
 int nfs4_find_op(COMPOUND4res *res, int op);
 int nfs4_fill_create_attrs(struct fuse_in_header *in_hdr, uint32_t flags, fattr4 *attr);
 bool nfs4_check_session_trunking_allowed(EXCHANGE_ID4resok *l, EXCHANGE_ID4resok *r);
+bool nfs4_check_clientid_trunking_allowed(EXCHANGE_ID4resok *l, EXCHANGE_ID4resok *r);
 // Supply the clientid received from EXCHANGE_ID
 int nfs4_op_createsession(nfs_argop4 *op, clientid4 clientid, sequenceid4 seqid);
 int nfs4_op_bindconntosession(nfs_argop4 *op, sessionid4 *sessionid, channel_dir_from_client4 channel, bool rdma);

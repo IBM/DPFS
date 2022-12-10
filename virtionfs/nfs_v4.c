@@ -103,14 +103,26 @@ bool nfs4_check_session_trunking_allowed(EXCHANGE_ID4resok *l, EXCHANGE_ID4resok
             .eir_server_scope_val, l->eir_server_scope.eir_server_scope_len) == 0;
 }
 
+// With clientid trunking the server owner's minor id does not have to match
+bool nfs4_check_clientid_trunking_allowed(EXCHANGE_ID4resok *l, EXCHANGE_ID4resok *r) {
+    return l->eir_clientid == r->eir_clientid 
+        && l->eir_server_owner.so_major_id.so_major_id_len == r->eir_server_owner.so_major_id.so_major_id_len
+        && memcmp(l->eir_server_owner.so_major_id.so_major_id_val, r->eir_server_owner
+            .so_major_id.so_major_id_val, l->eir_server_owner.so_major_id.so_major_id_len) == 0
+        && l->eir_server_scope.eir_server_scope_len == r->eir_server_scope.eir_server_scope_len
+        && memcmp(l->eir_server_scope.eir_server_scope_val, r->eir_server_scope
+            .eir_server_scope_val, l->eir_server_scope.eir_server_scope_len) == 0;
+}
+
 int nfs4_op_createsession(nfs_argop4 *op, clientid4 clientid, sequenceid4 seqid)
 {
    CREATE_SESSION4args *arg;
-   op[0].argop = OP_BIND_CONN_TO_SESSION;
+   op[0].argop = OP_CREATE_SESSION;
    arg = &op[0].nfs_argop4_u.opcreatesession;
 
    arg->csa_clientid = clientid;
    arg->csa_sequence = seqid;
+   // Don't request a back channel on this connection
    arg->csa_flags = 0;
    arg->csa_cb_program = 0;
    arg->csa_sec_parms.csa_sec_parms_val = NULL;
@@ -129,18 +141,8 @@ int nfs4_op_createsession(nfs_argop4 *op, clientid4 clientid, sequenceid4 seqid)
    arg->csa_fore_chan_attrs.ca_rdma_ird.ca_rdma_ird_val = NULL;
    arg->csa_fore_chan_attrs.ca_rdma_ird.ca_rdma_ird_len = 0;
 
-   // Currently no caching support
-   arg->csa_back_chan_attrs.ca_maxresponsesize_cached = 0;
-   arg->csa_back_chan_attrs.ca_maxrequests = NFS4_MAXREQUESTSIZE;
-   arg->csa_back_chan_attrs.ca_maxresponsesize = NFS4_MAXRESPONSESIZE;
-   arg->csa_back_chan_attrs.ca_maxrequestsize = NFS4_MAXREQUESTSIZE;
-   // We have too little control over libnfs to properly use this
-   arg->csa_back_chan_attrs.ca_headerpadsize = 0;
-   // Magic from the Linux kernel, 8 seems about right
-   arg->csa_back_chan_attrs.ca_maxoperations = NFS4_MAX_OPS;
-   // No RDMA here
-   arg->csa_back_chan_attrs.ca_rdma_ird.ca_rdma_ird_val = NULL;
-   arg->csa_back_chan_attrs.ca_rdma_ird.ca_rdma_ird_len = 0;
+   // No back channel support (see Github issue #17)
+   memset(&arg->csa_back_chan_attrs, 0, sizeof(channel_attrs4));
 
    return 1;
 }
