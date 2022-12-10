@@ -95,6 +95,11 @@ struct inode *vnfs4_op_putfh_open(struct virtionfs *vnfs, nfs_argop4 *op, uint64
     return i;
 }
 
+struct vnfs_conn* vnfs_get_conn(struct virtionfs *vnfs) {
+    size_t threadid = (size_t) pthread_getspecific(virtiofs_thread_id_key);
+    return &vnfs->conns[threadid];
+}
+
 int vnfs4_op_sequence(nfs_argop4 *op, struct vnfs_conn *conn, bool cachethis)
 {
     op->argop = OP_SEQUENCE;
@@ -1323,6 +1328,7 @@ int getattr(struct fuse_session *se, struct virtionfs *vnfs,
             struct fuse_out_header *out_hdr, struct fuse_attr_out *out_attr,
             struct snap_fs_dev_io_done_ctx *cb)
 {
+    struct vnfs_conn *conn = vnfs_get_conn(vnfs);
     struct getattr_cb_data *cb_data = mpool2_alloc(vnfs->p);
     if (!cb_data) {
         out_hdr->error = -ENOMEM;
@@ -1336,16 +1342,17 @@ int getattr(struct fuse_session *se, struct virtionfs *vnfs,
     cb_data->out_attr = out_attr;
 
     COMPOUND4args args;
-    nfs_argop4 op[2];
+    nfs_argop4 op[3];
 
-    struct inode *i = vnfs4_op_putfh(vnfs, &op[0], in_hdr->nodeid);
+    vnfs4_op_sequence(&op[0], conn, false);
+    struct inode *i = vnfs4_op_putfh(vnfs, &op[1], in_hdr->nodeid);
     if (!i) {
     	fprintf(stderr, "Invalid nodeid supplied to GETATTR\n");
         mpool2_free(vnfs->p, cb_data);
         out_hdr->error = -ENOENT;
         return 0;
     }
-    nfs4_op_getattr(&op[1], standard_attributes, 2);
+    nfs4_op_getattr(&op[2], standard_attributes, 2);
     
     memset(&args, 0, sizeof(args));
     args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);

@@ -61,6 +61,7 @@ struct virtiofs_emu_ll {
 };
 
 static volatile int keep_running = 1;
+pthread_key_t virtiofs_thread_id_key;
 
 void signal_handler(int dummy)
 {
@@ -108,7 +109,7 @@ static void virtiofs_emu_ll_loop_singlethreaded(struct virtio_fs_ctrl *ctrl, use
 }
 
 struct emu_ll_tdata {
-    int thread_id;
+    size_t thread_id;
     struct virtio_fs_ctrl *ctrl;
     useconds_t interval;
     pthread_t thread;
@@ -117,6 +118,10 @@ struct emu_ll_tdata {
 static void *virtiofs_emu_ll_loop_thread(void *arg)
 {
     struct emu_ll_tdata *tdata = (struct emu_ll_tdata *)arg;
+
+    // Store the thread_id in thread local storage so that the FUSE implementation
+    // knows what thread number its in when called with a request
+    pthread_setspecific(virtiofs_thread_id_key, (void *) tdata->thread_id);
 
     // poll as fast as we can! Someone else is doing mmio polling
     while (keep_running || !virtio_fs_ctrl_is_suspended(tdata->ctrl))
