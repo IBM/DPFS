@@ -130,7 +130,9 @@ struct create_cb_data {
 void create_cb(struct rpc_context *rpc, int status, void *data,
                        void *private_data) {
 #ifdef LATENCY_MEASURING_ENABLED
-    ft_stop(&ft[FUSE_CREATE]);
+    if (vnfs->nthreads == 1) {
+        ft_stop(&ft[FUSE_CREATE]);
+    }
 #endif
     struct create_cb_data *cb_data = (struct create_cb_data *)private_data;
     struct virtionfs *vnfs = cb_data->vnfs;
@@ -236,8 +238,10 @@ int create(struct fuse_session *se, struct virtionfs *vnfs,
     op[3].argop = OP_GETFH;
 
 #ifdef LATENCY_MEASURING_ENABLED
-    op_calls[FUSE_CREATE]++;
-    ft_start(&ft[FUSE_CREATE]);
+    if (vnfs->nthreads == 1) {
+        op_calls[FUSE_CREATE]++;
+        ft_start(&ft[FUSE_CREATE]);
+    }
 #endif
 
     if (rpc_nfs4_compound_async(vnfs->rpc, create_cb, &args, cb_data) != 0) {
@@ -262,7 +266,9 @@ struct release_cb_data {
 void release_cb(struct rpc_context *rpc, int status, void *data,
                        void *private_data) {
 #ifdef LATENCY_MEASURING_ENABLED
-    ft_stop(&ft[FUSE_RELEASE]);
+    if (vnfs->nthreads == 1) {
+        ft_stop(&ft[FUSE_RELEASE]);
+    }
 #endif
     struct release_cb_data *cb_data = (struct release_cb_data *)private_data;
     struct virtionfs *vnfs = cb_data->vnfs;
@@ -330,8 +336,10 @@ int release(struct fuse_session *se, struct virtionfs *vnfs,
     }
 
 #ifdef LATENCY_MEASURING_ENABLED
-    op_calls[FUSE_RELEASE]++;
-    ft_start(&ft[FUSE_RELEASE]);
+    if (vnfs->nthreads == 1) {
+        op_calls[FUSE_RELEASE]++;
+        ft_start(&ft[FUSE_RELEASE]);
+    }
 #endif
 
     if (rpc_nfs4_compound_async(vnfs->rpc, release_cb, &args, cb_data) != 0) {
@@ -355,7 +363,9 @@ struct fsync_cb_data {
 void vfsync_cb(struct rpc_context *rpc, int status, void *data,
                        void *private_data) {
 #ifdef LATENCY_MEASURING_ENABLED
-    ft_stop(&ft[FUSE_FSYNC]);
+    if (vnfs->nthreads == 1) {
+        ft_stop(&ft[FUSE_FSYNC]);
+    }
 #endif
     struct fsync_cb_data *cb_data = (struct fsync_cb_data *)private_data;
     struct virtionfs *vnfs = cb_data->vnfs;
@@ -418,8 +428,10 @@ int vfsync(struct fuse_session *se, struct virtionfs *vnfs,
     op[1].nfs_argop4_u.opcommit.count = 0;
 
 #ifdef LATENCY_MEASURING_ENABLED
-    op_calls[FUSE_FSYNC]++;
-    ft_start(&ft[FUSE_FSYNC]);
+    if (vnfs->nthreads == 1) {
+        op_calls[FUSE_FSYNC]++;
+        ft_start(&ft[FUSE_FSYNC]);
+    }
 #endif
 
     if (rpc_nfs4_compound_async(vnfs->rpc, vfsync_cb, &args, cb_data) != 0) {
@@ -447,7 +459,9 @@ struct write_cb_data {
 void vwrite_cb(struct rpc_context *rpc, int status, void *data,
            void *private_data) {
 #ifdef LATENCY_MEASURING_ENABLED
-    ft_stop(&ft[FUSE_WRITE]);
+    if (vnfs->nthreads == 1) {
+        ft_stop(&ft[FUSE_WRITE]);
+    }
 #endif
     struct write_cb_data *cb_data = (struct write_cb_data *) private_data;
     struct virtionfs *vnfs = cb_data->vnfs;
@@ -538,8 +552,10 @@ int vwrite(struct fuse_session *se, struct virtionfs *vnfs,
     uint64_t alloc_hint = in_iov->iov_len; 
 
 #ifdef LATENCY_MEASURING_ENABLED
-    op_calls[FUSE_WRITE]++;
-    ft_start(&ft[FUSE_WRITE]);
+    if (vnfs->nthreads == 1) {
+        op_calls[FUSE_WRITE]++;
+        ft_start(&ft[FUSE_WRITE]);
+    }
 #endif
     if (rpc_nfs4_compound_async2(vnfs->rpc, vwrite_cb, &args, cb_data, alloc_hint) != 0) {
     	fprintf(stderr, "Failed to send NFS:write request\n");
@@ -682,8 +698,10 @@ void vopen_confirm_cb(struct rpc_context *rpc, int status, void *data,
                        void *private_data)
 {
 #ifdef LATENCY_MEASURING_ENABLED
-    // If the confirm was needed, then the timer wasn't stopped yet
-    ft_stop(&ft[FUSE_OPEN]);
+    if (vnfs->nthreads == 1) {
+        // If the confirm was needed, then the timer wasn't stopped yet
+        ft_stop(&ft[FUSE_OPEN]);
+    }
 #endif
     struct open_cb_data *cb_data = (struct open_cb_data *)private_data;
     struct virtionfs *vnfs = cb_data->vnfs;
@@ -749,8 +767,10 @@ void vopen_cb(struct rpc_context *rpc, int status, void *data,
         // Save the stateid we were given for the opened handle
         i->open_stateid = openok->stateid;
 #ifdef LATENCY_MEASURING_ENABLED
-        // Only now we can conclude that the OPEN is done
-        ft_stop(&ft[FUSE_OPEN]);
+        if (vnfs->nthreads == 1) {
+            // Only now we can conclude that the OPEN is done
+            ft_stop(&ft[FUSE_OPEN]);
+        }
 #endif
         goto ret;
     }
@@ -849,8 +869,10 @@ int vopen(struct fuse_session *se, struct virtionfs *vnfs,
     op[2].argop = OP_GETFH;
 
 #ifdef LATENCY_MEASURING_ENABLED
-    op_calls[FUSE_OPEN]++;
-    ft_start(&ft[FUSE_OPEN]);
+    if (vnfs->nthreads == 1) {
+        op_calls[FUSE_OPEN]++;
+        ft_start(&ft[FUSE_OPEN]);
+    }
 #endif
     if (rpc_nfs4_compound_async(vnfs->rpc, vopen_cb, &args, cb_data) != 0) {
     	fprintf(stderr, "Failed to send NFS:open request\n");
@@ -878,7 +900,9 @@ void setattr_cb(struct rpc_context *rpc, int status, void *data,
                        void *private_data)
 {
 #ifdef LATENCY_MEASURING_ENABLED
-    ft_stop(&ft[FUSE_SETATTR]);
+    if (vnfs->nthreads == 1) {
+        ft_stop(&ft[FUSE_SETATTR]);
+    {
 #endif
     struct setattr_cb_data *cb_data = (struct setattr_cb_data *)private_data;
     struct virtionfs *vnfs = cb_data->vnfs;
@@ -990,8 +1014,10 @@ int setattr(struct fuse_session *se, struct virtionfs *vnfs,
     nfs4_op_getattr(&op[2], standard_attributes, 2);
 
 #ifdef LATENCY_MEASURING_ENABLED
-    op_calls[FUSE_SETATTR]++;
-    ft_start(&ft[FUSE_SETATTR]);
+    if (vnfs->nthreads == 1) {
+        op_calls[FUSE_SETATTR]++;
+        ft_start(&ft[FUSE_SETATTR]);
+    }
 #endif
     if (rpc_nfs4_compound_async(vnfs->rpc, setattr_cb, &args, cb_data) != 0) {
     	fprintf(stderr, "Failed to send nfs4 SETATTR request\n");
@@ -1015,7 +1041,9 @@ struct statfs_cb_data {
 void statfs_cb(struct rpc_context *rpc, int status, void *data,
                        void *private_data) {
 #ifdef LATENCY_MEASURING_ENABLED
-    ft_stop(&ft[FUSE_STATFS]);
+    if (vnfs->nthreads == 1) {
+        ft_stop(&ft[FUSE_STATFS]);
+    }
 #endif
     struct statfs_cb_data *cb_data = (struct statfs_cb_data *)private_data;
     struct virtionfs *vnfs = cb_data->vnfs;
@@ -1081,8 +1109,10 @@ int statfs(struct fuse_session *se, struct virtionfs *vnfs,
     args.argarray.argarray_val = op;
 
 #ifdef LATENCY_MEASURING_ENABLED
-    op_calls[FUSE_STATFS]++;
-    ft_start(&ft[FUSE_STATFS]);
+    if (vnfs->nthreads == 1) {
+        op_calls[FUSE_STATFS]++;
+        ft_start(&ft[FUSE_STATFS]);
+    }
 #endif
 
     if (rpc_nfs4_compound_async(vnfs->rpc, statfs_cb, &args, cb_data) != 0) {
@@ -1110,7 +1140,9 @@ struct lookup_cb_data {
 void lookup_cb(struct rpc_context *rpc, int status, void *data,
                        void *private_data) {
 #ifdef LATENCY_MEASURING_ENABLED
-    ft_stop(&ft[FUSE_LOOKUP]);
+    if (vnfs->nthreads == 1) {
+        ft_stop(&ft[FUSE_LOOKUP]);
+    }
 #endif
     struct lookup_cb_data *cb_data = (struct lookup_cb_data *)private_data;
     struct virtionfs *vnfs = cb_data->vnfs;
@@ -1218,8 +1250,10 @@ int lookup(struct fuse_session *se, struct virtionfs *vnfs,
     args.argarray.argarray_val = op;
 
 #ifdef LATENCY_MEASURING_ENABLED
-    op_calls[FUSE_LOOKUP]++;
-    ft_start(&ft[FUSE_LOOKUP]);
+    if (vnfs->nthreads == 1) {
+        op_calls[FUSE_LOOKUP]++;
+        ft_start(&ft[FUSE_LOOKUP]);
+    }
 #endif
 
     if (rpc_nfs4_compound_async(vnfs->rpc, lookup_cb, &args, cb_data) != 0) {
@@ -1244,7 +1278,9 @@ struct getattr_cb_data {
 void getattr_cb(struct rpc_context *rpc, int status, void *data,
                        void *private_data) {
 #ifdef LATENCY_MEASURING_ENABLED
-    ft_stop(&ft[FUSE_GETATTR]);
+    if (vnfs->nthreads == 1) {
+        ft_stop(&ft[FUSE_GETATTR]);
+    }
 #endif
     struct getattr_cb_data *cb_data = (struct getattr_cb_data *)private_data;
     struct virtionfs *vnfs = cb_data->vnfs;
@@ -1316,8 +1352,10 @@ int getattr(struct fuse_session *se, struct virtionfs *vnfs,
     args.argarray.argarray_val = op;
 
 #ifdef LATENCY_MEASURING_ENABLED
-    op_calls[FUSE_GETATTR]++;
-    ft_start(&ft[FUSE_GETATTR]);
+    if (vnfs->nthreads == 1) {
+        op_calls[FUSE_GETATTR]++;
+        ft_start(&ft[FUSE_GETATTR]);
+    }
 #endif
     if (rpc_nfs4_compound_async(vnfs->rpc, getattr_cb, &args, cb_data) != 0) {
     	fprintf(stderr, "Failed to send nfs4 GETATTR request\n");
@@ -1334,16 +1372,18 @@ int destroy(struct fuse_session *se, struct virtionfs *vnfs,
             struct snap_fs_dev_io_done_ctx *cb)
 {
 #ifdef LATENCY_MEASURING_ENABLED
-    for (int i = 1; i <= FUSE_REMOVEMAPPING; i++) {
-        if (ft[i].running) {
-            fprintf(stderr, "OP(%d) timer is still running!?\n", i);
+    if (vnfs->nthreads == 1) {
+        for (int i = 1; i <= FUSE_REMOVEMAPPING; i++) {
+            if (ft[i].running) {
+                fprintf(stderr, "OP(%d) timer is still running!?\n", i);
+            }
+            if (op_calls[i] > 0)
+                printf("OP(%d) took %lu averaged over %lu calls\n", i, ft_get_nsec(&ft[i]) / op_calls[i], op_calls[i]);
         }
-        if (op_calls[i] > 0)
-            printf("OP(%d) took %lu averaged over %lu calls\n", i, ft_get_nsec(&ft[i]) / op_calls[i], op_calls[i]);
     }
 #endif
 
-    nfs_mt_service_thread_stop(vnfs->nfs);
+    // TODO Destroy all the connections
 
     return 0;
 }
@@ -1353,9 +1393,14 @@ int init(struct fuse_session *se, struct virtionfs *vnfs,
     struct fuse_conn_info *conn, struct fuse_out_header *out_hdr)
 {
 #ifdef LATENCY_MEASURING_ENABLED
-    for (int i = 0; i < FUSE_REMOVEMAPPING+1; i++) {
-        ft_init(&ft[i]);
-        op_calls[i] = 0;
+    if (vnfs->nthreads == 1) {
+        for (int i = 0; i < FUSE_REMOVEMAPPING+1; i++) {
+            ft_init(&ft[i]);
+            op_calls[i] = 0;
+        }
+    } else {
+        fprintf(stderr, "Latency measuring is enabled but vnfs was told to do multithreading"
+                ", this is not supported. Latency measuring disabled\n");
     }
 #endif
 
