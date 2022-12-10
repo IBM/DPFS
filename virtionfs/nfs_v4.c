@@ -103,13 +103,14 @@ bool nfs4_check_session_trunking_allowed(EXCHANGE_ID4resok *l, EXCHANGE_ID4resok
                     .eir_server_scope_val, l->eir_server_scope.eir_server_scope_len) == 0;
 }
 
-int nfs4_op_createsession(nfs_argop4 *op, clientid4 clientid)
+int nfs4_op_createsession(nfs_argop4 *op, clientid4 clientid, sequenceid4 seqid)
 {
    CREATE_SESSION4args *arg;
    op[0].argop = OP_BIND_CONN_TO_SESSION;
    arg = &op[0].nfs_argop4_u.opcreatesession;
 
    arg->csa_clientid = clientid;
+   arg->csa_sequence = seqid;
    arg->csa_flags = 0;
    arg->csa_cb_program = 0;
    arg->csa_sec_parms.csa_sec_parms_val = NULL;

@@ -20,10 +20,11 @@ void virtionfs_main(char *server, char *export,
                bool debug, double timeout, uint32_t nthreads,
                struct virtiofs_emu_params *emu_params);
 
-enum NFS_CONN_STATE {
-    UNINIT,
-    ESTABLISHED,
-    CLOSED
+enum vnfs_conn_state {
+    VNFS_CONN_STATE_UNINIT = 0,
+    VNFS_CONN_STATE_ESTABLISHED,
+    VNFS_CONN_STATE_CLOSED,
+    VNFS_CONN_STATE_ERROR
 };
 
 struct nfs_slot {
@@ -31,8 +32,11 @@ struct nfs_slot {
     sequenceid4 seqid;
 };
 
-struct nfs_conn {
-    enum NFS_CONN_STATE state;
+struct vnfs_conn {
+    struct nfs_context *nfs;
+    struct rpc_context *rpc;
+
+    enum vnfs_conn_state state;
     // The settings we negotiated with the server
     channel_attrs4 attrs;
     // Index is slotid4
@@ -40,14 +44,14 @@ struct nfs_conn {
     slotid4 cl_highest_slot;
     slotid4 sr_highest_slot;
     slotid4 sr_target_highest_slot;
-
 };
 
 struct virtionfs {
     struct nfs_context *nfs;
     struct rpc_context *rpc;
     // We open connections on the main thread
-    struct nfs_conn connections;
+    struct vnfs_conn *conns;
+    uint32_t conn_cntr;
     sessionid4 sessionid;
     // We receive the first sequenceid from EXCHANGE_ID
     atomic_uint seqid;
@@ -61,6 +65,9 @@ struct virtionfs {
     uint64_t timeout_sec;
     uint32_t timeout_nsec;
     uint32_t nthreads;
+    // TODO change uid and gid on a per-request basis
+    uint32_t uid;
+    uint32_t gid;
 
     // Currently there are two async NFS handshake operations
     // that need to complete

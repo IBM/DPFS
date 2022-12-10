@@ -17,6 +17,8 @@ virtionfs_CFLAGS  = $(BASE_CFLAGS) -I$(srcdir)/../../src -I$(srcdir)/../virtiofs
                 -I$(srcdir) \
                 -I$(srcdir)/../virtiofs_emu_lowlevel $(SNAP_CFLAGS) \
                 -I/usr/local/include
-virtionfs_SOURCES = virtionfs.c mpool.c mpool2.c nfs_v4.c inode.c ftimer.c main.c
+virtionfs_SOURCES = main.c \
+                    virtionfs.c vnfs_connect.c \
+                    mpool2.c nfs_v4.c inode.c ftimer.c
 
 endif
