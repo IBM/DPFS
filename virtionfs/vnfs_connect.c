@@ -71,6 +71,10 @@ static int lookup_true_rootfh(struct virtionfs *vnfs)
 
     COMPOUND4args args;
     nfs_argop4 op[3+count];
+    memset(&args, 0, sizeof(args));
+    args.minorversion = NFS4DOT1_MINOR;
+    args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
+    args.argarray.argarray_val = op;
     int i = 0;
 
     vnfs4_op_sequence(&op[i++], conn, false);
@@ -85,9 +89,7 @@ static int lookup_true_rootfh(struct virtionfs *vnfs)
     // GETFH
     op[i].argop = OP_GETFH;
 
-    memset(&args, 0, sizeof(args));
-    args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
-    args.argarray.argarray_val = op;
+
 
     if (rpc_nfs4_compound_async(conn->rpc, lookup_true_rootfh_cb, &args, vnfs) != 0) {
     	fprintf(stderr, "%s: Failed to send nfs4 LOOKUP request\n", __func__);
@@ -132,6 +134,7 @@ static int create_session(struct virtionfs *vnfs, clientid4 clientid, sequenceid
     COMPOUND4args args;
     nfs_argop4 op[1];
     memset(&args, 0, sizeof(args));
+    args.minorversion = NFS4DOT1_MINOR;
     args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
     args.argarray.argarray_val = op;
     memset(op, 0, sizeof(op));
@@ -186,6 +189,7 @@ static int bind_conn(struct virtionfs *vnfs, sessionid4 *sessionid)
     COMPOUND4args args;
     nfs_argop4 op[1];
     memset(&args, 0, sizeof(args));
+    args.minorversion = NFS4DOT1_MINOR;
     args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
     args.argarray.argarray_val = op;
     memset(op, 0, sizeof(op));
@@ -221,7 +225,8 @@ static void exchangeid_cb(struct rpc_context *rpc, int status, void *data, void 
         return;
     }
 
-    EXCHANGE_ID4resok *ok = &res->resarray.resarray_val[0].nfs_resop4_u.opexchangeid.EXCHANGE_ID4res_u.eir_resok4;
+    EXCHANGE_ID4resok *ok = &res->resarray.resarray_val[0].nfs_resop4_u.opexchangeid
+            .EXCHANGE_ID4res_u.eir_resok4;
 
     // If we are T0
     if (vnfs->conn_cntr == 0) {
@@ -233,8 +238,9 @@ static void exchangeid_cb(struct rpc_context *rpc, int status, void *data, void 
             // We bind it to the session of the previously created connection
             bind_conn(vnfs, &(conn-1)->sessionid);
         } else {
-            // TODO handle can't trunking
-            // close connection
+            fprintf(stderr, "VNFS connection %u was not allowed to start trunking\n",
+                    vnfs->conn_cntr);
+            vnfs_destroy_connection(vnfs, conn, VNFS_CONN_STATE_ERROR);
         }
     }
 }
@@ -246,6 +252,7 @@ static int exchangeid(struct virtionfs *vnfs)
     COMPOUND4args args;
     nfs_argop4 op[1];
     memset(&args, 0, sizeof(args));
+    args.minorversion = NFS4DOT1_MINOR;
     args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
     args.argarray.argarray_val = op;
     memset(op, 0, sizeof(op));

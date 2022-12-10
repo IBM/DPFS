@@ -94,13 +94,13 @@ int nfs4_fill_create_attrs(struct fuse_in_header *in_hdr, uint32_t mode, fattr4 
 
 bool nfs4_check_session_trunking_allowed(EXCHANGE_ID4resok *l, EXCHANGE_ID4resok *r) {
     return l->eir_clientid == r->eir_clientid 
-                && l->eir_server_owner.so_major_id.so_major_id_len == r->eir_server_owner.so_major_id.so_major_id_len
-                && memcmp(l->eir_server_owner.so_major_id.so_major_id_val, r->eir_server_owner
-                    .so_major_id.so_major_id_val, l->eir_server_owner.so_major_id.so_major_id_len) == 0
-                && l->eir_server_owner.so_minor_id == r->eir_server_owner.so_minor_id
-                && l->eir_server_scope.eir_server_scope_len == r->eir_server_scope.eir_server_scope_len
-                && memcmp(l->eir_server_scope.eir_server_scope_val, r->eir_server_scope
-                    .eir_server_scope_val, l->eir_server_scope.eir_server_scope_len) == 0;
+        && l->eir_server_owner.so_major_id.so_major_id_len == r->eir_server_owner.so_major_id.so_major_id_len
+        && memcmp(l->eir_server_owner.so_major_id.so_major_id_val, r->eir_server_owner
+            .so_major_id.so_major_id_val, l->eir_server_owner.so_major_id.so_major_id_len) == 0
+        && l->eir_server_owner.so_minor_id == r->eir_server_owner.so_minor_id
+        && l->eir_server_scope.eir_server_scope_len == r->eir_server_scope.eir_server_scope_len
+        && memcmp(l->eir_server_scope.eir_server_scope_val, r->eir_server_scope
+            .eir_server_scope_val, l->eir_server_scope.eir_server_scope_len) == 0;
 }
 
 int nfs4_op_createsession(nfs_argop4 *op, clientid4 clientid, sequenceid4 seqid)

@@ -26,6 +26,8 @@
 
 #define NFS4_MAX_OUTSTANDING_REQUESTS 64
 
+#define NFS4DOT1_MINOR 1
+
 /*
  *  linux/include/linux/nfs4.h
  *
