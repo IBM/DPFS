@@ -70,7 +70,7 @@ static uint32_t statfs_attributes[2] = {
 
 // supported_attributes = standard_attributes | statfs_attributes
 
-struct inode *nfs4_op_putfh(struct virtionfs *vnfs, nfs_argop4 *op, uint64_t nodeid)
+struct inode *vnfs4_op_putfh(struct virtionfs *vnfs, nfs_argop4 *op, uint64_t nodeid)
 {
     op->argop = OP_PUTFH;
     struct inode *i = inode_table_get(vnfs->inodes, nodeid);
@@ -82,7 +82,7 @@ struct inode *nfs4_op_putfh(struct virtionfs *vnfs, nfs_argop4 *op, uint64_t nod
     return i;
 }
 
-struct inode *nfs4_op_putfh_open(struct virtionfs *vnfs, nfs_argop4 *op, uint64_t nodeid)
+struct inode *vnfs4_op_putfh_open(struct virtionfs *vnfs, nfs_argop4 *op, uint64_t nodeid)
 {
     op->argop = OP_PUTFH;
     struct inode *i = inode_table_get(vnfs->inodes, nodeid);
@@ -92,6 +92,25 @@ struct inode *nfs4_op_putfh_open(struct virtionfs *vnfs, nfs_argop4 *op, uint64_
     op->nfs_argop4_u.opputfh.object.nfs_fh4_val = i->fh_open.val;
     op->nfs_argop4_u.opputfh.object.nfs_fh4_len = i->fh_open.len;
     return i;
+}
+
+int vnfs4_op_sequence(nfs_argop4 *op, struct vnfs_conn *conn, bool cachethis)
+{
+    op->argop = OP_SEQUENCE;
+    struct SEQUENCE4args *arg = &op[0].nfs_argop4_u.opsequence;
+    
+    arg->sa_cachethis = cachethis;
+    // sessionid
+    memcpy(arg->sa_sessionid, conn->sessionid, sizeof(sessionid4));
+    arg->sa_slotid = conn->target_highest_slot;
+    struct vnfs_slot *slot = &conn->slots[arg->sa_slotid];
+    arg->sa_sequenceid = ++slot->seqid;
+    if (arg->sa_slotid > conn->highest_slot) {
+        conn->highest_slot = arg->sa_slotid;
+    }
+    arg->sa_highest_slotid = conn->highest_slot;
+    
+    return 1;
 }
 
 struct create_cb_data {
@@ -291,7 +310,7 @@ int release(struct fuse_session *se, struct virtionfs *vnfs,
     args.argarray.argarray_val = op;
 
     // PUTFH
-    cb_data->i = nfs4_op_putfh(vnfs, &op[0], in_hdr->nodeid);
+    cb_data->i = vnfs4_op_putfh(vnfs, &op[0], in_hdr->nodeid);
     if (!cb_data->i) {
     	fprintf(stderr, "Invalid nodeid supplied to release\n");
         mpool2_free(vnfs->p, cb_data);
@@ -383,7 +402,7 @@ int vfsync(struct fuse_session *se, struct virtionfs *vnfs,
     args.argarray.argarray_val = op;
 
     // PUTFH
-    struct inode *i = nfs4_op_putfh(vnfs, &op[0], in_hdr->nodeid);
+    struct inode *i = vnfs4_op_putfh(vnfs, &op[0], in_hdr->nodeid);
     if (!i) {
     	fprintf(stderr, "Invalid nodeid supplied to fsync\n");
         mpool2_free(vnfs->p, cb_data);
@@ -492,7 +511,7 @@ int vwrite(struct fuse_session *se, struct virtionfs *vnfs,
     args.argarray.argarray_val = op;
 
     // PUTFH
-    struct inode *i = nfs4_op_putfh_open(vnfs, &op[0], in_hdr->nodeid);
+    struct inode *i = vnfs4_op_putfh_open(vnfs, &op[0], in_hdr->nodeid);
     if (!i) {
     	fprintf(stderr, "Invalid nodeid supplied to write\n");
         mpool2_free(vnfs->p, cb_data);
@@ -623,7 +642,7 @@ int vread(struct fuse_session *se, struct virtionfs *vnfs,
     args.argarray.argarray_val = op;
 
     // PUTFH
-    struct inode *i = nfs4_op_putfh_open(vnfs, &op[0], in_hdr->nodeid);
+    struct inode *i = vnfs4_op_putfh_open(vnfs, &op[0], in_hdr->nodeid);
     if (!i) {
     	fprintf(stderr, "Invalid nodeid supplied to open\n");
         mpool2_free(vnfs->p, cb_data);
@@ -921,7 +940,7 @@ int setattr(struct fuse_session *se, struct virtionfs *vnfs,
     args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
     args.argarray.argarray_val = op;
 
-    struct inode *i = nfs4_op_putfh(vnfs, &op[0], in_hdr->nodeid);
+    struct inode *i = vnfs4_op_putfh(vnfs, &op[0], in_hdr->nodeid);
     if (!i) {
     	fprintf(stderr, "Invalid nodeid supplied to GETATTR\n");
         mpool2_free(vnfs->p, cb_data);
@@ -1175,7 +1194,7 @@ int lookup(struct fuse_session *se, struct virtionfs *vnfs,
     nfs_argop4 op[4];
 
     // PUTFH
-    struct inode *pi = nfs4_op_putfh(vnfs, &op[0], in_hdr->nodeid);
+    struct inode *pi = vnfs4_op_putfh(vnfs, &op[0], in_hdr->nodeid);
     if (!pi) {
     	fprintf(stderr, "Invalid nodeid supplied to LOOKUP\n");
         mpool2_free(vnfs->p, cb_data);
@@ -1282,7 +1301,7 @@ int getattr(struct fuse_session *se, struct virtionfs *vnfs,
     COMPOUND4args args;
     nfs_argop4 op[2];
 
-    struct inode *i = nfs4_op_putfh(vnfs, &op[0], in_hdr->nodeid);
+    struct inode *i = vnfs4_op_putfh(vnfs, &op[0], in_hdr->nodeid);
     if (!i) {
     	fprintf(stderr, "Invalid nodeid supplied to GETATTR\n");
         mpool2_free(vnfs->p, cb_data);

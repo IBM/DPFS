@@ -27,7 +27,7 @@ enum vnfs_conn_state {
     VNFS_CONN_STATE_ERROR
 };
 
-struct nfs_slot {
+struct vnfs_slot {
     // Starts at 1
     sequenceid4 seqid;
 };
@@ -36,14 +36,16 @@ struct vnfs_conn {
     struct nfs_context *nfs;
     struct rpc_context *rpc;
 
+    // The session under which this connection is operating
+    sessionid4 sessionid;
     enum vnfs_conn_state state;
     // The settings we negotiated with the server
     channel_attrs4 attrs;
     // Index is slotid4
-    struct nfs_slot *slots;
-    slotid4 cl_highest_slot;
-    slotid4 sr_highest_slot;
-    slotid4 sr_target_highest_slot;
+    struct vnfs_slot *slots;
+    uint32_t nslots;
+    slotid4 highest_slot;
+    slotid4 target_highest_slot;
 };
 
 struct virtionfs {
@@ -52,7 +54,6 @@ struct virtionfs {
     // We open connections on the main thread
     struct vnfs_conn *conns;
     uint32_t conn_cntr;
-    sessionid4 sessionid;
     // We receive the first sequenceid from EXCHANGE_ID
     atomic_uint seqid;
 
@@ -84,5 +85,7 @@ struct virtionfs {
     clientid4 clientid;
     verifier4 setclientid_confirm;
 };
+
+int vnfs4_op_sequence(nfs_argop4 *op, struct vnfs_conn *conn, bool cachethis);
 
 #endif // VIRTIONFS_VIRTIONFS_H

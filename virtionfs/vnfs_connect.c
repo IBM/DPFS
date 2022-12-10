@@ -25,13 +25,6 @@ static void vnfs_conn_boot_done(struct virtionfs *vnfs) {
     }
 }
 
-struct lookup_true_rootfh_cb_data {
-    struct virtionfs *vnfs;
-    struct fuse_out_header *out_hdr;
-    struct snap_fs_dev_io_done_ctx *cb;
-    char *export;
-};
-
 static void lookup_true_rootfh_cb(struct rpc_context *rpc, int status, void *data,
                        void *private_data) {
     struct virtionfs *vnfs = private_data;
@@ -80,9 +73,7 @@ static int lookup_true_rootfh(struct virtionfs *vnfs)
     nfs_argop4 op[3+count];
     int i = 0;
 
-    op[i].argop = OP_SEQUENCE;
-    // TODO fill the sequence
-    i++;
+    vnfs4_op_sequence(&op[i++], conn, false);
     // PUTFH
     op[i++].argop = OP_PUTROOTFH;
     // LOOKUP
@@ -98,11 +89,12 @@ static int lookup_true_rootfh(struct virtionfs *vnfs)
     args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
     args.argarray.argarray_val = op;
 
-    if (rpc_nfs4_compound_async(vnfs->conns[vnfs->conn_cntr].rpc, lookup_true_rootfh_cb, &args, vnfs) != 0) {
-    	fprintf(stderr, "Failed to send nfs4 LOOKUP request\n");
+    if (rpc_nfs4_compound_async(conn->rpc, lookup_true_rootfh_cb, &args, vnfs) != 0) {
+    	fprintf(stderr, "%s: Failed to send nfs4 LOOKUP request\n", __func__);
         vnfs_destroy_connection(vnfs, conn, VNFS_CONN_STATE_ERROR);
         return -1;
     }
+    free(export);
 
     return 0;
 }
@@ -125,8 +117,8 @@ static void create_session_cb(struct rpc_context *rpc, int status, void *data, v
     }
 
     CREATE_SESSION4resok *ok = &res->resarray.resarray_val[0].nfs_resop4_u.opcreatesession.CREATE_SESSION4res_u.csr_resok4;
-    // TODO handle the attrs
-    memcpy(vnfs->sessionid, ok->csr_sessionid, sizeof(sessionid4));
+    // TODO handle the attrs in a negotiate like fashion
+    memcpy(conn->sessionid, ok->csr_sessionid, sizeof(sessionid4));
     // The sequenceid we receive in this ok is the same as we sent, so no need to do anything
 
     // The session and connection is now fully up, lets lookup the true root
@@ -182,12 +174,12 @@ static void bind_conn_cb(struct rpc_context *rpc, int status, void *data, void *
         return;
     }
 
-    if (memcmp(ok->bctsr_sessid, vnfs->sessionid, sizeof(sessionid4)) == 0) {
+    if (memcmp(ok->bctsr_sessid, conn->sessionid, sizeof(sessionid4)) == 0) {
         vnfs_conn_boot_done(vnfs);
     }
 }
 
-static int bind_conn(struct virtionfs *vnfs)
+static int bind_conn(struct virtionfs *vnfs, sessionid4 *sessionid)
 {
     struct vnfs_conn *conn = &vnfs->conns[vnfs->conn_cntr];
 
@@ -199,7 +191,7 @@ static int bind_conn(struct virtionfs *vnfs)
     memset(op, 0, sizeof(op));
 
     // We don't support callbacks
-    nfs4_op_bindconntosession(&op[0], &vnfs->sessionid, CDFC4_FORE, false);
+    nfs4_op_bindconntosession(&op[0], &conn->sessionid, CDFC4_FORE, false);
     
     if (rpc_nfs4_compound_async(conn->rpc, bind_conn_cb, &args, vnfs) != 0) {
     	fprintf(stderr, "Failed to send NFS:setclientid request\n");
@@ -238,7 +230,8 @@ static void exchangeid_cb(struct rpc_context *rpc, int status, void *data, void 
         create_session(vnfs, ok->eir_clientid, ok->eir_sequenceid);
     } else {
         if (nfs4_check_session_trunking_allowed(&vnfs->first_exchangeid, ok)) {
-            bind_conn(vnfs);
+            // We bind it to the session of the previously created connection
+            bind_conn(vnfs, &(conn-1)->sessionid);
         } else {
             // TODO handle can't trunking
             // close connection
