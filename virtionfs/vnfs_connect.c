@@ -15,9 +15,9 @@
 #include "nfs_v4.h"
 #include "inode.h"
 
-static void vnfs_conn_boot_done(struct virtionfs *vnfs) {
-    printf("VNFS connection %u fully up!\n", vnfs->conn_cntr);
+static void vnfs_conn_up(struct virtionfs *vnfs) {
     vnfs->conn_cntr++;
+    printf("VNFS connection %u fully up!\n", vnfs->conn_cntr);
     if (vnfs->conn_cntr < vnfs->nthreads) {
         vnfs_new_connection(vnfs);
     } else {
@@ -33,12 +33,12 @@ static void lookup_true_rootfh_cb(struct rpc_context *rpc, int status, void *dat
 
     if (status != RPC_STATUS_SUCCESS) {
     	fprintf(stderr, "RPC with NFS:LOOKUP_TRUE_ROOTFH unsuccessful: rpc error=%d\n", status);
-        vnfs_destroy_connection(vnfs, conn, VNFS_CONN_STATE_ERROR);
+        vnfs_destroy_connection(conn, VNFS_CONN_STATE_ERROR);
         return;
     }
     if (res->status != NFS4_OK) {
     	fprintf(stderr, "NFS:LOOKUP_TRUE_ROOTFH unsuccessful: nfs error=%d", res->status);
-        vnfs_destroy_connection(vnfs, conn, VNFS_CONN_STATE_ERROR);
+        vnfs_destroy_connection(conn, VNFS_CONN_STATE_ERROR);
         return;
     }
 
@@ -47,11 +47,12 @@ static void lookup_true_rootfh_cb(struct rpc_context *rpc, int status, void *dat
 
     // Store the filehandle of the TRUE root (aka the filehandle of where our export lives)
     struct inode *rooti = inode_new(FUSE_ROOT_ID, NULL, NULL);
-    nfs4_clone_fh(&rooti->fh, &res->resarray.resarray_val[i].nfs_resop4_u.opgetfh.GETFH4res_u.resok4.object); 
+    nfs4_clone_fh(&rooti->fh, &res->resarray.resarray_val[i].nfs_resop4_u.opgetfh
+            .GETFH4res_u.resok4.object); 
     inode_table_insert(vnfs->inodes, rooti);
 
     // T0 is done
-    vnfs_conn_boot_done(vnfs);
+    vnfs_conn_up(vnfs);
 }
 
 static int lookup_true_rootfh(struct virtionfs *vnfs)
@@ -91,7 +92,7 @@ static int lookup_true_rootfh(struct virtionfs *vnfs)
 
     if (rpc_nfs4_compound_async(conn->rpc, lookup_true_rootfh_cb, &args, vnfs) != 0) {
     	fprintf(stderr, "%s: Failed to send nfs4 LOOKUP request\n", __func__);
-        vnfs_destroy_connection(vnfs, conn, VNFS_CONN_STATE_ERROR);
+        vnfs_destroy_connection(conn, VNFS_CONN_STATE_ERROR);
         return -1;
     }
     free(export);
@@ -99,7 +100,8 @@ static int lookup_true_rootfh(struct virtionfs *vnfs)
     return 0;
 }
 
-static void create_session_cb(struct rpc_context *rpc, int status, void *data, void *private_data)
+static void create_session_cb(struct rpc_context *rpc, int status, void *data,
+        void *private_data)
 {
     struct virtionfs *vnfs = private_data;
     struct vnfs_conn *conn = &vnfs->conns[vnfs->conn_cntr];
@@ -107,16 +109,17 @@ static void create_session_cb(struct rpc_context *rpc, int status, void *data, v
     
     if (status != RPC_STATUS_SUCCESS) {
         fprintf(stderr, "RPC with NFS:CREATE_SESSION unsuccessful: rpc error=%d\n", status);
-        vnfs_destroy_connection(vnfs, conn, VNFS_CONN_STATE_ERROR);
+        vnfs_destroy_connection(conn, VNFS_CONN_STATE_ERROR);
         return;
     }
     if (res->status != NFS4_OK) {
         fprintf(stderr, "NFS:CREATE_SESSION unsuccessful: nfs error=%d\n", res->status);
-        vnfs_destroy_connection(vnfs, conn, VNFS_CONN_STATE_ERROR);
+        vnfs_destroy_connection(conn, VNFS_CONN_STATE_ERROR);
         return;
     }
 
-    CREATE_SESSION4resok *ok = &res->resarray.resarray_val[0].nfs_resop4_u.opcreatesession.CREATE_SESSION4res_u.csr_resok4;
+    CREATE_SESSION4resok *ok = &res->resarray.resarray_val[0].nfs_resop4_u.
+        opcreatesession.CREATE_SESSION4res_u.csr_resok4;
     memcpy(conn->session.sessionid, ok->csr_sessionid, sizeof(sessionid4));
     memcpy(&conn->session.attrs, &ok->csr_fore_chan_attrs, sizeof(channel_attrs4));
     // The sequenceid we receive in this ok is the same as we sent, so no need to do anything
@@ -125,19 +128,18 @@ static void create_session_cb(struct rpc_context *rpc, int status, void *data, v
     conn->session.nslots = ok->csr_fore_chan_attrs.ca_maxrequests;
     conn->session.slots = calloc(conn->session.nslots, sizeof(struct vnfs_slot));
 
-    conn->state = VNFS_CONN_STATE_ESTABLISHED;
+    conn->state = VNFS_CONN_STATE_UP;
     // The session and connection is now fully up
     // We might be the first connection and need to lookup the true rootfh
     if (vnfs->conn_cntr == 0)
         lookup_true_rootfh(vnfs);
     else
-        vnfs_conn_boot_done(vnfs);
+        vnfs_conn_up(vnfs);
 }
 
-static int create_session(struct virtionfs *vnfs, clientid4 clientid, sequenceid4 seqid)
+static int create_session(struct virtionfs *vnfs, struct vnfs_conn *conn,
+        clientid4 clientid, sequenceid4 seqid)
 {
-    struct vnfs_conn *conn = &vnfs->conns[vnfs->conn_cntr];
-
     COMPOUND4args args;
     nfs_argop4 op[1];
     memset(&args, 0, sizeof(args));
@@ -150,7 +152,7 @@ static int create_session(struct virtionfs *vnfs, clientid4 clientid, sequenceid
     
     if (rpc_nfs4_compound_async(conn->rpc, create_session_cb, &args, vnfs) != 0) {
     	fprintf(stderr, "Failed to send NFS:create_session request\n");
-        vnfs_destroy_connection(vnfs, conn, VNFS_CONN_STATE_ERROR);
+        vnfs_destroy_connection(conn, VNFS_CONN_STATE_ERROR);
         return -1;
     }
 
@@ -167,12 +169,12 @@ static void exchangeid_cb(struct rpc_context *rpc, int status, void *data, void 
     
     if (status != RPC_STATUS_SUCCESS) {
         fprintf(stderr, "RPC with NFS:exchange_id unsuccessful: rpc error=%d\n", status);
-        vnfs_destroy_connection(vnfs, conn, VNFS_CONN_STATE_ERROR);
+        vnfs_destroy_connection(conn, VNFS_CONN_STATE_ERROR);
         return;
     }
     if (res->status != NFS4_OK) {
         fprintf(stderr, "NFS:exchange_id unsuccessful: nfs error=%d\n", res->status);
-        vnfs_destroy_connection(vnfs, conn, VNFS_CONN_STATE_ERROR);
+        vnfs_destroy_connection(conn, VNFS_CONN_STATE_ERROR);
         return;
     }
 
@@ -182,22 +184,20 @@ static void exchangeid_cb(struct rpc_context *rpc, int status, void *data, void 
     // If we are T0
     if (vnfs->conn_cntr == 0) {
         memcpy(&vnfs->first_exchangeid, ok, sizeof(*ok));
-        create_session(vnfs, ok->eir_clientid, ok->eir_sequenceid);
+        create_session(vnfs, conn, ok->eir_clientid, ok->eir_sequenceid);
     } else {
         if (nfs4_check_clientid_trunking_allowed(&vnfs->first_exchangeid, ok)) {
-            create_session(vnfs, ok->eir_clientid, ok->eir_sequenceid);
+            create_session(vnfs, conn, ok->eir_clientid, ok->eir_sequenceid);
         } else {
             fprintf(stderr, "VNFS connection %u was not allowed to start trunking\n",
                     vnfs->conn_cntr);
-            vnfs_destroy_connection(vnfs, conn, VNFS_CONN_STATE_ERROR);
+            vnfs_destroy_connection(conn, VNFS_CONN_STATE_ERROR);
         }
     }
 }
 
-static int exchangeid(struct virtionfs *vnfs)
+static int exchangeid(struct virtionfs *vnfs, struct vnfs_conn *conn)
 {
-    struct vnfs_conn *conn = &vnfs->conns[vnfs->conn_cntr];
-
     COMPOUND4args args;
     nfs_argop4 op[1];
     memset(&args, 0, sizeof(args));
@@ -208,29 +208,32 @@ static int exchangeid(struct virtionfs *vnfs)
 
     verifier4 v;
     memcpy(default_verifier, v, sizeof(v));
-    v[0] = vnfs->conn_cntr;
+    v[0] = conn->vnfs_conn_id;
     nfs4_op_exchangeid(&op[0], default_verifier, "virtionfs");
     
     if (rpc_nfs4_compound_async(conn->rpc, exchangeid_cb, &args, vnfs) != 0) {
     	fprintf(stderr, "Failed to send NFS:exchange_id request\n");
-        vnfs_destroy_connection(vnfs, conn, VNFS_CONN_STATE_ERROR);
+        vnfs_destroy_connection(conn, VNFS_CONN_STATE_ERROR);
         return -1;
     }
 
     return 0;
 }
 
-void vnfs_destroy_connection(struct virtionfs *vnfs, struct vnfs_conn *conn, enum vnfs_conn_state state)
+void vnfs_destroy_connection(struct vnfs_conn *conn, enum vnfs_conn_state state)
 {
     // RPC is paired with the NFS context, so NFS_destroy destroys RPC
     conn->rpc = NULL;
-    nfs_destroy_context(conn->nfs);
+    conn->state = state;
 
-    nfs_mt_service_thread_stop(vnfs->nfs);
+    nfs_mt_service_thread_stop(conn->nfs);
+    nfs_destroy_context(conn->nfs);
 }
 
 int vnfs_new_connection(struct virtionfs *vnfs) {
     struct vnfs_conn *conn = &vnfs->conns[vnfs->conn_cntr];
+    conn->vnfs_conn_id = vnfs->conn_cntr;
+
     struct nfs_context *nfs = nfs_init_context();
     if (conn->nfs == NULL) {
         warn("Failed to init libnfs context for connection %u\n", vnfs->conn_cntr);
@@ -242,14 +245,8 @@ int vnfs_new_connection(struct virtionfs *vnfs) {
     struct rpc_context *rpc = nfs_get_rpc_context(nfs);
     conn->rpc = rpc;
 
-    // TODO FUSE:init always supplies uid=0 and gid=0,
-    // so only setting the uid and gid once in the init is not sufficient
-    // as in subsoquent operations different uid and gids can be supplied
-    // however changing the uid and gid for every operations is very inefficient in libnfs
-    // NOTE: the root permissions only properly work if the server has no_root_squash
-    printf("%s, all NFS operations will go through uid %d and gid %d\n", __func__, vnfs->uid, vnfs->gid);
-    nfs_set_uid(nfs, vnfs->uid);
-    nfs_set_gid(nfs, vnfs->gid);
+    nfs_set_uid(nfs, vnfs->init_uid);
+    nfs_set_gid(nfs, vnfs->init_gid);
 
     if(nfs_mount(nfs, vnfs->server, vnfs->export)) {
         warn("Failed to mount nfs for connection %u\n", vnfs->conn_cntr);
@@ -262,16 +259,16 @@ int vnfs_new_connection(struct virtionfs *vnfs) {
     // We want to poll as fast as possible, MAX PERFORMANCE
     nfs_set_poll_timeout(nfs, -1);
     if (nfs_mt_service_thread_start(nfs)) {
-        warn("Failed to start libnfs service thread for connection %u\n", vnfs->conn_cntr);
+        warn("Failed to start libnfs service thread for connection %u\n", conn->vnfs_conn_id);
         conn->state = VNFS_CONN_STATE_ERROR;
         conn->rpc = NULL;
         nfs_destroy_context(conn->nfs);
         return -1;
     }
 
-    int ret = exchangeid(vnfs);
+    int ret = exchangeid(vnfs, conn);
     if (ret != 0) {
-        vnfs_destroy_connection(vnfs, conn, VNFS_CONN_STATE_ERROR);
+        vnfs_destroy_connection(conn, VNFS_CONN_STATE_ERROR);
     }
     return ret;
 }

@@ -108,6 +108,7 @@ int vnfs4_op_sequence(nfs_argop4 *op, struct vnfs_conn *conn, bool cachethis)
     arg->sa_cachethis = cachethis;
     // sessionid
     memcpy(arg->sa_sessionid, conn->session.sessionid, sizeof(sessionid4));
+    // slot stuff
     arg->sa_slotid = conn->session.target_highest_slot;
     struct vnfs_slot *slot = &conn->session.slots[arg->sa_slotid];
     arg->sa_sequenceid = ++slot->seqid;
@@ -1420,6 +1421,15 @@ int init(struct fuse_session *se, struct virtionfs *vnfs,
     // We do not want this as splicing is not a thing with virtiofs
     conn->want &= ~FUSE_CAP_SPLICE_READ;
     conn->want &= ~FUSE_CAP_SPLICE_WRITE;
+
+    // TODO FUSE:init always supplies uid=0 and gid=0,
+    // so only setting the uid and gid once in the init is not sufficient
+    // as in subsoquent operations different uid and gids can be supplied
+    // however changing the uid and gid for every operations is very inefficient in libnfs
+    // NOTE: the root permissions only properly work if the server has no_root_squash
+    printf("%s, all NFS operations will go through uid %d and gid %d\n", __func__, vnfs->init_uid, vnfs->init_gid);
+    vnfs->init_uid = in_hdr->uid;
+    vnfs->init_gid = in_hdr->gid;
 
     vnfs_new_connection(vnfs);
 

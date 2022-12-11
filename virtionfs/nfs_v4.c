@@ -130,7 +130,7 @@ int nfs4_op_createsession(nfs_argop4 *op, clientid4 clientid, sequenceid4 seqid)
 
    // Currently no caching support
    arg->csa_fore_chan_attrs.ca_maxresponsesize_cached = 0;
-   arg->csa_fore_chan_attrs.ca_maxrequests = NFS4_MAXREQUESTSIZE;
+   arg->csa_fore_chan_attrs.ca_maxrequests = NFS4_MAX_OUTSTANDING_REQUESTS;
    arg->csa_fore_chan_attrs.ca_maxresponsesize = NFS4_MAXRESPONSESIZE;
    arg->csa_fore_chan_attrs.ca_maxrequestsize = NFS4_MAXREQUESTSIZE;
    // We have too little control over libnfs to properly use this
@@ -163,9 +163,8 @@ int nfs4_op_bindconntosession(nfs_argop4 *op, sessionid4 *sessionid, channel_dir
 
 int nfs4_op_exchangeid(nfs_argop4 *op, verifier4 verifier, const char *client_name)
 {
-   EXCHANGE_ID4args *exidargs;
    op[0].argop = OP_EXCHANGE_ID;
-   exidargs = &op[0].nfs_argop4_u.opexchangeid;
+   EXCHANGE_ID4args *exidargs = &op[0].nfs_argop4_u.opexchangeid;
 
    memcpy(exidargs->eia_clientowner.co_verifier, verifier, sizeof(verifier4));
    exidargs->eia_clientowner.co_ownerid.co_ownerid_val = (char *) client_name;

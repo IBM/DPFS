@@ -12,7 +12,6 @@
 
 // Will keep trying to connections in the background until vnfs->ntreads is reached
 int vnfs_new_connection(struct virtionfs *vnfs);
-void vnfs_destroy_connection(struct virtionfs *vnfs, struct vnfs_conn *conn,
-        enum vnfs_conn_state);
+void vnfs_destroy_connection(struct vnfs_conn *conn, enum vnfs_conn_state);
 
 #endif // VIRTIONFS_VNFS_CONNECT_H

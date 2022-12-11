@@ -22,7 +22,7 @@ void virtionfs_main(char *server, char *export,
 
 enum vnfs_conn_state {
     VNFS_CONN_STATE_UNINIT = 0,
-    VNFS_CONN_STATE_ESTABLISHED,
+    VNFS_CONN_STATE_UP,
     VNFS_CONN_STATE_CLOSED,
     VNFS_CONN_STATE_ERROR
 };
@@ -44,6 +44,7 @@ struct vnfs_session {
 };
 
 struct vnfs_conn {
+    uint32_t vnfs_conn_id;
     enum vnfs_conn_state state;
     struct nfs_context *nfs;
     struct rpc_context *rpc;
@@ -69,8 +70,8 @@ struct virtionfs {
     uint32_t timeout_nsec;
     uint32_t nthreads;
     // TODO change uid and gid on a per-request basis
-    uint32_t uid;
-    uint32_t gid;
+    uint32_t init_uid;
+    uint32_t init_gid;
 
     atomic_uint open_owner_counter;
 
