@@ -274,6 +274,19 @@ int release(struct fuse_session *se, struct virtionfs *vnfs,
            struct fuse_out_header *out_hdr,
            struct snap_fs_dev_io_done_ctx *cb)
 {
+    struct inode *i = inode_table_get(vnfs->inodes, in_hdr->nodeid);
+    if (!i) {
+    	fprintf(stderr, "Invalid nodeid supplied to OPEN\n");
+        out_hdr->error = -ENOENT;
+        return 0;
+    }
+    uint32_t old_nopen = atomic_fetch_sub(&i->nopen, 1);
+    // If there are still opens out there
+    if (old_nopen > 1) {
+        // then we don't actually release the inode
+        return 0;
+    }
+
     struct release_cb_data *cb_data = mpool2_alloc(vnfs->p);
     if (!cb_data) {
         out_hdr->error = -ENOMEM;
@@ -291,13 +304,10 @@ int release(struct fuse_session *se, struct virtionfs *vnfs,
     args.argarray.argarray_val = op;
 
     // PUTFH
-    cb_data->i = nfs4_op_putfh(vnfs, &op[0], in_hdr->nodeid);
-    if (!cb_data->i) {
-    	fprintf(stderr, "Invalid nodeid supplied to release\n");
-        mpool2_free(vnfs->p, cb_data);
-        out_hdr->error = -ENOENT;
-        return 0;
-    }
+    op[0].argop = OP_PUTFH;
+    op[0].nfs_argop4_u.opputfh.object.nfs_fh4_val = i->fh_open.val;
+    op[0].nfs_argop4_u.opputfh.object.nfs_fh4_len = i->fh_open.len;
+    cb_data->i = i;
     // COMMIT
     op[1].argop = OP_CLOSE;
     op[1].nfs_argop4_u.opclose.seqid = atomic_fetch_add(&vnfs->seqid, 1);
@@ -768,6 +778,22 @@ int vopen(struct fuse_session *se, struct virtionfs *vnfs,
          struct fuse_out_header *out_hdr, struct fuse_open_out *out_open,
          struct snap_fs_dev_io_done_ctx *cb)
 {
+    // Get the inode manually because we want the FH of the parent later
+    struct inode *i = inode_table_get(vnfs->inodes, in_hdr->nodeid);
+    if (!i) {
+    	fprintf(stderr, "Invalid nodeid supplied to OPEN\n");
+        out_hdr->error = -ENOENT;
+        return 0;
+    }
+    // If the file is already opened, then just return
+    if (i->nopen > 0) {
+        atomic_fetch_add(&i->nopen, 1);
+        // We don't use the FUSE:fh, nor do we have any open flags at the moment
+        // so set the out_open to zeros
+        memset(out_open, 0, sizeof(*out_open));
+        out_hdr->len += sizeof(*out_open);
+    }
+
     struct open_cb_data *cb_data = mpool2_alloc(vnfs->p);
     if (!cb_data) {
         out_hdr->error = -ENOMEM;
@@ -786,15 +812,8 @@ int vopen(struct fuse_session *se, struct virtionfs *vnfs,
     args.argarray.argarray_val = op;
 
     // PUTFH
-    // Get the inode manually because we want the FH of the parent
-    struct inode *i = inode_table_get(vnfs->inodes, in_hdr->nodeid);
     cb_data->i = i;
-    if (!i) {
-    	fprintf(stderr, "Invalid nodeid supplied to OPEN\n");
-        mpool2_free(vnfs->p, cb_data);
-        out_hdr->error = -ENOENT;
-        return 0;
-    }
+
     op[0].argop = OP_PUTFH;
     op[0].nfs_argop4_u.opputfh.object.nfs_fh4_val = i->parent->fh.val;
     op[0].nfs_argop4_u.opputfh.object.nfs_fh4_len = i->parent->fh.len;

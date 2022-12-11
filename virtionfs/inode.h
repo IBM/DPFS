@@ -39,6 +39,7 @@ struct inode {
 
     atomic_size_t generation;
     atomic_size_t nlookup;
+    atomic_size_t nopen;
 
     struct inode *next;
 };
