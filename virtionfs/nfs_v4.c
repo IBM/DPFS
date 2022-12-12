@@ -116,9 +116,8 @@ bool nfs4_check_clientid_trunking_allowed(EXCHANGE_ID4resok *l, EXCHANGE_ID4reso
 
 int nfs4_op_createsession(nfs_argop4 *op, clientid4 clientid, sequenceid4 seqid)
 {
-   CREATE_SESSION4args *arg;
    op[0].argop = OP_CREATE_SESSION;
-   arg = &op[0].nfs_argop4_u.opcreatesession;
+   CREATE_SESSION4args *arg = &op[0].nfs_argop4_u.opcreatesession;
 
    arg->csa_clientid = clientid;
    arg->csa_sequence = seqid;

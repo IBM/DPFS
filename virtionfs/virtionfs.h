@@ -22,9 +22,9 @@ void virtionfs_main(char *server, char *export,
 
 enum vnfs_conn_state {
     VNFS_CONN_STATE_UNINIT = 0,
-    VNFS_CONN_STATE_UP,
+    VNFS_CONN_STATE_ESTABLISHED,
     VNFS_CONN_STATE_CLOSED,
-    VNFS_CONN_STATE_ERROR
+    VNFS_CONN_STATE_SHOULD_CLOSE
 };
 
 struct vnfs_slot {
