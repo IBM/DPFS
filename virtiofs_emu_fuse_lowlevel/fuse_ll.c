@@ -466,7 +466,6 @@ static int fuse_ll_init(struct fuse_ll *f_ll,
 
     se->got_init = 1;
     if (f_ll->ops.init) {
-
         int op_res = f_ll->ops.init(se, f_ll->user_data, in_hdr, inarg, &se->conn, out_hdr);
         if (out_hdr->error != 0 || op_res != 0) {
             se->error = -EPROTO;
@@ -609,6 +608,10 @@ static int fuse_ll_lookup(struct fuse_ll *f_ll,
     printf("* in_name: %s\n", in_name);
 #endif
 
+    if (!f_ll->se->init_done) {
+        out_hdr->error = -EBUSY;
+        return 0;
+    }
     if (f_ll->ops.lookup)
         return f_ll->ops.lookup(f_ll->se, f_ll->user_data, in_hdr, in_name, out_hdr, out_entry, cb);
     else {
@@ -640,6 +643,11 @@ static int fuse_ll_setattr(struct fuse_ll *f_ll,
     fuse_ll_debug_print_in_hdr(in_hdr);
     printf("* fh: %lu", in_setattr->fh);
 #endif
+
+    if (!f_ll->se->init_done) {
+        out_hdr->error = -EBUSY;
+        return 0;
+    }
 
     if (f_ll->ops.setattr) {
         struct fuse_file_info *fi = NULL;
@@ -715,6 +723,10 @@ static int fuse_ll_create(struct fuse_ll *f_ll,
     printf("* name: %s\n", name);
 #endif
 
+    if (!f_ll->se->init_done) {
+        out_hdr->error = -EBUSY;
+        return 0;
+    }
     if (!f_ll->ops.create) {
         out_hdr->error = -ENOSYS;
         return 0;
@@ -746,6 +758,10 @@ static int fuse_ll_flush(struct fuse_ll *f_ll,
     printf("* fh: %lu\n", in_flush->fh);
 #endif
 
+    if (!f_ll->se->init_done) {
+        out_hdr->error = -EBUSY;
+        return 0;
+    }
     if (!f_ll->ops.flush) {
         out_hdr->error = -ENOSYS;
         return 0;
@@ -783,6 +799,11 @@ static int fuse_ll_setlk_common(struct fuse_ll *f_ll,
     fuse_ll_debug_print_in_hdr(in_hdr);
     printf("* fh: %lu\n", in_lk->fh);
 #endif
+
+    if (!f_ll->se->init_done) {
+        out_hdr->error = -EBUSY;
+        return 0;
+    }
 
     fi.fh = in_lk->fh;
     fi.lock_owner = in_lk->owner;
@@ -854,6 +875,10 @@ static int fuse_ll_getattr(struct fuse_ll *f_ll,
     printf("* fh: %lu\n", in_getattr->fh);
 #endif
 
+    if (!f_ll->se->init_done) {
+        out_hdr->error = -EBUSY;
+        return 0;
+    }
     if (!f_ll->ops.getattr) {
         out_hdr->error = -ENOSYS;
         return 0;
@@ -885,6 +910,10 @@ static int fuse_ll_opendir(struct fuse_ll *f_ll,
     printf("* flags: 0x%X\n", in_open->flags);
 #endif
 
+    if (!f_ll->se->init_done) {
+        out_hdr->error = -EBUSY;
+        return 0;
+    }
     if (!f_ll->ops.opendir) {
         out_hdr->error = -ENOSYS;
         return 0;
@@ -915,6 +944,10 @@ static int fuse_ll_releasedir(struct fuse_ll *f_ll,
     printf("* fh: %lu\n", in_release->fh);
 #endif
 
+    if (!f_ll->se->init_done) {
+        out_hdr->error = -EBUSY;
+        return 0;
+    }
     if (!f_ll->ops.releasedir) {
         out_hdr->error = -ENOSYS;
         return 0;
@@ -947,6 +980,10 @@ static int fuse_ll_readdir_common(struct fuse_ll *f_ll,
     printf("* fh: %lu\n", in_read->fh);
 #endif
 
+    if (!f_ll->se->init_done) {
+        out_hdr->error = -EBUSY;
+        return 0;
+    }
     if (!f_ll->ops.readdir) {
         out_hdr->error = -ENOSYS;
         return 0;
@@ -995,6 +1032,10 @@ static int fuse_ll_open(struct fuse_ll *f_ll,
     printf("* flags: 0x%X\n", in_open->flags);
 #endif
 
+    if (!f_ll->se->init_done) {
+        out_hdr->error = -EBUSY;
+        return 0;
+    }
     if (!f_ll->ops.open) {
         out_hdr->error = -ENOSYS;
         return 0;
@@ -1028,6 +1069,10 @@ static int fuse_ll_release(struct fuse_ll *f_ll,
     printf("* lock_owner: %lu\n", in_release->lock_owner);
 #endif
 
+    if (!f_ll->se->init_done) {
+        out_hdr->error = -EBUSY;
+        return 0;
+    }
     if (!f_ll->ops.release) {
         out_hdr->error = -ENOSYS;
         return 0;
@@ -1059,6 +1104,10 @@ static int fuse_ll_fsync(struct fuse_ll *f_ll,
     printf("* fsync_flags: 0x%X\n", in_fsync->fsync_flags);
 #endif
 
+    if (!f_ll->se->init_done) {
+        out_hdr->error = -EBUSY;
+        return 0;
+    }
     if (!f_ll->ops.fsync) {
         out_hdr->error = -ENOSYS;
         return 0;
@@ -1090,6 +1139,10 @@ static int fuse_ll_fsyncdir(struct fuse_ll *f_ll,
     printf("* fsync_flags: 0x%X\n", in_fsync->fsync_flags);
 #endif
 
+    if (!f_ll->se->init_done) {
+        out_hdr->error = -EBUSY;
+        return 0;
+    }
     if (!f_ll->ops.fsyncdir) {
         out_hdr->error = -ENOSYS;
         return 0;
@@ -1120,6 +1173,10 @@ static int fuse_ll_rmdir(struct fuse_ll *f_ll,
     printf("* name: %s\n", in_name);
 #endif
 
+    if (!f_ll->se->init_done) {
+        out_hdr->error = -EBUSY;
+        return 0;
+    }
     if (!f_ll->ops.rmdir) {
         out_hdr->error = -ENOSYS;
         return 0;
@@ -1201,6 +1258,10 @@ static int fuse_ll_rename(struct fuse_ll *f_ll,
     printf("* new_name: %s\n", new_name);
 #endif
 
+    if (!f_ll->se->init_done) {
+        out_hdr->error = -EBUSY;
+        return 0;
+    }
     if (!f_ll->ops.rename) {
         out_hdr->error = -ENOSYS;
         return 0;
@@ -1237,6 +1298,10 @@ static int fuse_ll_rename2(struct fuse_ll *f_ll,
     printf("* new_name: %s\n", new_name);
 #endif
 
+    if (!f_ll->se->init_done) {
+        out_hdr->error = -EBUSY;
+        return 0;
+    }
     if (!f_ll->ops.rename) {
         out_hdr->error = -ENOSYS;
         return 0;
@@ -1274,6 +1339,10 @@ static int fuse_ll_read(struct fuse_ll *f_ll,
     printf("* flags: 0x%X\n", in_read->flags);
 #endif
 
+    if (!f_ll->se->init_done) {
+        out_hdr->error = -EBUSY;
+        return 0;
+    }
     if (!f_ll->ops.read) {
         out_hdr->error = -ENOSYS;
         return 0;
@@ -1321,6 +1390,10 @@ static int fuse_ll_write(struct fuse_ll *f_ll,
     printf("* flags: 0x%X\n", in_write->flags);
 #endif
 
+    if (!f_ll->se->init_done) {
+        out_hdr->error = -EBUSY;
+        return 0;
+    }
     if (!f_ll->ops.write) {
         out_hdr->error = -ENOSYS;
         return 0;
@@ -1356,6 +1429,10 @@ static int fuse_ll_mknod(struct fuse_ll *f_ll,
     out_hdr->len = sizeof(*out_hdr);
     out_hdr->error = 0;
 
+    if (!f_ll->se->init_done) {
+        out_hdr->error = -EBUSY;
+        return 0;
+    }
     if (!f_ll->ops.mknod) {
         out_hdr->error = -ENOSYS;
         return 0;
@@ -1408,6 +1485,10 @@ static int fuse_ll_mkdir(struct fuse_ll *f_ll,
     printf("* umask: 0x%X\n", in_mkdir->umask);
 #endif
 
+    if (!f_ll->se->init_done) {
+        out_hdr->error = -EBUSY;
+        return 0;
+    }
     if (!f_ll->ops.mkdir) {
         out_hdr->error = -ENOSYS;
         return 0;
@@ -1444,6 +1525,10 @@ static int fuse_ll_symlink(struct fuse_ll *f_ll,
     printf("* oldnodeid: %lu\n", in_link->oldnodeid);
 #endif
 
+    if (!f_ll->se->init_done) {
+        out_hdr->error = -EBUSY;
+        return 0;
+    }
     if (!f_ll->ops.symlink) {
         out_hdr->error = -ENOSYS;
         return 0;
@@ -1474,6 +1559,10 @@ static int fuse_ll_statfs(struct fuse_ll *f_ll,
     fuse_ll_debug_print_in_hdr(in_hdr);
 #endif
 
+    if (!f_ll->se->init_done) {
+        out_hdr->error = -EBUSY;
+        return 0;
+    }
     if (!f_ll->ops.statfs) {
         out_hdr->error = -ENOSYS;
         return 0;
@@ -1505,6 +1594,10 @@ static int fuse_ll_unlink(struct fuse_ll *f_ll,
     printf("* name: %s\n", in_name);
 #endif
 
+    if (!f_ll->se->init_done) {
+        out_hdr->error = -EBUSY;
+        return 0;
+    }
     if (!f_ll->ops.unlink) {
         out_hdr->error = -ENOSYS;
         return 0;
@@ -1561,6 +1654,10 @@ static int fuse_ll_fallocate(struct fuse_ll *f_ll,
     printf("* mode: %u\n", in_fallocate->mode);
 #endif
 
+    if (!f_ll->se->init_done) {
+        out_hdr->error = -EBUSY;
+        return 0;
+    }
     if (!f_ll->ops.fallocate) {
         out_hdr->error = -ENOSYS;
         return 0;

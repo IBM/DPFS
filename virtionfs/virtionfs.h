@@ -53,6 +53,8 @@ struct vnfs_conn {
 };
 
 struct virtionfs {
+    struct fuse_session *se;
+
     struct nfs_context *nfs;
     struct rpc_context *rpc;
     // We open connections on the main thread and when running

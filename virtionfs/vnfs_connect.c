@@ -21,6 +21,7 @@ static void vnfs_conn_up(struct virtionfs *vnfs) {
     if (vnfs->conn_cntr < vnfs->nthreads) {
         vnfs_new_connection(vnfs);
     } else {
+        vnfs->se->init_done = true;
         printf("VNFS boot finished! All %u connections are ready to roll!\n", vnfs->conn_cntr);
     }
 }
@@ -209,7 +210,7 @@ static int exchangeid(struct virtionfs *vnfs, struct vnfs_conn *conn)
     verifier4 v;
     memcpy(default_verifier, v, sizeof(v));
     v[0] = conn->vnfs_conn_id;
-    nfs4_op_exchangeid(&op[0], default_verifier, "virtionfs");
+    nfs4_op_exchangeid(&op[0], v, "virtionfs");
     
     if (rpc_nfs4_compound_async(conn->rpc, exchangeid_cb, &args, vnfs) != 0) {
     	fprintf(stderr, "Failed to send NFS:exchange_id request\n");
@@ -235,7 +236,7 @@ int vnfs_new_connection(struct virtionfs *vnfs) {
     conn->vnfs_conn_id = vnfs->conn_cntr;
 
     struct nfs_context *nfs = nfs_init_context();
-    if (conn->nfs == NULL) {
+    if (nfs == NULL) {
         warn("Failed to init libnfs context for connection %u\n", vnfs->conn_cntr);
         conn->state = VNFS_CONN_STATE_ERROR;
         return -1;

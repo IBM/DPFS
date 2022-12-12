@@ -11,6 +11,7 @@
 #include <pthread.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdatomic.h>
 #include <sys/uio.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -47,6 +48,7 @@ struct fuse_session {
     //int broken_splice_nonblock;
     size_t bufsize;
     int error;
+    bool init_done;
 };
 
 #define FUSE_MAX_MAX_PAGES 256

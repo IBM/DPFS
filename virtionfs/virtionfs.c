@@ -1431,6 +1431,7 @@ int init(struct fuse_session *se, struct virtionfs *vnfs,
     vnfs->init_uid = in_hdr->uid;
     vnfs->init_gid = in_hdr->gid;
 
+    vnfs->se = se;
     vnfs_new_connection(vnfs);
 
     // TODO WARNING
