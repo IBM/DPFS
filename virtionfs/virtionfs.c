@@ -1292,13 +1292,13 @@ void getattr_cb(struct rpc_context *rpc, int status, void *data,
     COMPOUND4res *res = data;
 
     if (status != RPC_STATUS_SUCCESS) {
-    	fprintf(stderr, "RPC with NFS:LOOKUP unsuccessful: rpc error=%d\n", status);
+    	fprintf(stderr, "RPC with NFS:GETATTR unsuccessful: rpc error=%d\n", status);
         cb_data->out_hdr->error = -EREMOTEIO;
         goto ret;
     }
     if (res->status != NFS4_OK) {
         cb_data->out_hdr->error = -nfs_error_to_fuse_error(res->status);
-    	fprintf(stderr, "NFS:LOOKUP unsuccessful: nfs error=%d, fuse error=%d\n",
+    	fprintf(stderr, "NFS:GETATTR unsuccessful: nfs error=%d, fuse error=%d\n",
                 res->status, cb_data->out_hdr->error);
         goto ret;
     }

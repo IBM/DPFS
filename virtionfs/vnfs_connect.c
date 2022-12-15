@@ -32,6 +32,20 @@ static void reclaim_complete_cb(struct rpc_context *rpc, int status, void *data,
                                   void *private_data)
 {
     struct virtionfs *vnfs = private_data;
+    struct vnfs_conn *conn = &vnfs->conns[vnfs->conn_cntr];
+    COMPOUND4res *res = data;
+
+    if (status != RPC_STATUS_SUCCESS) {
+    	fprintf(stderr, "RPC with NFS:RECLAIM_COMPLETE unsuccessful: rpc error=%d\n", status);
+        vnfs_destroy_connection(conn, VNFS_CONN_STATE_SHOULD_CLOSE);
+        return;
+    }
+    if (res->status != NFS4_OK) {
+    	fprintf(stderr, "NFS:RECLAIM_COMPLETE unsuccessful: nfs error=%d", res->status);
+        vnfs_destroy_connection(conn, VNFS_CONN_STATE_SHOULD_CLOSE);
+        return;
+    }
+
     vnfs_conn_up(vnfs);
 }
 
@@ -47,10 +61,10 @@ static void reclaim_complete(struct virtionfs *vnfs)
     args.argarray.argarray_val = op;
     memset(op, 0, sizeof(op));
 
-    vnfs4_op_putfh(vnfs, &op[0], FUSE_ROOT_ID);
+    vnfs4_op_sequence(&op[0], conn, false);
 
     op[1].argop = OP_RECLAIM_COMPLETE;
-    op[1].nfs_argop4_u.opreclaimcomplete.rca_one_fs = true;
+    op[1].nfs_argop4_u.opreclaimcomplete.rca_one_fs = false;
 
     if (rpc_nfs4_compound_async(conn->rpc, reclaim_complete_cb, &args, vnfs) != 0) {
     	fprintf(stderr, "%s: Failed to send nfs4 RECLAIM_COMPLETE request\n", __func__);

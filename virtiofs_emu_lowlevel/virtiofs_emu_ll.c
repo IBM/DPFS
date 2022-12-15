@@ -68,7 +68,11 @@ void signal_handler(int dummy)
     keep_running = 0;
 }
 
-static void virtiofs_emu_ll_loop_singlethreaded(struct virtio_fs_ctrl *ctrl, useconds_t interval, int thread_id) {
+static void virtiofs_emu_ll_loop_singlethreaded(struct virtio_fs_ctrl *ctrl, useconds_t interval, int thread_id)
+{
+    // Only one thread, thread_id=0
+    pthread_setspecific(virtiofs_thread_id_key, (void *) 0);
+
     struct sigaction act;
     memset(&act, 0, sizeof(act));
     act.sa_handler = signal_handler;
