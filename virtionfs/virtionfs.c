@@ -113,7 +113,6 @@ int vnfs4_op_sequence(nfs_argop4 *op, struct vnfs_conn *conn, bool cachethis)
     arg->sa_slotid = conn->session.target_highest_slot;
     struct vnfs_slot *slot = &conn->session.slots[arg->sa_slotid];
     arg->sa_sequenceid = ++slot->seqid;
-    printf("Sending an NFS request with seqid %u in slot %u\n", arg->sa_sequenceid, arg->sa_slotid);
     if (arg->sa_slotid > conn->session.highest_slot) {
         conn->session.highest_slot = arg->sa_slotid;
     }
