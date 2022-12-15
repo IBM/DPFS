@@ -10,8 +10,9 @@ fi
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 TIMESTAMP=$(date +"%Y-%m-%d_%T")
+HOST=$(uname -n)
 COMMIT=$(git rev-parse --short HEAD)
-OUT=$SCRIPT_DIR/output/$COMMIT_$TIMESTAMP
+OUT=$SCRIPT_DIR/output/$COMMIT_$HOST_$TIMESTAMP
 
 mkdir $OUT
 echo "The output will be stored under $OUT"

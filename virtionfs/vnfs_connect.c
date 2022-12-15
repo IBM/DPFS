@@ -18,8 +18,9 @@
 static void vnfs_conn_up(struct virtionfs *vnfs)
 {
     vnfs->conns[vnfs->conn_cntr].state = VNFS_CONN_STATE_ESTABLISHED;
-    vnfs->conn_cntr++;
     printf("VNFS connection %u fully up!\n", vnfs->conn_cntr);
+
+    vnfs->conn_cntr++;
     if (vnfs->conn_cntr < vnfs->nthreads) {
         vnfs_new_connection(vnfs);
     } else {
@@ -40,10 +41,14 @@ static void reclaim_complete_cb(struct rpc_context *rpc, int status, void *data,
         vnfs_destroy_connection(conn, VNFS_CONN_STATE_SHOULD_CLOSE);
         return;
     }
-    if (res->status != NFS4_OK) {
+    if (res->status != NFS4_OK && res->status != NFS4ERR_COMPLETE_ALREADY) {
     	fprintf(stderr, "NFS:RECLAIM_COMPLETE unsuccessful: nfs error=%d", res->status);
         vnfs_destroy_connection(conn, VNFS_CONN_STATE_SHOULD_CLOSE);
         return;
+    }
+    if (res->status == NFS4ERR_COMPLETE_ALREADY) {
+        printf("The NFS server told us that an old connection lingered around"
+               "(NFS4_ERR_COMPLETE_ALREADY), only a partial handshake was necessary.\n");
     }
 
     vnfs_conn_up(vnfs);
@@ -115,7 +120,8 @@ static int lookup_true_rootfh(struct virtionfs *vnfs)
     }
     // Count the slashes
     size_t count = 0;
-    while(*vnfs->export) if (*vnfs->export++ == '/') ++count;
+    char *export_traverse = export;
+    while(*export_traverse) if (*export_traverse++ == '/') ++count;
 
     COMPOUND4args args;
     nfs_argop4 op[3+count];
@@ -179,8 +185,8 @@ static void create_session_cb(struct rpc_context *rpc, int status, void *data,
     // We might be the first connection and need to lookup the true rootfh
     if (vnfs->conn_cntr == 0)
         lookup_true_rootfh(vnfs);
-    else
-        reclaim_complete(vnfs);
+    else // We only need to RECLAIM_COMPLETE once
+        vnfs_conn_up(vnfs);
 }
 
 static int create_session(struct virtionfs *vnfs, struct vnfs_conn *conn,
@@ -230,6 +236,18 @@ static void exchangeid_cb(struct rpc_context *rpc, int status, void *data, void 
     // If we are T0
     if (vnfs->conn_cntr == 0) {
         memcpy(&vnfs->first_exchangeid, ok, sizeof(*ok));
+        // The owner major string and server scope string must be copied over in new buffers
+        vnfs->first_exchangeid.eir_server_owner.so_major_id.so_major_id_val =
+            malloc(vnfs->first_exchangeid.eir_server_owner.so_major_id.so_major_id_len);
+        memcpy(vnfs->first_exchangeid.eir_server_owner.so_major_id.so_major_id_val,
+               ok->eir_server_owner.so_major_id.so_major_id_val,
+               vnfs->first_exchangeid.eir_server_owner.so_major_id.so_major_id_len);
+        vnfs->first_exchangeid.eir_server_scope.eir_server_scope_val =
+            malloc(vnfs->first_exchangeid.eir_server_scope.eir_server_scope_len);
+        memcpy(vnfs->first_exchangeid.eir_server_scope.eir_server_scope_val,
+               ok->eir_server_scope.eir_server_scope_val,
+               vnfs->first_exchangeid.eir_server_scope.eir_server_scope_len);
+
         create_session(vnfs, conn, ok->eir_clientid, ok->eir_sequenceid);
     } else {
         if (nfs4_check_clientid_trunking_allowed(&vnfs->first_exchangeid, ok)) {
@@ -252,10 +270,7 @@ static int exchangeid(struct virtionfs *vnfs, struct vnfs_conn *conn)
     args.argarray.argarray_val = op;
     memset(op, 0, sizeof(op));
 
-    verifier4 v;
-    memcpy(default_verifier, v, sizeof(v));
-    v[0] = conn->vnfs_conn_id;
-    nfs4_op_exchangeid(&op[0], v, "virtionfs");
+    nfs4_op_exchangeid(&op[0], default_verifier, "virtionfs");
     
     if (rpc_nfs4_compound_async(conn->rpc, exchangeid_cb, &args, vnfs) != 0) {
     	fprintf(stderr, "Failed to send NFS:exchange_id request\n");
