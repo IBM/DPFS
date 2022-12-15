@@ -42,7 +42,7 @@ static void lookup_true_rootfh_cb(struct rpc_context *rpc, int status, void *dat
         vnfs_destroy_connection(conn, VNFS_CONN_STATE_SHOULD_CLOSE);
         return;
     }
-
+    vnfs4_handle_sequence(res, conn);
     int i = nfs4_find_op(res, OP_GETFH);
     assert(i >= 0);
 
@@ -74,7 +74,7 @@ static int lookup_true_rootfh(struct virtionfs *vnfs)
 
     COMPOUND4args args;
     nfs_argop4 op[3+count];
-    memset(&args, 0, sizeof(args));
+    memset(&args.tag, 0, sizeof(args.tag));
     args.minorversion = NFS4DOT1_MINOR;
     args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
     args.argarray.argarray_val = op;
@@ -85,7 +85,7 @@ static int lookup_true_rootfh(struct virtionfs *vnfs)
     op[i++].argop = OP_PUTROOTFH;
     // LOOKUP
     char *token = strtok(export, "/");
-    while (i < count+1) {
+    while (i < count+2) {
         nfs4_op_lookup(&op[i++], token);
         token = strtok(NULL, "/");
     }
@@ -144,8 +144,8 @@ static int create_session(struct virtionfs *vnfs, struct vnfs_conn *conn,
 {
     COMPOUND4args args;
     nfs_argop4 op[1];
-    memset(&args, 0, sizeof(args));
     args.minorversion = NFS4DOT1_MINOR;
+    memset(&args.tag, 0, sizeof(args.tag));
     args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
     args.argarray.argarray_val = op;
     memset(op, 0, sizeof(op));
@@ -202,8 +202,8 @@ static int exchangeid(struct virtionfs *vnfs, struct vnfs_conn *conn)
 {
     COMPOUND4args args;
     nfs_argop4 op[1];
-    memset(&args, 0, sizeof(args));
     args.minorversion = NFS4DOT1_MINOR;
+    memset(&args.tag, 0, sizeof(args.tag));
     args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
     args.argarray.argarray_val = op;
     memset(op, 0, sizeof(op));
@@ -224,9 +224,13 @@ static int exchangeid(struct virtionfs *vnfs, struct vnfs_conn *conn)
 
 void vnfs_destroy_connection(struct vnfs_conn *conn, enum vnfs_conn_state state)
 {
+    // This function might be called from inside of the NFS service thread,
+    // which means that we cannot destroy the NFS context nor stop the NFS service thread
+    // Two solutions:
+    // 1. Destroy from a VirtioQ thread
+    // 2. Patch libnfs to support this usecase. (Seems like a lot of work)
+
     // RPC is paired with the NFS context, so NFS_destroy destroys RPC
-    conn->rpc = NULL;
-    conn->state = state;
 }
 
 int vnfs_new_connection(struct virtionfs *vnfs) {

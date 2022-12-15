@@ -56,7 +56,7 @@ struct inode *inode_new(fattr4_fileid fileid, const char *filename,
         struct inode *parent);
 void inode_destroy(struct inode *i);
 
-int inode_table_init(struct inode_table *t);
+int inode_table_init(struct inode_table **t);
 void inode_table_destroy(struct inode_table *t);
 struct inode *inode_table_get(struct inode_table *, fattr4_fileid);
 struct inode *inode_table_insert(struct inode_table *t, struct inode *i);

@@ -128,20 +128,28 @@ int nfs4_op_createsession(nfs_argop4 *op, clientid4 clientid, sequenceid4 seqid)
    arg->csa_sec_parms.csa_sec_parms_len = 0;
 
    // Currently no caching support
-   arg->csa_fore_chan_attrs.ca_maxresponsesize_cached = 0;
    arg->csa_fore_chan_attrs.ca_maxrequests = NFS4_MAX_OUTSTANDING_REQUESTS;
+   // Magic from the Linux kernel, 8 seems about right
+   arg->csa_fore_chan_attrs.ca_maxoperations = NFS4_MAX_OPS;
+   arg->csa_fore_chan_attrs.ca_maxresponsesize_cached = 0;
    arg->csa_fore_chan_attrs.ca_maxresponsesize = NFS4_MAXRESPONSESIZE;
    arg->csa_fore_chan_attrs.ca_maxrequestsize = NFS4_MAXREQUESTSIZE;
    // We have too little control over libnfs to properly use this
    arg->csa_fore_chan_attrs.ca_headerpadsize = 0;
-   // Magic from the Linux kernel, 8 seems about right
-   arg->csa_fore_chan_attrs.ca_maxoperations = NFS4_MAX_OPS;
    // No RDMA here
    arg->csa_fore_chan_attrs.ca_rdma_ird.ca_rdma_ird_val = NULL;
    arg->csa_fore_chan_attrs.ca_rdma_ird.ca_rdma_ird_len = 0;
 
    // No back channel support (see Github issue #17)
-   memset(&arg->csa_back_chan_attrs, 0, sizeof(channel_attrs4));
+   // But the server would like us to set these anyway
+   arg->csa_back_chan_attrs.ca_maxrequests = 0;
+   arg->csa_back_chan_attrs.ca_maxresponsesize_cached = 0;
+   arg->csa_back_chan_attrs.ca_maxoperations = NFS4_MAX_OPS;
+   arg->csa_back_chan_attrs.ca_maxresponsesize = NFS4_MAXRESPONSESIZE;
+   arg->csa_back_chan_attrs.ca_maxrequestsize = NFS4_MAXREQUESTSIZE;
+   arg->csa_back_chan_attrs.ca_headerpadsize = 0;
+   arg->csa_back_chan_attrs.ca_rdma_ird.ca_rdma_ird_val = NULL;
+   arg->csa_back_chan_attrs.ca_rdma_ird.ca_rdma_ird_len = 0;
 
    return 1;
 }

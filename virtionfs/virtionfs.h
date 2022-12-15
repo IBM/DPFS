@@ -39,7 +39,11 @@ struct vnfs_session {
     // Index is slotid4
     struct vnfs_slot *slots;
     uint32_t nslots;
+    // The highest slot ID for which the client has a request outstanding
     slotid4 highest_slot;
+    // The highest slot ID the server would prefer the client use on a
+    // future SEQUENCE operation.
+    // This is the most recent value that the server gave us.
     slotid4 target_highest_slot;
 };
 
@@ -55,8 +59,6 @@ struct vnfs_conn {
 struct virtionfs {
     struct fuse_session *se;
 
-    struct nfs_context *nfs;
-    struct rpc_context *rpc;
     // We open connections on the main thread and when running
     // each thread gets its own connection
     struct vnfs_conn *conns;
@@ -84,5 +86,6 @@ struct virtionfs {
 };
 
 int vnfs4_op_sequence(nfs_argop4 *op, struct vnfs_conn *conn, bool cachethis);
+int vnfs4_handle_sequence(COMPOUND4res *res, struct vnfs_conn *conn);
 
 #endif // VIRTIONFS_VIRTIONFS_H

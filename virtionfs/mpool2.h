@@ -31,7 +31,7 @@ void mpool2_free(struct mpool2 *p, void *e);
  chunk_size = the size of each chunk
  returns error code if unsuccesful
  */
-int mpool2_init(struct mpool2 *p, uint64_t chunk_size, uint64_t chunks);
+int mpool2_init(struct mpool2 **p, uint64_t chunk_size, uint64_t chunks);
 void mpool2_destroy(struct mpool2 *p);
 
 #endif // MPOOL_H
