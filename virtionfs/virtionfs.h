@@ -85,6 +85,8 @@ struct virtionfs {
     verifier4 setclientid_confirm;
 };
 
+struct inode *vnfs4_op_putfh(struct virtionfs *vnfs, nfs_argop4 *op, uint64_t nodeid);
+
 int vnfs4_op_sequence(nfs_argop4 *op, struct vnfs_conn *conn, bool cachethis);
 int vnfs4_handle_sequence(COMPOUND4res *res, struct vnfs_conn *conn);
 

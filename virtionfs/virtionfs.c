@@ -113,6 +113,7 @@ int vnfs4_op_sequence(nfs_argop4 *op, struct vnfs_conn *conn, bool cachethis)
     arg->sa_slotid = conn->session.target_highest_slot;
     struct vnfs_slot *slot = &conn->session.slots[arg->sa_slotid];
     arg->sa_sequenceid = ++slot->seqid;
+    printf("Sending an NFS request with seqid %u in slot %u\n", arg->sa_sequenceid, arg->sa_slotid);
     if (arg->sa_slotid > conn->session.highest_slot) {
         conn->session.highest_slot = arg->sa_slotid;
     }
@@ -515,7 +516,7 @@ void vwrite_cb(struct rpc_context *rpc, int status, void *data,
         goto ret;
     }
     
-    uint32_t written =  res->resarray.resarray_val[1].nfs_resop4_u.opwrite.WRITE4res_u.resok4.count;
+    uint32_t written =  res->resarray.resarray_val[2].nfs_resop4_u.opwrite.WRITE4res_u.resok4.count;
     cb_data->out_write->size = written;
 
     cb_data->out_hdr->len += sizeof(*cb_data->out_write);
@@ -631,7 +632,6 @@ static size_t iovec_write_buf(struct iovec *iov, int iovcnt,
 
 struct read_cb_data {
     struct snap_fs_dev_io_done_ctx *cb;
-    struct fuse_session *se;
     struct virtionfs *vnfs;
 
     struct fuse_out_header *out_hdr;
@@ -658,9 +658,9 @@ void vread_cb(struct rpc_context *rpc, int status, void *data,
         goto ret;
     }
 
-    char *buf = res->resarray.resarray_val[1].nfs_resop4_u.opread.READ4res_u
+    char *buf = res->resarray.resarray_val[2].nfs_resop4_u.opread.READ4res_u
                 .resok4.data.data_val;
-    uint32_t len = res->resarray.resarray_val[1].nfs_resop4_u.opread.READ4res_u
+    uint32_t len = res->resarray.resarray_val[2].nfs_resop4_u.opread.READ4res_u
                    .resok4.data.data_len;
     // Fill the iov that we return to the host
     if (cb_data->out_iovcnt >= 1) {
@@ -687,7 +687,6 @@ int vread(struct fuse_session *se, struct virtionfs *vnfs,
     }
 
     cb_data->cb = cb;
-    cb_data->se = se;
     cb_data->vnfs = vnfs;
     cb_data->out_hdr = out_hdr;
     cb_data->out_iov = out_iov;
@@ -766,7 +765,7 @@ void vopen_cb(struct rpc_context *rpc, int status, void *data,
 
     // Store the FH from OPEN as the read write FH in the inode
     // The read-write FH is not the same (can't assume) as the metadata FH
-    nfs_fh4 *fh = &res->resarray.resarray_val[2].nfs_resop4_u.opgetfh.GETFH4res_u.resok4.object;
+    nfs_fh4 *fh = &res->resarray.resarray_val[3].nfs_resop4_u.opgetfh.GETFH4res_u.resok4.object;
     int ret = nfs4_clone_fh(&i->fh_open, fh);
     if (ret < 0) {
         cb_data->out_hdr->error = ret;
@@ -777,7 +776,7 @@ void vopen_cb(struct rpc_context *rpc, int status, void *data,
     // so set the out_open to zeros
     memset(cb_data->out_open, 0, sizeof(*cb_data->out_open));
     cb_data->out_hdr->len += sizeof(*cb_data->out_open);
-    OPEN4resok *openok = &res->resarray.resarray_val[1].nfs_resop4_u.opopen.OPEN4res_u.resok4;
+    OPEN4resok *openok = &res->resarray.resarray_val[2].nfs_resop4_u.opopen.OPEN4res_u.resok4;
     if (openok->rflags & OPEN4_RESULT_CONFIRM) {
         fprintf(stderr, "virtionfs is using NFS4.1 but the server requested us"
                 "to perform a OPEN_CONFIRM.\nThat should not happen per the spec!\n");
@@ -863,8 +862,7 @@ int vopen(struct fuse_session *se, struct virtionfs *vnfs,
     // Don't know yet how that could happen
     op[2].nfs_argop4_u.opopen.claim.open_claim4_u.file.utf8string_val = i->filename;
     op[2].nfs_argop4_u.opopen.claim.open_claim4_u.file.utf8string_len = strlen(i->filename);
-    // Now we determine whether to CREATE or NOCREATE
-    assert(!(in_open->flags & O_CREAT));
+    // FUSE:OPEN cannot create a file
     op[2].nfs_argop4_u.opopen.openhow.opentype = OPEN4_NOCREATE;
 
     // GETFH
@@ -889,7 +887,6 @@ int vopen(struct fuse_session *se, struct virtionfs *vnfs,
 struct setattr_cb_data {
     struct snap_fs_dev_io_done_ctx *cb;
     struct virtionfs *vnfs;
-    struct fuse_session *se;
 
     struct fuse_out_header *out_hdr;
     struct fuse_attr_out *out_attr;
@@ -922,7 +919,7 @@ void setattr_cb(struct rpc_context *rpc, int status, void *data,
         goto ret;
     }
 
-    GETATTR4resok *resok = &res->resarray.resarray_val[1].nfs_resop4_u.opgetattr.GETATTR4res_u.resok4;
+    GETATTR4resok *resok = &res->resarray.resarray_val[2].nfs_resop4_u.opgetattr.GETATTR4res_u.resok4;
     char *attrs = resok->obj_attributes.attr_vals.attrlist4_val;
     u_int attrs_len = resok->obj_attributes.attr_vals.attrlist4_len;
     if (nfs_parse_attributes(&cb_data->out_attr->attr, attrs, attrs_len) == 0) {
@@ -930,7 +927,7 @@ void setattr_cb(struct rpc_context *rpc, int status, void *data,
         cb_data->out_attr->attr.rdev = 0;
         cb_data->out_attr->attr_valid = 0;
         cb_data->out_attr->attr_valid_nsec = 0;
-        cb_data->out_hdr->len += cb_data->se->conn.proto_minor < 9 ?
+        cb_data->out_hdr->len += vnfs->se->conn.proto_minor < 9 ?
             FUSE_COMPAT_ATTR_OUT_SIZE : sizeof(*cb_data->out_attr);
     } else {
         cb_data->out_hdr->error = -EREMOTEIO;
@@ -958,7 +955,6 @@ int setattr(struct fuse_session *se, struct virtionfs *vnfs,
 
     cb_data->cb = cb;
     cb_data->vnfs = vnfs;
-    cb_data->se = se;
     cb_data->out_hdr = out_hdr;
     cb_data->out_attr = out_attr;
 
@@ -1038,7 +1034,6 @@ int setattr(struct fuse_session *se, struct virtionfs *vnfs,
 struct statfs_cb_data {
     struct snap_fs_dev_io_done_ctx *cb;
     struct virtionfs *vnfs;
-    struct fuse_session *se;
 
     struct fuse_out_header *out_hdr;
     struct fuse_statfs_out *out_statfs;
@@ -1067,13 +1062,13 @@ void statfs_cb(struct rpc_context *rpc, int status, void *data,
         goto ret;
     }
 
-    GETATTR4resok *resok = &res->resarray.resarray_val[1].nfs_resop4_u.opgetattr.GETATTR4res_u.resok4;
+    GETATTR4resok *resok = &res->resarray.resarray_val[2].nfs_resop4_u.opgetattr.GETATTR4res_u.resok4;
     char *attrs = resok->obj_attributes.attr_vals.attrlist4_val;
     u_int attrs_len = resok->obj_attributes.attr_vals.attrlist4_len;
     if (nfs_parse_statfs(&cb_data->out_statfs->st, attrs, attrs_len) != 0) {
         cb_data->out_hdr->error = -EREMOTEIO;
     }
-    cb_data->out_hdr->len = cb_data->se->conn.proto_minor < 4 ?
+    cb_data->out_hdr->len = vnfs->se->conn.proto_minor < 4 ?
         FUSE_COMPAT_STATFS_SIZE : sizeof(*cb_data->out_statfs);
 
 ret:;
@@ -1138,7 +1133,6 @@ int statfs(struct fuse_session *se, struct virtionfs *vnfs,
 struct lookup_cb_data {
     struct snap_fs_dev_io_done_ctx *cb;
     struct virtionfs *vnfs;
-    struct fuse_session *se;
 
     char *in_name;
     struct inode *parent_inode;
@@ -1171,8 +1165,8 @@ void lookup_cb(struct rpc_context *rpc, int status, void *data,
         goto ret;
     }
 
-    char *attrs = res->resarray.resarray_val[2].nfs_resop4_u.opgetattr.GETATTR4res_u.resok4.obj_attributes.attr_vals.attrlist4_val;
-    u_int attrs_len = res->resarray.resarray_val[2].nfs_resop4_u.opgetattr.GETATTR4res_u.resok4.obj_attributes.attr_vals.attrlist4_len;
+    char *attrs = res->resarray.resarray_val[3].nfs_resop4_u.opgetattr.GETATTR4res_u.resok4.obj_attributes.attr_vals.attrlist4_val;
+    u_int attrs_len = res->resarray.resarray_val[3].nfs_resop4_u.opgetattr.GETATTR4res_u.resok4.obj_attributes.attr_vals.attrlist4_len;
     int ret = nfs_parse_attributes(&cb_data->out_entry->attr, attrs, attrs_len);
     if (ret != 0) {
         cb_data->out_hdr->error = -EREMOTEIO;
@@ -1200,14 +1194,14 @@ void lookup_cb(struct rpc_context *rpc, int status, void *data,
     if (i->fh.len == 0) {
         // Retreive the FH from the res and set it in the inode
         // it's stored in the inode for later use ex. getattr when it uses the nodeid
-        int ret = nfs4_clone_fh(&i->fh, &res->resarray.resarray_val[3].nfs_resop4_u.opgetfh.GETFH4res_u.resok4.object);
+        int ret = nfs4_clone_fh(&i->fh, &res->resarray.resarray_val[4].nfs_resop4_u.opgetfh.GETFH4res_u.resok4.object);
         if (ret < 0) {
             fprintf(stderr, "Couldn't clone fh with fileid: %lu\n", fileid);
             cb_data->out_hdr->error = -ENOMEM;
             goto ret;
         }
     }
-    cb_data->out_hdr->len += cb_data->se->conn.proto_minor < 9 ?
+    cb_data->out_hdr->len += vnfs->se->conn.proto_minor < 9 ?
         FUSE_COMPAT_ENTRY_OUT_SIZE : sizeof(*cb_data->out_entry);
 
 ret:;
@@ -1230,7 +1224,6 @@ int lookup(struct fuse_session *se, struct virtionfs *vnfs,
 
     cb_data->cb = cb;
     cb_data->vnfs = vnfs;
-    cb_data->se = se;
     cb_data->out_hdr = out_hdr;
     cb_data->out_entry = out_entry;
 
@@ -1282,7 +1275,6 @@ int lookup(struct fuse_session *se, struct virtionfs *vnfs,
 struct getattr_cb_data {
     struct snap_fs_dev_io_done_ctx *cb;
     struct virtionfs *vnfs;
-    struct fuse_session *se;
 
     struct fuse_out_header *out_hdr;
     struct fuse_attr_out *out_attr;
@@ -1311,7 +1303,7 @@ void getattr_cb(struct rpc_context *rpc, int status, void *data,
         goto ret;
     }
 
-    GETATTR4resok *resok = &res->resarray.resarray_val[1].nfs_resop4_u.opgetattr.GETATTR4res_u.resok4;
+    GETATTR4resok *resok = &res->resarray.resarray_val[2].nfs_resop4_u.opgetattr.GETATTR4res_u.resok4;
     char *attrs = resok->obj_attributes.attr_vals.attrlist4_val;
     u_int attrs_len = resok->obj_attributes.attr_vals.attrlist4_len;
     if (nfs_parse_attributes(&cb_data->out_attr->attr, attrs, attrs_len) == 0) {
@@ -1319,7 +1311,7 @@ void getattr_cb(struct rpc_context *rpc, int status, void *data,
         cb_data->out_attr->attr.rdev = 0;
         cb_data->out_attr->attr_valid = 0;
         cb_data->out_attr->attr_valid_nsec = 0;
-        cb_data->out_hdr->len += cb_data->se->conn.proto_minor < 9 ?
+        cb_data->out_hdr->len += vnfs->se->conn.proto_minor < 9 ?
             FUSE_COMPAT_ATTR_OUT_SIZE : sizeof(*cb_data->out_attr);
     } else {
         cb_data->out_hdr->error = -EREMOTEIO;
@@ -1345,7 +1337,6 @@ int getattr(struct fuse_session *se, struct virtionfs *vnfs,
 
     cb_data->cb = cb;
     cb_data->vnfs = vnfs;
-    cb_data->se = se;
     cb_data->out_hdr = out_hdr;
     cb_data->out_attr = out_attr;
 

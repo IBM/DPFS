@@ -15,7 +15,9 @@
 #include "nfs_v4.h"
 #include "inode.h"
 
-static void vnfs_conn_up(struct virtionfs *vnfs) {
+static void vnfs_conn_up(struct virtionfs *vnfs)
+{
+    vnfs->conns[vnfs->conn_cntr].state = VNFS_CONN_STATE_ESTABLISHED;
     vnfs->conn_cntr++;
     printf("VNFS connection %u fully up!\n", vnfs->conn_cntr);
     if (vnfs->conn_cntr < vnfs->nthreads) {
@@ -26,8 +28,39 @@ static void vnfs_conn_up(struct virtionfs *vnfs) {
     }
 }
 
+static void reclaim_complete_cb(struct rpc_context *rpc, int status, void *data,
+                                  void *private_data)
+{
+    struct virtionfs *vnfs = private_data;
+    vnfs_conn_up(vnfs);
+}
+
+static void reclaim_complete(struct virtionfs *vnfs)
+{
+    struct vnfs_conn *conn = &vnfs->conns[vnfs->conn_cntr];
+
+    COMPOUND4args args;
+    nfs_argop4 op[2];
+    args.minorversion = NFS4DOT1_MINOR;
+    memset(&args.tag, 0, sizeof(args.tag));
+    args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
+    args.argarray.argarray_val = op;
+    memset(op, 0, sizeof(op));
+
+    vnfs4_op_putfh(vnfs, &op[0], FUSE_ROOT_ID);
+
+    op[1].argop = OP_RECLAIM_COMPLETE;
+    op[1].nfs_argop4_u.opreclaimcomplete.rca_one_fs = true;
+
+    if (rpc_nfs4_compound_async(conn->rpc, reclaim_complete_cb, &args, vnfs) != 0) {
+    	fprintf(stderr, "%s: Failed to send nfs4 RECLAIM_COMPLETE request\n", __func__);
+        vnfs_destroy_connection(conn, VNFS_CONN_STATE_SHOULD_CLOSE);
+    }
+}
+
 static void lookup_true_rootfh_cb(struct rpc_context *rpc, int status, void *data,
-                       void *private_data) {
+                       void *private_data)
+{
     struct virtionfs *vnfs = private_data;
     struct vnfs_conn *conn = &vnfs->conns[vnfs->conn_cntr];
     COMPOUND4res *res = data;
@@ -52,9 +85,7 @@ static void lookup_true_rootfh_cb(struct rpc_context *rpc, int status, void *dat
             .GETFH4res_u.resok4.object); 
     inode_table_insert(vnfs->inodes, rooti);
 
-    // T0 is done
-    conn->state = VNFS_CONN_STATE_ESTABLISHED;
-    vnfs_conn_up(vnfs);
+    reclaim_complete(vnfs);
 }
 
 static int lookup_true_rootfh(struct virtionfs *vnfs)
@@ -130,13 +161,12 @@ static void create_session_cb(struct rpc_context *rpc, int status, void *data,
     conn->session.nslots = ok->csr_fore_chan_attrs.ca_maxrequests;
     conn->session.slots = calloc(conn->session.nslots, sizeof(struct vnfs_slot));
 
-    conn->state = VNFS_CONN_STATE_ESTABLISHED;
     // The session and connection is now fully up
     // We might be the first connection and need to lookup the true rootfh
     if (vnfs->conn_cntr == 0)
         lookup_true_rootfh(vnfs);
     else
-        vnfs_conn_up(vnfs);
+        reclaim_complete(vnfs);
 }
 
 static int create_session(struct virtionfs *vnfs, struct vnfs_conn *conn,

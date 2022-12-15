@@ -36,6 +36,8 @@ int nfs4_clone_fh(vnfs_fh4 *dst, nfs_fh4 *src) {
 int32_t nfs_error_to_fuse_error(nfsstat4 status) {
     if (status <= NFS4ERR_MLINK) {
         return status;
+    } else if (status == NFS4ERR_GRACE) {
+        return -EAGAIN;
     } else {
         fprintf(stderr, "Unknown NFS status code in nfs_error_to_fuse_error!\n");
         return -ENOSYS;
