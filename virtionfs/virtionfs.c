@@ -109,23 +109,42 @@ int vnfs4_op_sequence(nfs_argop4 *op, struct vnfs_conn *conn, bool cachethis)
     arg->sa_cachethis = cachethis;
     // sessionid
     memcpy(arg->sa_sessionid, conn->session.sessionid, sizeof(sessionid4));
-    // slot stuff
-    arg->sa_slotid = conn->session.target_highest_slot;
+    while (true) {
+        // Determine and claim which slot we will use for this request
+        for (uint32_t i = 0; i < conn->session.nslots; i++) {
+            if (!conn->session.slots[i].in_use) {
+                // Since only one thread (the Virtq thread) per session, whom can put the in_use to true
+                // this is safe.
+                arg->sa_slotid = i;
+                conn->session.slots[i].in_use = true;
+                goto slot_found;
+            }
+        }
+        // All slots are in use, wait for a bit
+        vnfs_error("All slots for connection %u are in use, suspending the Virtio poller"
+                   "thread for a bit.\n Please performance tune (the max_background operations in FUSE"
+                   "and the Virtio queue_depth so that this never happens!\n", conn->vnfs_conn_id);
+        usleep(100);
+    }
+slot_found:
+    // Determine the highest in_use slot
+    for (int64_t i = conn->session.nslots; i >= 0; i--) {
+        if (conn->session.slots[i].in_use) {
+            arg->sa_highest_slotid = i;
+        }
+    }
     struct vnfs_slot *slot = &conn->session.slots[arg->sa_slotid];
     arg->sa_sequenceid = ++slot->seqid;
-    if (arg->sa_slotid > conn->session.highest_slot) {
-        conn->session.highest_slot = arg->sa_slotid;
-    }
-    arg->sa_highest_slotid = conn->session.highest_slot;
     
-    return 1;
+    return arg->sa_slotid;
 }
 
 // Only called from NFS poller thread
 int vnfs4_handle_sequence(COMPOUND4res *res, struct vnfs_conn *conn)
 {
     SEQUENCE4resok *seqok = &res->resarray.resarray_val[0].nfs_resop4_u.opsequence.SEQUENCE4res_u.sr_resok4;
-    conn->session.target_highest_slot = seqok->sr_target_highest_slotid;
+    struct vnfs_slot *slot = &conn->session.slots[seqok->sr_slotid];
+    slot->in_use = false;
 
     return 0;
 }
@@ -133,6 +152,8 @@ int vnfs4_handle_sequence(COMPOUND4res *res, struct vnfs_conn *conn)
 struct create_cb_data {
     struct snap_fs_dev_io_done_ctx *cb;
     struct virtionfs *vnfs;
+    struct vnfs_conn *conn;
+    uint32_t slotid;
 
     struct inode *i;
 
@@ -152,17 +173,18 @@ void create_cb(struct rpc_context *rpc, int status, void *data,
 #endif
     struct create_cb_data *cb_data = (struct create_cb_data *)private_data;
     struct virtionfs *vnfs = cb_data->vnfs;
-    COMPOUND4res *res = data;
 
+    cb_data->conn->session.slots[cb_data->slotid].in_use = false;
     if (status != RPC_STATUS_SUCCESS) {
-    	fprintf(stderr, "RPC with NFS:OPEN (with create) unsuccessful: rpc error=%d\n", status);
+        vnfs_error("FUSE_CREATE:%lu - RPC error=%d, %s\n", cb_data->out_hdr->unique, status, (char *) data);
         cb_data->out_hdr->error = -EREMOTEIO;
         goto ret;
     }
+    COMPOUND4res *res = data;
     if (res->status != NFS4_OK) {
         cb_data->out_hdr->error = -nfs_error_to_fuse_error(res->status);
-    	fprintf(stderr, "NFS:OPEN (with create) unsuccessful: nfs error=%d, fuse error=%d\n",
-                res->status, cb_data->out_hdr->error);
+        vnfs_error("FUSE_CREATE:%lu - NFS error=%d, FUSE error=%d\n",
+                cb_data->out_hdr->unique, res->status, cb_data->out_hdr->error);
         goto ret;
     }
 
@@ -189,6 +211,7 @@ int create(struct fuse_session *se, struct virtionfs *vnfs,
 
     cb_data->cb = cb;
     cb_data->vnfs = vnfs;
+    cb_data->conn = conn;
     cb_data->out_hdr = out_hdr;
     cb_data->out_entry = out_entry;
     cb_data->out_open = out_open;
@@ -206,13 +229,13 @@ int create(struct fuse_session *se, struct virtionfs *vnfs,
     // GETATTR: out_entry
     // GETFH: out_open
 
-    vnfs4_op_sequence(&op[0], conn, false);
+    cb_data->slotid = vnfs4_op_sequence(&op[0], conn, false);
     // PUTFH
     // Get the inode manually because we want the FH of the parent
     struct inode *i = inode_table_get(vnfs->inodes, in_hdr->nodeid);
     cb_data->i = i;
     if (!i) {
-    	fprintf(stderr, "Invalid nodeid supplied to OPEN\n");
+    	vnfs_error("Invalid nodeid supplied to OPEN\n");
         mpool2_free(vnfs->p, cb_data);
         out_hdr->error = -ENOENT;
         return 0;
@@ -264,7 +287,7 @@ int create(struct fuse_session *se, struct virtionfs *vnfs,
 #endif
 
     if (rpc_nfs4_compound_async(conn->rpc, create_cb, &args, cb_data) != 0) {
-    	fprintf(stderr, "Failed to send NFS:OPEN (with create) request\n");
+    	vnfs_error("Failed to send NFS:OPEN (with create) request\n");
         mpool2_free(vnfs->p, cb_data);
         out_hdr->error = -EREMOTEIO;
         return 0;
@@ -276,6 +299,8 @@ int create(struct fuse_session *se, struct virtionfs *vnfs,
 struct release_cb_data {
     struct snap_fs_dev_io_done_ctx *cb;
     struct virtionfs *vnfs;
+    struct vnfs_conn *conn;
+    uint32_t slotid;
 
     struct inode *i;
 
@@ -291,17 +316,18 @@ void release_cb(struct rpc_context *rpc, int status, void *data,
 #endif
     struct release_cb_data *cb_data = (struct release_cb_data *)private_data;
     struct virtionfs *vnfs = cb_data->vnfs;
-    COMPOUND4res *res = data;
 
+    cb_data->conn->session.slots[cb_data->slotid].in_use = false;
     if (status != RPC_STATUS_SUCCESS) {
-    	fprintf(stderr, "RPC with NFS:CLOSE unsuccessful: rpc error=%d\n", status);
+        vnfs_error("FUSE_RELEASE:%lu - RPC error=%d, %s\n", cb_data->out_hdr->unique, status, (char *) data);
         cb_data->out_hdr->error = -EREMOTEIO;
         goto ret;
     }
+    COMPOUND4res *res = data;
     if (res->status != NFS4_OK) {
         cb_data->out_hdr->error = -nfs_error_to_fuse_error(res->status);
-    	fprintf(stderr, "NFS:CLOSE unsuccessful: nfs error=%d, fuse error=%d\n",
-                res->status, cb_data->out_hdr->error);
+        vnfs_error("FUSE_RELEASE:%lu - NFS error=%d, FUSE error=%d\n",
+                cb_data->out_hdr->unique, res->status, cb_data->out_hdr->error);
         goto ret;
     }
 
@@ -321,7 +347,7 @@ int release(struct fuse_session *se, struct virtionfs *vnfs,
 {
     struct inode *i = inode_table_get(vnfs->inodes, in_hdr->nodeid);
     if (!i) {
-    	fprintf(stderr, "Invalid nodeid supplied to OPEN\n");
+    	vnfs_error("Invalid nodeid supplied to OPEN\n");
         out_hdr->error = -ENOENT;
         return 0;
     }
@@ -341,6 +367,7 @@ int release(struct fuse_session *se, struct virtionfs *vnfs,
 
     cb_data->cb = cb;
     cb_data->vnfs = vnfs;
+    cb_data->conn = conn;
     cb_data->out_hdr = out_hdr;
 
     COMPOUND4args args;
@@ -350,7 +377,7 @@ int release(struct fuse_session *se, struct virtionfs *vnfs,
     args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
     args.argarray.argarray_val = op;
 
-    vnfs4_op_sequence(&op[0], conn, false);
+    cb_data->slotid = vnfs4_op_sequence(&op[0], conn, false);
     // PUTFH
     op[1].argop = OP_PUTFH;
     op[1].nfs_argop4_u.opputfh.object.nfs_fh4_val = i->fh_open.val;
@@ -365,7 +392,7 @@ int release(struct fuse_session *se, struct virtionfs *vnfs,
     if (in_release->release_flags & FUSE_RELEASE_FLUSH) {
         // TODO Don't send the CLOSE in the callback of the COMMIT
         // because we don't support sending stuff in the callback
-        fprintf(stderr, "a FUSE:release requested a flush, not implemented TODO\n");
+        vnfs_error("a FUSE:release requested a flush, not implemented TODO\n");
     }
 
 #ifdef LATENCY_MEASURING_ENABLED
@@ -376,7 +403,7 @@ int release(struct fuse_session *se, struct virtionfs *vnfs,
 #endif
 
     if (rpc_nfs4_compound_async(conn->rpc, release_cb, &args, cb_data) != 0) {
-    	fprintf(stderr, "Failed to send NFS:CLOSE request\n");
+    	vnfs_error("Failed to send NFS:CLOSE request\n");
         mpool2_free(vnfs->p, cb_data);
         out_hdr->error = -EREMOTEIO;
         return 0;
@@ -388,6 +415,8 @@ int release(struct fuse_session *se, struct virtionfs *vnfs,
 struct fsync_cb_data {
     struct snap_fs_dev_io_done_ctx *cb;
     struct virtionfs *vnfs;
+    struct vnfs_conn *conn;
+    uint32_t slotid;
 
     struct fuse_out_header *out_hdr;
     struct fuse_statfs_out *stat;
@@ -402,17 +431,18 @@ void vfsync_cb(struct rpc_context *rpc, int status, void *data,
 #endif
     struct fsync_cb_data *cb_data = (struct fsync_cb_data *)private_data;
     struct virtionfs *vnfs = cb_data->vnfs;
-    COMPOUND4res *res = data;
 
+    cb_data->conn->session.slots[cb_data->slotid].in_use = false;
     if (status != RPC_STATUS_SUCCESS) {
-    	fprintf(stderr, "RPC with NFS:COMMIT unsuccessful: rpc error=%d\n", status);
+        vnfs_error("FUSE_FSYNC:%lu - RPC error=%d, %s\n", cb_data->out_hdr->unique, status, (char *) data);
         cb_data->out_hdr->error = -EREMOTEIO;
         goto ret;
     }
+    COMPOUND4res *res = data;
     if (res->status != NFS4_OK) {
         cb_data->out_hdr->error = -nfs_error_to_fuse_error(res->status);
-    	fprintf(stderr, "NFS:COMMIT unsuccessful: nfs error=%d, fuse error=%d\n",
-                res->status, cb_data->out_hdr->error);
+        vnfs_error("FUSE_FSYNC:%lu - NFS error=%d, FUSE error=%d\n",
+                cb_data->out_hdr->unique, res->status, cb_data->out_hdr->error);
         goto ret;
     }
 
@@ -438,6 +468,7 @@ int vfsync(struct fuse_session *se, struct virtionfs *vnfs,
 
     cb_data->cb = cb;
     cb_data->vnfs = vnfs;
+    cb_data->conn = conn;
     cb_data->out_hdr = out_hdr;
 
     COMPOUND4args args;
@@ -447,11 +478,11 @@ int vfsync(struct fuse_session *se, struct virtionfs *vnfs,
     args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
     args.argarray.argarray_val = op;
 
-    vnfs4_op_sequence(&op[0], conn, false);
+    cb_data->slotid = vnfs4_op_sequence(&op[0], conn, false);
     // PUTFH
     struct inode *i = vnfs4_op_putfh(vnfs, &op[1], in_hdr->nodeid);
     if (!i) {
-    	fprintf(stderr, "Invalid nodeid supplied to fsync\n");
+    	vnfs_error("Invalid nodeid supplied to fsync\n");
         mpool2_free(vnfs->p, cb_data);
         out_hdr->error = -ENOENT;
         return 0;
@@ -471,7 +502,7 @@ int vfsync(struct fuse_session *se, struct virtionfs *vnfs,
 #endif
 
     if (rpc_nfs4_compound_async(conn->rpc, vfsync_cb, &args, cb_data) != 0) {
-    	fprintf(stderr, "Failed to send NFS:commit request\n");
+    	vnfs_error("Failed to send NFS:commit request\n");
         mpool2_free(vnfs->p, cb_data);
         out_hdr->error = -EREMOTEIO;
         return 0;
@@ -483,6 +514,8 @@ int vfsync(struct fuse_session *se, struct virtionfs *vnfs,
 struct write_cb_data {
     struct snap_fs_dev_io_done_ctx *cb;
     struct virtionfs *vnfs;
+    struct vnfs_conn *conn;
+    uint32_t slotid;
 
     struct fuse_write_in *in_write;
     struct iovec *in_iov;
@@ -501,17 +534,18 @@ void vwrite_cb(struct rpc_context *rpc, int status, void *data,
 #endif
     struct write_cb_data *cb_data = (struct write_cb_data *) private_data;
     struct virtionfs *vnfs = cb_data->vnfs;
-    COMPOUND4res *res = data;
 
+    cb_data->conn->session.slots[cb_data->slotid].in_use = false;
     if (status != RPC_STATUS_SUCCESS) {
-    	fprintf(stderr, "RPC with NFS:WRITE unsuccessful: rpc error=%d\n", status);
+        vnfs_error("FUSE_WRITE:%lu - RPC error=%d, %s\n", cb_data->out_hdr->unique, status, (char *) data);
         cb_data->out_hdr->error = -EREMOTEIO;
         goto ret;
     }
+    COMPOUND4res *res = data;
     if (res->status != NFS4_OK) {
         cb_data->out_hdr->error = -nfs_error_to_fuse_error(res->status);
-    	fprintf(stderr, "NFS:WRITE unsuccessful: nfs error=%d, fuse error=%d\n",
-                res->status, cb_data->out_hdr->error);
+        vnfs_error("FUSE_WRITE:%lu - NFS error=%d, FUSE error=%d\n",
+                cb_data->out_hdr->unique, res->status, cb_data->out_hdr->error);
         goto ret;
     }
     
@@ -538,8 +572,7 @@ int vwrite(struct fuse_session *se, struct virtionfs *vnfs,
 {
 #ifdef DEBUG_ENABLED
     if (in_iov_cnt > 1)
-        fprintf(stderr, "virtionfs:%s was called with >1 iovecs, this is not supported!\n",
-                __func__);
+        vnfs_error("called with >1 iovecs, this is not supported!\n");
 #endif
 
     struct vnfs_conn *conn = vnfs_get_conn(vnfs);
@@ -551,6 +584,7 @@ int vwrite(struct fuse_session *se, struct virtionfs *vnfs,
 
     cb_data->cb = cb;
     cb_data->vnfs = vnfs;
+    cb_data->conn = conn;
     cb_data->in_write = in_write;
     cb_data->in_iov = in_iov;
     cb_data->out_hdr = out_hdr;
@@ -563,11 +597,11 @@ int vwrite(struct fuse_session *se, struct virtionfs *vnfs,
     args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
     args.argarray.argarray_val = op;
 
-    vnfs4_op_sequence(&op[0], conn, false);
+    cb_data->slotid = vnfs4_op_sequence(&op[0], conn, false);
     // PUTFH
     struct inode *i = vnfs4_op_putfh_open(vnfs, &op[1], in_hdr->nodeid);
     if (!i) {
-    	fprintf(stderr, "Invalid nodeid supplied to write\n");
+    	vnfs_error("Invalid nodeid supplied to write\n");
         mpool2_free(vnfs->p, cb_data);
         out_hdr->error = -ENOENT;
         return 0;
@@ -597,7 +631,7 @@ int vwrite(struct fuse_session *se, struct virtionfs *vnfs,
     }
 #endif
     if (rpc_nfs4_compound_async2(conn->rpc, vwrite_cb, &args, cb_data, alloc_hint) != 0) {
-    	fprintf(stderr, "Failed to send NFS:write request\n");
+    	vnfs_error("Failed to send NFS:write request\n");
         mpool2_free(vnfs->p, cb_data);
         out_hdr->error = -EREMOTEIO;
         return 0;
@@ -632,6 +666,8 @@ static size_t iovec_write_buf(struct iovec *iov, int iovcnt,
 struct read_cb_data {
     struct snap_fs_dev_io_done_ctx *cb;
     struct virtionfs *vnfs;
+    struct vnfs_conn *conn;
+    uint32_t slotid;
 
     struct fuse_out_header *out_hdr;
     struct iovec *out_iov;
@@ -643,17 +679,18 @@ void vread_cb(struct rpc_context *rpc, int status, void *data,
 {
     struct read_cb_data *cb_data = (struct read_cb_data *)private_data;
     struct virtionfs *vnfs = cb_data->vnfs;
-    COMPOUND4res *res = data;
 
+    cb_data->conn->session.slots[cb_data->slotid].in_use = false;
     if (status != RPC_STATUS_SUCCESS) {
-    	fprintf(stderr, "RPC with NFS:READ unsuccessful: rpc error=%d\n", status);
+        vnfs_error("FUSE_READ:%lu - RPC error=%d, %s\n", cb_data->out_hdr->unique, status, (char *) data);
         cb_data->out_hdr->error = -EREMOTEIO;
         goto ret;
     }
+    COMPOUND4res *res = data;
     if (res->status != NFS4_OK) {
         cb_data->out_hdr->error = -nfs_error_to_fuse_error(res->status);
-    	fprintf(stderr, "NFS:READ unsuccessful: nfs error=%d, fuse error=%d\n",
-                res->status, cb_data->out_hdr->error);
+        vnfs_error("FUSE_READ:%lu - NFS error=%d, FUSE error=%d\n",
+                cb_data->out_hdr->unique, res->status, cb_data->out_hdr->error);
         goto ret;
     }
 
@@ -687,6 +724,7 @@ int vread(struct fuse_session *se, struct virtionfs *vnfs,
 
     cb_data->cb = cb;
     cb_data->vnfs = vnfs;
+    cb_data->conn = conn;
     cb_data->out_hdr = out_hdr;
     cb_data->out_iov = out_iov;
     cb_data->out_iovcnt = out_iovcnt;
@@ -698,11 +736,11 @@ int vread(struct fuse_session *se, struct virtionfs *vnfs,
     args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
     args.argarray.argarray_val = op;
 
-    vnfs4_op_sequence(&op[0], conn, false);
+    cb_data->slotid = vnfs4_op_sequence(&op[0], conn, false);
     // PUTFH
     struct inode *i = vnfs4_op_putfh_open(vnfs, &op[1], in_hdr->nodeid);
     if (!i) {
-    	fprintf(stderr, "Invalid nodeid supplied to open\n");
+    	vnfs_error("Invalid nodeid supplied to open\n");
         mpool2_free(vnfs->p, cb_data);
         out_hdr->error = -ENOENT;
         return 0;
@@ -714,7 +752,7 @@ int vread(struct fuse_session *se, struct virtionfs *vnfs,
     op[2].nfs_argop4_u.opread.offset = in_read->offset;
 
     if (rpc_nfs4_compound_async(conn->rpc, vread_cb, &args, cb_data) != 0) {
-    	fprintf(stderr, "Failed to send NFS:READ request\n");
+    	vnfs_error("Failed to send NFS:READ request\n");
         mpool2_free(vnfs->p, cb_data);
         out_hdr->error = -EREMOTEIO;
         return 0;
@@ -726,6 +764,8 @@ int vread(struct fuse_session *se, struct virtionfs *vnfs,
 struct open_cb_data {
     struct snap_fs_dev_io_done_ctx *cb;
     struct virtionfs *vnfs;
+    struct vnfs_conn *conn;
+    uint32_t slotid;
 
     struct inode *i;
 
@@ -746,17 +786,18 @@ void vopen_cb(struct rpc_context *rpc, int status, void *data,
 #endif
     struct open_cb_data *cb_data = (struct open_cb_data *)private_data;
     struct virtionfs *vnfs = cb_data->vnfs;
-    COMPOUND4res *res = data;
 
+    cb_data->conn->session.slots[cb_data->slotid].in_use = false;
     if (status != RPC_STATUS_SUCCESS) {
-    	fprintf(stderr, "RPC with NFS:OPEN unsuccessful: rpc error=%d\n", status);
+        vnfs_error("FUSE_OPEN:%lu - RPC error=%d, %s\n", cb_data->out_hdr->unique, status, (char *) data);
         cb_data->out_hdr->error = -EREMOTEIO;
         goto ret;
     }
+    COMPOUND4res *res = data;
     if (res->status != NFS4_OK) {
         cb_data->out_hdr->error = -nfs_error_to_fuse_error(res->status);
-    	fprintf(stderr, "NFS:OPEN unsuccessful: nfs error=%d, fuse error=%d\n",
-                res->status, cb_data->out_hdr->error);
+        vnfs_error("FUSE_OPEN:%lu - NFS error=%d, FUSE error=%d\n",
+                cb_data->out_hdr->unique, res->status, cb_data->out_hdr->error);
         goto ret;
     }
 
@@ -777,7 +818,7 @@ void vopen_cb(struct rpc_context *rpc, int status, void *data,
     cb_data->out_hdr->len += sizeof(*cb_data->out_open);
     OPEN4resok *openok = &res->resarray.resarray_val[2].nfs_resop4_u.opopen.OPEN4res_u.resok4;
     if (openok->rflags & OPEN4_RESULT_CONFIRM) {
-        fprintf(stderr, "virtionfs is using NFS4.1 but the server requested us"
+        vnfs_error("virtionfs is using NFS4.1 but the server requested us"
                 "to perform a OPEN_CONFIRM.\nThat should not happen per the spec!\n");
         cb_data->out_hdr->error = -EREMOTEIO;
         goto ret;
@@ -799,7 +840,7 @@ int vopen(struct fuse_session *se, struct virtionfs *vnfs,
     // Get the inode manually because we want the FH of the parent later
     struct inode *i = inode_table_get(vnfs->inodes, in_hdr->nodeid);
     if (!i) {
-    	fprintf(stderr, "Invalid nodeid supplied to OPEN\n");
+    	vnfs_error("Invalid nodeid supplied to OPEN\n");
         out_hdr->error = -ENOENT;
         return 0;
     }
@@ -821,6 +862,7 @@ int vopen(struct fuse_session *se, struct virtionfs *vnfs,
 
     cb_data->cb = cb;
     cb_data->vnfs = vnfs;
+    cb_data->conn = conn;
     cb_data->out_hdr = out_hdr;
     cb_data->out_open = out_open;
 
@@ -831,10 +873,9 @@ int vopen(struct fuse_session *se, struct virtionfs *vnfs,
     args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
     args.argarray.argarray_val = op;
 
-    vnfs4_op_sequence(&op[0], conn, false);
+    cb_data->slotid = vnfs4_op_sequence(&op[0], conn, false);
     // PUTFH
     cb_data->i = i;
-
     op[1].argop = OP_PUTFH;
     op[1].nfs_argop4_u.opputfh.object.nfs_fh4_val = i->parent->fh.val;
     op[1].nfs_argop4_u.opputfh.object.nfs_fh4_len = i->parent->fh.len;
@@ -874,7 +915,7 @@ int vopen(struct fuse_session *se, struct virtionfs *vnfs,
     }
 #endif
     if (rpc_nfs4_compound_async(conn->rpc, vopen_cb, &args, cb_data) != 0) {
-    	fprintf(stderr, "Failed to send NFS:open request\n");
+    	vnfs_error("Failed to send NFS:open request\n");
         mpool2_free(vnfs->p, cb_data);
         out_hdr->error = -EREMOTEIO;
         return 0;
@@ -886,6 +927,8 @@ int vopen(struct fuse_session *se, struct virtionfs *vnfs,
 struct setattr_cb_data {
     struct snap_fs_dev_io_done_ctx *cb;
     struct virtionfs *vnfs;
+    struct vnfs_conn *conn;
+    uint32_t slotid;
 
     struct fuse_out_header *out_hdr;
     struct fuse_attr_out *out_attr;
@@ -904,17 +947,18 @@ void setattr_cb(struct rpc_context *rpc, int status, void *data,
 #endif
     struct setattr_cb_data *cb_data = (struct setattr_cb_data *)private_data;
     struct virtionfs *vnfs = cb_data->vnfs;
-    COMPOUND4res *res = data;
 
+    cb_data->conn->session.slots[cb_data->slotid].in_use = false;
     if (status != RPC_STATUS_SUCCESS) {
-    	fprintf(stderr, "RPC with NFS:SETATTR unsuccessful: rpc error=%d\n", status);
+        vnfs_error("FUSE_SETATTR:%lu - RPC error=%d, %s\n", cb_data->out_hdr->unique, status, (char *) data);
         cb_data->out_hdr->error = -EREMOTEIO;
         goto ret;
     }
+    COMPOUND4res *res = data;
     if (res->status != NFS4_OK) {
         cb_data->out_hdr->error = -nfs_error_to_fuse_error(res->status);
-    	fprintf(stderr, "NFS:SETATTR unsuccessful: nfs error=%d, fuse error=%d\n",
-                res->status, cb_data->out_hdr->error);
+        vnfs_error("FUSE_SETATTR:%lu - NFS error=%d, FUSE error=%d\n",
+                cb_data->out_hdr->unique, res->status, cb_data->out_hdr->error);
         goto ret;
     }
 
@@ -954,6 +998,7 @@ int setattr(struct fuse_session *se, struct virtionfs *vnfs,
 
     cb_data->cb = cb;
     cb_data->vnfs = vnfs;
+    cb_data->conn = conn;
     cb_data->out_hdr = out_hdr;
     cb_data->out_attr = out_attr;
 
@@ -964,11 +1009,10 @@ int setattr(struct fuse_session *se, struct virtionfs *vnfs,
     args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
     args.argarray.argarray_val = op;
 
-    vnfs4_op_sequence(&op[0], conn, false);
-
+    cb_data->slotid = vnfs4_op_sequence(&op[0], conn, false);
     struct inode *i = vnfs4_op_putfh(vnfs, &op[1], in_hdr->nodeid);
     if (!i) {
-    	fprintf(stderr, "Invalid nodeid supplied to GETATTR\n");
+    	vnfs_error("Invalid nodeid supplied to GETATTR\n");
         mpool2_free(vnfs->p, cb_data);
         out_hdr->error = -ENOENT;
         return 0;
@@ -1021,7 +1065,7 @@ int setattr(struct fuse_session *se, struct virtionfs *vnfs,
     }
 #endif
     if (rpc_nfs4_compound_async(conn->rpc, setattr_cb, &args, cb_data) != 0) {
-    	fprintf(stderr, "Failed to send nfs4 SETATTR request\n");
+    	vnfs_error("Failed to send nfs4 SETATTR request\n");
         mpool2_free(vnfs->p, cb_data);
         out_hdr->error = -EREMOTEIO;
         return 0;
@@ -1033,6 +1077,8 @@ int setattr(struct fuse_session *se, struct virtionfs *vnfs,
 struct statfs_cb_data {
     struct snap_fs_dev_io_done_ctx *cb;
     struct virtionfs *vnfs;
+    struct vnfs_conn *conn;
+    uint32_t slotid;
 
     struct fuse_out_header *out_hdr;
     struct fuse_statfs_out *out_statfs;
@@ -1047,17 +1093,18 @@ void statfs_cb(struct rpc_context *rpc, int status, void *data,
 #endif
     struct statfs_cb_data *cb_data = (struct statfs_cb_data *)private_data;
     struct virtionfs *vnfs = cb_data->vnfs;
-    COMPOUND4res *res = data;
 
+    cb_data->conn->session.slots[cb_data->slotid].in_use = false;
     if (status != RPC_STATUS_SUCCESS) {
-    	fprintf(stderr, "NFS RPC for FUSE:statfs unsuccessful: rpc error=%d\n", status);
+        vnfs_error("FUSE_STATFS:%lu - RPC error=%d, %s\n", cb_data->out_hdr->unique, status, (char *) data);
         cb_data->out_hdr->error = -EREMOTEIO;
         goto ret;
     }
+    COMPOUND4res *res = data;
     if (res->status != NFS4_OK) {
         cb_data->out_hdr->error = -nfs_error_to_fuse_error(res->status);
-    	fprintf(stderr, "NFS:GETATTR for FUSE:statfs unsuccessful: nfs error=%d, fuse error=%d\n",
-                res->status, cb_data->out_hdr->error);
+        vnfs_error("FUSE_STATFS:%lu - NFS error=%d, FUSE error=%d\n",
+                cb_data->out_hdr->unique, res->status, cb_data->out_hdr->error);
         goto ret;
     }
 
@@ -1091,6 +1138,7 @@ int statfs(struct fuse_session *se, struct virtionfs *vnfs,
 
     cb_data->cb = cb;
     cb_data->vnfs = vnfs;
+    cb_data->conn = conn;
     cb_data->out_hdr = out_hdr;
     cb_data->out_statfs = stat;
 
@@ -1102,7 +1150,7 @@ int statfs(struct fuse_session *se, struct virtionfs *vnfs,
     args.argarray.argarray_val = op;
 
 
-    vnfs4_op_sequence(&op[0], conn, false);
+    cb_data->slotid = vnfs4_op_sequence(&op[0], conn, false);
     // PUTFH the root
     op[1].argop = OP_PUTFH;
     struct inode *rooti = inode_table_get(vnfs->inodes, FUSE_ROOT_ID);
@@ -1120,7 +1168,7 @@ int statfs(struct fuse_session *se, struct virtionfs *vnfs,
 #endif
 
     if (rpc_nfs4_compound_async(conn->rpc, statfs_cb, &args, cb_data) != 0) {
-    	fprintf(stderr, "Failed to send FUSE:statfs request\n");
+    	vnfs_error("Failed to send FUSE:statfs request\n");
         mpool2_free(vnfs->p, cb_data);
         out_hdr->error = -EREMOTEIO;
         return 0;
@@ -1132,6 +1180,8 @@ int statfs(struct fuse_session *se, struct virtionfs *vnfs,
 struct lookup_cb_data {
     struct snap_fs_dev_io_done_ctx *cb;
     struct virtionfs *vnfs;
+    struct vnfs_conn *conn;
+    uint32_t slotid;
 
     char *in_name;
     struct inode *parent_inode;
@@ -1149,18 +1199,18 @@ void lookup_cb(struct rpc_context *rpc, int status, void *data,
 #endif
     struct lookup_cb_data *cb_data = (struct lookup_cb_data *)private_data;
     struct virtionfs *vnfs = cb_data->vnfs;
-    COMPOUND4res *res = data;
 
-
+    cb_data->conn->session.slots[cb_data->slotid].in_use = false;
     if (status != RPC_STATUS_SUCCESS) {
-    	fprintf(stderr, "RPC with NFS:LOOKUP unsuccessful: rpc error=%d\n", status);
+        vnfs_error("FUSE_LOOKUP:%lu - RPC error=%d, %s\n", cb_data->out_hdr->unique, status, (char *) data);
         cb_data->out_hdr->error = -EREMOTEIO;
         goto ret;
     }
+    COMPOUND4res *res = data;
     if (res->status != NFS4_OK) {
         cb_data->out_hdr->error = -nfs_error_to_fuse_error(res->status);
-    	fprintf(stderr, "NFS:LOOKUP unsuccessful: nfs error=%d, fuse error=%d\n",
-                res->status, cb_data->out_hdr->error);
+        vnfs_error("FUSE_LOOKUP:%lu - NFS error=%d, FUSE error=%d\n",
+                cb_data->out_hdr->unique, res->status, cb_data->out_hdr->error);
         goto ret;
     }
 
@@ -1183,7 +1233,7 @@ void lookup_cb(struct rpc_context *rpc, int status, void *data,
 
     struct inode *i = inode_table_getsert(vnfs->inodes, fileid, cb_data->in_name, cb_data->parent_inode);
     if (!i) {
-        fprintf(stderr, "Couldn't getsert inode with fileid: %lu\n", fileid);
+        vnfs_error("Couldn't getsert inode with fileid: %lu\n", fileid);
         cb_data->out_hdr->error = -ENOMEM;
         goto ret;
     }
@@ -1195,7 +1245,7 @@ void lookup_cb(struct rpc_context *rpc, int status, void *data,
         // it's stored in the inode for later use ex. getattr when it uses the nodeid
         int ret = nfs4_clone_fh(&i->fh, &res->resarray.resarray_val[4].nfs_resop4_u.opgetfh.GETFH4res_u.resok4.object);
         if (ret < 0) {
-            fprintf(stderr, "Couldn't clone fh with fileid: %lu\n", fileid);
+            vnfs_error("Couldn't clone fh with fileid: %lu\n", fileid);
             cb_data->out_hdr->error = -ENOMEM;
             goto ret;
         }
@@ -1223,6 +1273,7 @@ int lookup(struct fuse_session *se, struct virtionfs *vnfs,
 
     cb_data->cb = cb;
     cb_data->vnfs = vnfs;
+    cb_data->conn = conn;
     cb_data->out_hdr = out_hdr;
     cb_data->out_entry = out_entry;
 
@@ -1233,11 +1284,11 @@ int lookup(struct fuse_session *se, struct virtionfs *vnfs,
     args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
     args.argarray.argarray_val = op;
 
-    vnfs4_op_sequence(&op[0], conn, false);
+    cb_data->slotid = vnfs4_op_sequence(&op[0], conn, false);
     // PUTFH
     struct inode *pi = vnfs4_op_putfh(vnfs, &op[1], in_hdr->nodeid);
     if (!pi) {
-    	fprintf(stderr, "Invalid nodeid supplied to LOOKUP\n");
+    	vnfs_error("Invalid nodeid supplied to LOOKUP\n");
         mpool2_free(vnfs->p, cb_data);
         out_hdr->error = -ENOENT;
         return 0;
@@ -1262,7 +1313,7 @@ int lookup(struct fuse_session *se, struct virtionfs *vnfs,
 #endif
 
     if (rpc_nfs4_compound_async(conn->rpc, lookup_cb, &args, cb_data) != 0) {
-    	fprintf(stderr, "Failed to send nfs4 LOOKUP request\n");
+    	vnfs_error("Failed to send nfs4 LOOKUP request\n");
         mpool2_free(vnfs->p, cb_data);
         out_hdr->error = -EREMOTEIO;
         return 0;
@@ -1274,6 +1325,8 @@ int lookup(struct fuse_session *se, struct virtionfs *vnfs,
 struct getattr_cb_data {
     struct snap_fs_dev_io_done_ctx *cb;
     struct virtionfs *vnfs;
+    struct vnfs_conn *conn;
+    uint32_t slotid;
 
     struct fuse_out_header *out_hdr;
     struct fuse_attr_out *out_attr;
@@ -1288,17 +1341,18 @@ void getattr_cb(struct rpc_context *rpc, int status, void *data,
 #endif
     struct getattr_cb_data *cb_data = (struct getattr_cb_data *)private_data;
     struct virtionfs *vnfs = cb_data->vnfs;
-    COMPOUND4res *res = data;
 
+    cb_data->conn->session.slots[cb_data->slotid].in_use = false;
     if (status != RPC_STATUS_SUCCESS) {
-    	fprintf(stderr, "RPC with NFS:GETATTR unsuccessful: rpc error=%d\n", status);
+        vnfs_error("FUSE_GETATTR:%lu - RPC error=%d, %s\n", cb_data->out_hdr->unique, status, (char *) data);
         cb_data->out_hdr->error = -EREMOTEIO;
         goto ret;
     }
+    COMPOUND4res *res = data;
     if (res->status != NFS4_OK) {
         cb_data->out_hdr->error = -nfs_error_to_fuse_error(res->status);
-    	fprintf(stderr, "NFS:GETATTR unsuccessful: nfs error=%d, fuse error=%d\n",
-                res->status, cb_data->out_hdr->error);
+        vnfs_error("FUSE_GETATTR:%lu - NFS error=%d, FUSE error=%d\n",
+                cb_data->out_hdr->unique, res->status, cb_data->out_hdr->error);
         goto ret;
     }
 
@@ -1336,6 +1390,7 @@ int getattr(struct fuse_session *se, struct virtionfs *vnfs,
 
     cb_data->cb = cb;
     cb_data->vnfs = vnfs;
+    cb_data->conn = conn;
     cb_data->out_hdr = out_hdr;
     cb_data->out_attr = out_attr;
 
@@ -1346,10 +1401,10 @@ int getattr(struct fuse_session *se, struct virtionfs *vnfs,
     args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
     args.argarray.argarray_val = op;
 
-    vnfs4_op_sequence(&op[0], conn, false);
+    cb_data->slotid = vnfs4_op_sequence(&op[0], conn, false);
     struct inode *i = vnfs4_op_putfh(vnfs, &op[1], in_hdr->nodeid);
     if (!i) {
-    	fprintf(stderr, "Invalid nodeid supplied to GETATTR\n");
+    	vnfs_error("Invalid nodeid supplied to GETATTR\n");
         mpool2_free(vnfs->p, cb_data);
         out_hdr->error = -ENOENT;
         return 0;
@@ -1364,7 +1419,7 @@ int getattr(struct fuse_session *se, struct virtionfs *vnfs,
     }
 #endif
     if (rpc_nfs4_compound_async(conn->rpc, getattr_cb, &args, cb_data) != 0) {
-    	fprintf(stderr, "Failed to send nfs4 GETATTR request\n");
+    	vnfs_error("Failed to send nfs4 GETATTR request\n");
         mpool2_free(vnfs->p, cb_data);
         out_hdr->error = -EREMOTEIO;
         return 0;
@@ -1381,7 +1436,7 @@ int destroy(struct fuse_session *se, struct virtionfs *vnfs,
     if (vnfs->nthreads == 1) {
         for (int i = 1; i <= FUSE_REMOVEMAPPING; i++) {
             if (ft[i].running) {
-                fprintf(stderr, "OP(%d) timer is still running!?\n", i);
+                vnfs_error("OP(%d) timer is still running!?\n", i);
             }
             if (op_calls[i] > 0)
                 printf("OP(%d) took %lu averaged over %lu calls\n", i, ft_get_nsec(&ft[i]) / op_calls[i], op_calls[i]);
@@ -1405,7 +1460,7 @@ int init(struct fuse_session *se, struct virtionfs *vnfs,
             op_calls[i] = 0;
         }
     } else {
-        fprintf(stderr, "Latency measuring is enabled but vnfs was told to do multithreading"
+        vnfs_error("Latency measuring is enabled but vnfs was told to do multithreading"
                 ", this is not supported. Latency measuring disabled\n");
     }
 #endif
@@ -1472,7 +1527,7 @@ void virtionfs_main(char *server, char *export,
     }
     vnfs->server = server;
     if (export[0] != '/') {
-        fprintf(stderr, "export must start with a '/'\n");
+        vnfs_error("export must start with a '/'\n");
         goto ret_a;
     }
     vnfs->export = export;
@@ -1481,8 +1536,9 @@ void virtionfs_main(char *server, char *export,
     vnfs->timeout_nsec = calc_timeout_nsec(timeout);
     vnfs->nthreads = nthreads;
 
-    if (mpool2_init(&vnfs->p, sizeof(struct lookup_cb_data), 256) < 0) {
-        warn("Failed to init virtionfs");
+    int ret = mpool2_init(&vnfs->p, sizeof(struct lookup_cb_data), 256);
+    if (ret < 0) {
+        vnfs_error("Failed to init mpool - err=%d", ret);
         goto ret_a;
     }
 
@@ -1492,8 +1548,9 @@ void virtionfs_main(char *server, char *export,
         goto ret_b;
     }
 
-    if (inode_table_init(&vnfs->inodes) < 0) {
-        warn("Failed to init virtionfs");
+    ret = inode_table_init(&vnfs->inodes);
+    if (ret < 0) {
+        vnfs_error("Failed to inode table - err=%d", ret);
         goto ret_c;
     }
 
@@ -1502,7 +1559,6 @@ void virtionfs_main(char *server, char *export,
     virtionfs_assign_ops(&ops);
 
     virtiofs_emu_fuse_ll_main(&ops, emu_params, vnfs, debug);
-    printf("nfsclient finished\n");
 
     inode_table_destroy(vnfs->inodes);
 ret_c:
@@ -1511,4 +1567,5 @@ ret_b:
     mpool2_destroy(vnfs->p);
 ret_a:
     free(vnfs);
+    printf("vnfs exited\n");
 }

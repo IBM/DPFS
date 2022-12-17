@@ -152,6 +152,7 @@ static void virtiofs_emu_ll_loop_multithreaded(struct virtio_fs_ctrl *ctrl,
         }
     }
 
+    pthread_setspecific(virtiofs_thread_id_key, (void *) 0);
     // The main thread also does mmio polling and signal handling
     virtiofs_emu_ll_loop_singlethreaded(ctrl, interval, 0);
 
@@ -266,7 +267,7 @@ struct virtiofs_emu_ll *virtiofs_emu_ll_new(struct virtiofs_emu_ll_params *param
     param.vf_id = emu_params.vf_id;
 
     param.dev_type = "virtiofs_emu";
-    param.num_queues = 2;
+    param.num_queues = 64;
     param.queue_depth = 64;
     param.force_in_order = false;
     param.recover = false; // See snap_virtio_fs_ctrl.c:811, if enabled this controller is supposed to be recovered from the dead

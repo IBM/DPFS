@@ -51,6 +51,8 @@ static void reclaim_complete_cb(struct rpc_context *rpc, int status, void *data,
                "(NFS4_ERR_COMPLETE_ALREADY), only a partial handshake was necessary.\n");
     }
 
+    vnfs4_handle_sequence(res, conn);
+
     vnfs_conn_up(vnfs);
 }
 

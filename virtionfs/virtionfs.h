@@ -30,6 +30,7 @@ enum vnfs_conn_state {
 struct vnfs_slot {
     // Starts at 1
     sequenceid4 seqid;
+    bool in_use;
 };
 
 struct vnfs_session {
@@ -41,10 +42,6 @@ struct vnfs_session {
     uint32_t nslots;
     // The highest slot ID for which the client has a request outstanding
     slotid4 highest_slot;
-    // The highest slot ID the server would prefer the client use on a
-    // future SEQUENCE operation.
-    // This is the most recent value that the server gave us.
-    slotid4 target_highest_slot;
 };
 
 struct vnfs_conn {
@@ -89,5 +86,7 @@ struct inode *vnfs4_op_putfh(struct virtionfs *vnfs, nfs_argop4 *op, uint64_t no
 
 int vnfs4_op_sequence(nfs_argop4 *op, struct vnfs_conn *conn, bool cachethis);
 int vnfs4_handle_sequence(COMPOUND4res *res, struct vnfs_conn *conn);
+
+#define vnfs_error(fmt, ...) fprintf(stderr, "vnfs error %s:%d - " fmt, __FILE__, __LINE__, ##__VA_ARGS__)
 
 #endif // VIRTIONFS_VIRTIONFS_H

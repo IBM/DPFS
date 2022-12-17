@@ -21,7 +21,7 @@ int main(int argc, char **argv)
     char *emu_manager = NULL; // the rdma device name which supports being an emulation manager and virtio_fs emu
     char *server = NULL;
     char *export = NULL;
-    uint32_t nthreads = 0;
+    uint32_t nthreads = 1;
 
     int opt;
     while ((opt = getopt(argc, argv, "p:v:e:s:x:t:")) != -1) {
