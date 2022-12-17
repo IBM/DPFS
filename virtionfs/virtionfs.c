@@ -71,6 +71,134 @@ static uint32_t statfs_attributes[2] = {
 
 // supported_attributes = standard_attributes | statfs_attributes
 
+// All the cb_data structs, nice and cozy together
+struct getattr_cb_data {
+    struct snap_fs_dev_io_done_ctx *cb;
+    struct virtionfs *vnfs;
+    struct vnfs_conn *conn;
+    uint32_t slotid;
+
+    struct fuse_out_header *out_hdr;
+    struct fuse_attr_out *out_attr;
+};
+struct lookup_cb_data {
+    struct snap_fs_dev_io_done_ctx *cb;
+    struct virtionfs *vnfs;
+    struct vnfs_conn *conn;
+    uint32_t slotid;
+
+    struct fuse_out_header *out_hdr;
+    struct fuse_entry_out *out_entry;
+};
+struct statfs_cb_data {
+    struct snap_fs_dev_io_done_ctx *cb;
+    struct virtionfs *vnfs;
+    struct vnfs_conn *conn;
+    uint32_t slotid;
+
+    struct fuse_out_header *out_hdr;
+    struct fuse_statfs_out *out_statfs;
+};
+struct setattr_cb_data {
+    struct snap_fs_dev_io_done_ctx *cb;
+    struct virtionfs *vnfs;
+    struct vnfs_conn *conn;
+    uint32_t slotid;
+
+    struct fuse_out_header *out_hdr;
+    struct fuse_attr_out *out_attr;
+
+    uint64_t *bitmap;
+    char *attrlist;
+};
+struct open_cb_data {
+    struct snap_fs_dev_io_done_ctx *cb;
+    struct virtionfs *vnfs;
+    struct vnfs_conn *conn;
+    uint32_t slotid;
+
+    struct inode *i;
+
+    struct fuse_out_header *out_hdr;
+    struct fuse_open_out *out_open;
+
+    uint32_t owner_val;
+};
+struct read_cb_data {
+    struct snap_fs_dev_io_done_ctx *cb;
+    struct virtionfs *vnfs;
+    struct vnfs_conn *conn;
+    uint32_t slotid;
+
+    struct fuse_out_header *out_hdr;
+    struct iovec *out_iov;
+    int out_iovcnt;
+};
+struct write_cb_data {
+    struct snap_fs_dev_io_done_ctx *cb;
+    struct virtionfs *vnfs;
+    struct vnfs_conn *conn;
+    uint32_t slotid;
+
+    struct fuse_write_in *in_write;
+    struct iovec *in_iov;
+    int *in_iovcnt;
+
+    struct fuse_out_header *out_hdr;
+    struct fuse_write_out *out_write;
+};
+struct fsync_cb_data {
+    struct snap_fs_dev_io_done_ctx *cb;
+    struct virtionfs *vnfs;
+    struct vnfs_conn *conn;
+    uint32_t slotid;
+
+    struct fuse_out_header *out_hdr;
+    struct fuse_statfs_out *stat;
+};
+struct release_cb_data {
+    struct snap_fs_dev_io_done_ctx *cb;
+    struct virtionfs *vnfs;
+    struct vnfs_conn *conn;
+    uint32_t slotid;
+
+    struct inode *i;
+
+    struct fuse_out_header *out_hdr;
+};
+struct create_cb_data {
+    struct snap_fs_dev_io_done_ctx *cb;
+    struct virtionfs *vnfs;
+    struct vnfs_conn *conn;
+    uint32_t slotid;
+
+    struct inode *i;
+
+    struct fuse_out_header *out_hdr;
+    struct fuse_entry_out *out_entry;
+    struct fuse_open_out *out_open;
+
+    uint32_t owner_val;
+};
+
+// This struct exists to get the size of the biggest cb_data for
+// the memory pool chunk size 🤷.
+// So if a new operation is added, its cb_data must be added here!
+struct cb_data {
+    union {
+        struct getattr_cb_data getattr;
+        struct lookup_cb_data lookup;
+        struct statfs_cb_data statfs;
+        struct setattr_cb_data setattr;
+        struct open_cb_data open;
+        struct read_cb_data read;
+        struct write_cb_data write;
+        struct fsync_cb_data fsync;
+        struct release_cb_data release;
+        struct create_cb_data create;
+    };
+};
+
 struct inode *vnfs4_op_putfh(struct virtionfs *vnfs, nfs_argop4 *op, uint64_t nodeid)
 {
     op->argop = OP_PUTFH;
@@ -148,21 +276,6 @@ int vnfs4_handle_sequence(COMPOUND4res *res, struct vnfs_conn *conn)
 
     return 0;
 }
-
-struct create_cb_data {
-    struct snap_fs_dev_io_done_ctx *cb;
-    struct virtionfs *vnfs;
-    struct vnfs_conn *conn;
-    uint32_t slotid;
-
-    struct inode *i;
-
-    struct fuse_out_header *out_hdr;
-    struct fuse_entry_out *out_entry;
-    struct fuse_open_out *out_open;
-
-    uint32_t owner_val;
-};
 
 void create_cb(struct rpc_context *rpc, int status, void *data,
                        void *private_data)
@@ -294,17 +407,6 @@ int create(struct fuse_session *se, struct virtionfs *vnfs,
     return EWOULDBLOCK;
 }
 
-struct release_cb_data {
-    struct snap_fs_dev_io_done_ctx *cb;
-    struct virtionfs *vnfs;
-    struct vnfs_conn *conn;
-    uint32_t slotid;
-
-    struct inode *i;
-
-    struct fuse_out_header *out_hdr;
-};
-
 void release_cb(struct rpc_context *rpc, int status, void *data,
                        void *private_data) {
     struct release_cb_data *cb_data = (struct release_cb_data *)private_data;
@@ -337,7 +439,6 @@ ret:;
     mpool2_free(vnfs->p, cb_data);
     cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb->user_arg);
 }
-
 
 int release(struct fuse_session *se, struct virtionfs *vnfs,
            struct fuse_in_header *in_hdr, struct fuse_release_in *in_release,
@@ -411,16 +512,6 @@ int release(struct fuse_session *se, struct virtionfs *vnfs,
     return EWOULDBLOCK;
 }
 
-struct fsync_cb_data {
-    struct snap_fs_dev_io_done_ctx *cb;
-    struct virtionfs *vnfs;
-    struct vnfs_conn *conn;
-    uint32_t slotid;
-
-    struct fuse_out_header *out_hdr;
-    struct fuse_statfs_out *stat;
-};
-
 void vfsync_cb(struct rpc_context *rpc, int status, void *data,
                        void *private_data) {
     struct fsync_cb_data *cb_data = (struct fsync_cb_data *)private_data;
@@ -451,7 +542,6 @@ ret:;
     mpool2_free(vnfs->p, cb_data);
     cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb->user_arg);
 }
-
 
 // FUSE_FSYNC_FDATASYNC is not really adhered to, we always commit metadata
 int vfsync(struct fuse_session *se, struct virtionfs *vnfs,
@@ -510,20 +600,6 @@ int vfsync(struct fuse_session *se, struct virtionfs *vnfs,
 
     return EWOULDBLOCK;
 }
-
-struct write_cb_data {
-    struct snap_fs_dev_io_done_ctx *cb;
-    struct virtionfs *vnfs;
-    struct vnfs_conn *conn;
-    uint32_t slotid;
-
-    struct fuse_write_in *in_write;
-    struct iovec *in_iov;
-    int *in_iovcnt;
-
-    struct fuse_out_header *out_hdr;
-    struct fuse_write_out *out_write;
-};
 
 void vwrite_cb(struct rpc_context *rpc, int status, void *data,
            void *private_data)
@@ -665,17 +741,6 @@ static size_t iovec_write_buf(struct iovec *iov, int iovcnt,
     return written;
 }
 
-struct read_cb_data {
-    struct snap_fs_dev_io_done_ctx *cb;
-    struct virtionfs *vnfs;
-    struct vnfs_conn *conn;
-    uint32_t slotid;
-
-    struct fuse_out_header *out_hdr;
-    struct iovec *out_iov;
-    int out_iovcnt;
-};
-
 void vread_cb(struct rpc_context *rpc, int status, void *data,
               void *private_data)
 {
@@ -762,20 +827,6 @@ int vread(struct fuse_session *se, struct virtionfs *vnfs,
 
     return EWOULDBLOCK;
 }
-
-struct open_cb_data {
-    struct snap_fs_dev_io_done_ctx *cb;
-    struct virtionfs *vnfs;
-    struct vnfs_conn *conn;
-    uint32_t slotid;
-
-    struct inode *i;
-
-    struct fuse_out_header *out_hdr;
-    struct fuse_open_out *out_open;
-
-    uint32_t owner_val;
-};
 
 void vopen_cb(struct rpc_context *rpc, int status, void *data,
               void *private_data)
@@ -923,19 +974,6 @@ int vopen(struct fuse_session *se, struct virtionfs *vnfs,
     return EWOULDBLOCK;
 }
 
-struct setattr_cb_data {
-    struct snap_fs_dev_io_done_ctx *cb;
-    struct virtionfs *vnfs;
-    struct vnfs_conn *conn;
-    uint32_t slotid;
-
-    struct fuse_out_header *out_hdr;
-    struct fuse_attr_out *out_attr;
-
-    uint64_t *bitmap;
-    char *attrlist;
-};
-
 void setattr_cb(struct rpc_context *rpc, int status, void *data,
                        void *private_data)
 {
@@ -1074,16 +1112,6 @@ int setattr(struct fuse_session *se, struct virtionfs *vnfs,
     return EWOULDBLOCK;
 }
 
-struct statfs_cb_data {
-    struct snap_fs_dev_io_done_ctx *cb;
-    struct virtionfs *vnfs;
-    struct vnfs_conn *conn;
-    uint32_t slotid;
-
-    struct fuse_out_header *out_hdr;
-    struct fuse_statfs_out *out_statfs;
-};
-
 void statfs_cb(struct rpc_context *rpc, int status, void *data,
                        void *private_data) {
     struct statfs_cb_data *cb_data = (struct statfs_cb_data *)private_data;
@@ -1160,7 +1188,6 @@ int statfs(struct fuse_session *se, struct virtionfs *vnfs,
     // GETATTR statfs attributes
     nfs4_op_getattr(&op[2], statfs_attributes, 2);
 
-
 #ifdef LATENCY_MEASURING_ENABLED
     if (vnfs->nthreads == 1) {
         op_calls[FUSE_STATFS]++;
@@ -1177,16 +1204,6 @@ int statfs(struct fuse_session *se, struct virtionfs *vnfs,
 
     return EWOULDBLOCK;
 }
-
-struct lookup_cb_data {
-    struct snap_fs_dev_io_done_ctx *cb;
-    struct virtionfs *vnfs;
-    struct vnfs_conn *conn;
-    uint32_t slotid;
-
-    struct fuse_out_header *out_hdr;
-    struct fuse_entry_out *out_entry;
-};
 
 void lookup_cb(struct rpc_context *rpc, int status, void *data,
                        void *private_data) {
@@ -1317,16 +1334,6 @@ int lookup(struct fuse_session *se, struct virtionfs *vnfs,
 
     return EWOULDBLOCK;
 }
-
-struct getattr_cb_data {
-    struct snap_fs_dev_io_done_ctx *cb;
-    struct virtionfs *vnfs;
-    struct vnfs_conn *conn;
-    uint32_t slotid;
-
-    struct fuse_out_header *out_hdr;
-    struct fuse_attr_out *out_attr;
-};
 
 void getattr_cb(struct rpc_context *rpc, int status, void *data,
                        void *private_data)
@@ -1534,7 +1541,7 @@ void virtionfs_main(char *server, char *export,
     vnfs->timeout_nsec = calc_timeout_nsec(timeout);
     vnfs->nthreads = nthreads;
 
-    int ret = mpool2_init(&vnfs->p, sizeof(struct lookup_cb_data), 256);
+    int ret = mpool2_init(&vnfs->p, sizeof(struct cb_data), 256);
     if (ret < 0) {
         vnfs_error("Failed to init mpool - err=%d", ret);
         goto ret_a;
