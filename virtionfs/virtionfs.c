@@ -165,14 +165,16 @@ struct create_cb_data {
 };
 
 void create_cb(struct rpc_context *rpc, int status, void *data,
-                       void *private_data) {
+                       void *private_data)
+{
+    struct create_cb_data *cb_data = (struct create_cb_data *)private_data;
+    struct virtionfs *vnfs = cb_data->vnfs;
+
 #ifdef LATENCY_MEASURING_ENABLED
     if (vnfs->nthreads == 1) {
         ft_stop(&ft[FUSE_CREATE]);
     }
 #endif
-    struct create_cb_data *cb_data = (struct create_cb_data *)private_data;
-    struct virtionfs *vnfs = cb_data->vnfs;
 
     cb_data->conn->session.slots[cb_data->slotid].in_use = false;
     if (status != RPC_STATUS_SUCCESS) {
@@ -309,13 +311,14 @@ struct release_cb_data {
 
 void release_cb(struct rpc_context *rpc, int status, void *data,
                        void *private_data) {
+    struct release_cb_data *cb_data = (struct release_cb_data *)private_data;
+    struct virtionfs *vnfs = cb_data->vnfs;
+
 #ifdef LATENCY_MEASURING_ENABLED
     if (vnfs->nthreads == 1) {
         ft_stop(&ft[FUSE_RELEASE]);
     }
 #endif
-    struct release_cb_data *cb_data = (struct release_cb_data *)private_data;
-    struct virtionfs *vnfs = cb_data->vnfs;
 
     cb_data->conn->session.slots[cb_data->slotid].in_use = false;
     if (status != RPC_STATUS_SUCCESS) {
@@ -424,13 +427,14 @@ struct fsync_cb_data {
 
 void vfsync_cb(struct rpc_context *rpc, int status, void *data,
                        void *private_data) {
+    struct fsync_cb_data *cb_data = (struct fsync_cb_data *)private_data;
+    struct virtionfs *vnfs = cb_data->vnfs;
+
 #ifdef LATENCY_MEASURING_ENABLED
     if (vnfs->nthreads == 1) {
         ft_stop(&ft[FUSE_FSYNC]);
     }
 #endif
-    struct fsync_cb_data *cb_data = (struct fsync_cb_data *)private_data;
-    struct virtionfs *vnfs = cb_data->vnfs;
 
     cb_data->conn->session.slots[cb_data->slotid].in_use = false;
     if (status != RPC_STATUS_SUCCESS) {
@@ -526,14 +530,16 @@ struct write_cb_data {
 };
 
 void vwrite_cb(struct rpc_context *rpc, int status, void *data,
-           void *private_data) {
+           void *private_data)
+{
+    struct write_cb_data *cb_data = (struct write_cb_data *) private_data;
+    struct virtionfs *vnfs = cb_data->vnfs;
+
 #ifdef LATENCY_MEASURING_ENABLED
     if (vnfs->nthreads == 1) {
         ft_stop(&ft[FUSE_WRITE]);
     }
 #endif
-    struct write_cb_data *cb_data = (struct write_cb_data *) private_data;
-    struct virtionfs *vnfs = cb_data->vnfs;
 
     cb_data->conn->session.slots[cb_data->slotid].in_use = false;
     if (status != RPC_STATUS_SUCCESS) {
@@ -778,14 +784,15 @@ struct open_cb_data {
 void vopen_cb(struct rpc_context *rpc, int status, void *data,
               void *private_data)
 {
+    struct open_cb_data *cb_data = (struct open_cb_data *)private_data;
+    struct virtionfs *vnfs = cb_data->vnfs;
+
 #ifdef LATENCY_MEASURING_ENABLED
     if (vnfs->nthreads == 1) {
         // Only now we can conclude that the OPEN is done
         ft_stop(&ft[FUSE_OPEN]);
     }
 #endif
-    struct open_cb_data *cb_data = (struct open_cb_data *)private_data;
-    struct virtionfs *vnfs = cb_data->vnfs;
 
     cb_data->conn->session.slots[cb_data->slotid].in_use = false;
     if (status != RPC_STATUS_SUCCESS) {
@@ -940,13 +947,14 @@ struct setattr_cb_data {
 void setattr_cb(struct rpc_context *rpc, int status, void *data,
                        void *private_data)
 {
+    struct setattr_cb_data *cb_data = (struct setattr_cb_data *)private_data;
+    struct virtionfs *vnfs = cb_data->vnfs;
+
 #ifdef LATENCY_MEASURING_ENABLED
     if (vnfs->nthreads == 1) {
         ft_stop(&ft[FUSE_SETATTR]);
-    {
+    }
 #endif
-    struct setattr_cb_data *cb_data = (struct setattr_cb_data *)private_data;
-    struct virtionfs *vnfs = cb_data->vnfs;
 
     cb_data->conn->session.slots[cb_data->slotid].in_use = false;
     if (status != RPC_STATUS_SUCCESS) {
@@ -1086,13 +1094,14 @@ struct statfs_cb_data {
 
 void statfs_cb(struct rpc_context *rpc, int status, void *data,
                        void *private_data) {
+    struct statfs_cb_data *cb_data = (struct statfs_cb_data *)private_data;
+    struct virtionfs *vnfs = cb_data->vnfs;
+
 #ifdef LATENCY_MEASURING_ENABLED
     if (vnfs->nthreads == 1) {
         ft_stop(&ft[FUSE_STATFS]);
     }
 #endif
-    struct statfs_cb_data *cb_data = (struct statfs_cb_data *)private_data;
-    struct virtionfs *vnfs = cb_data->vnfs;
 
     cb_data->conn->session.slots[cb_data->slotid].in_use = false;
     if (status != RPC_STATUS_SUCCESS) {
@@ -1192,13 +1201,14 @@ struct lookup_cb_data {
 
 void lookup_cb(struct rpc_context *rpc, int status, void *data,
                        void *private_data) {
+    struct lookup_cb_data *cb_data = (struct lookup_cb_data *)private_data;
+    struct virtionfs *vnfs = cb_data->vnfs;
+
 #ifdef LATENCY_MEASURING_ENABLED
     if (vnfs->nthreads == 1) {
         ft_stop(&ft[FUSE_LOOKUP]);
     }
 #endif
-    struct lookup_cb_data *cb_data = (struct lookup_cb_data *)private_data;
-    struct virtionfs *vnfs = cb_data->vnfs;
 
     cb_data->conn->session.slots[cb_data->slotid].in_use = false;
     if (status != RPC_STATUS_SUCCESS) {
@@ -1333,14 +1343,16 @@ struct getattr_cb_data {
 };
 
 void getattr_cb(struct rpc_context *rpc, int status, void *data,
-                       void *private_data) {
+                       void *private_data)
+{
+    struct getattr_cb_data *cb_data = (struct getattr_cb_data *)private_data;
+    struct virtionfs *vnfs = cb_data->vnfs;
+
 #ifdef LATENCY_MEASURING_ENABLED
     if (vnfs->nthreads == 1) {
         ft_stop(&ft[FUSE_GETATTR]);
     }
 #endif
-    struct getattr_cb_data *cb_data = (struct getattr_cb_data *)private_data;
-    struct virtionfs *vnfs = cb_data->vnfs;
 
     cb_data->conn->session.slots[cb_data->slotid].in_use = false;
     if (status != RPC_STATUS_SUCCESS) {
