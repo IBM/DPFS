@@ -235,7 +235,7 @@ int create(struct fuse_session *se, struct virtionfs *vnfs,
     struct inode *i = inode_table_get(vnfs->inodes, in_hdr->nodeid);
     cb_data->i = i;
     if (!i) {
-    	vnfs_error("Invalid nodeid supplied to OPEN\n");
+    	vnfs_error("Invalid nodeid supplied\n");
         mpool2_free(vnfs->p, cb_data);
         out_hdr->error = -ENOENT;
         return 0;
@@ -347,7 +347,7 @@ int release(struct fuse_session *se, struct virtionfs *vnfs,
 {
     struct inode *i = inode_table_get(vnfs->inodes, in_hdr->nodeid);
     if (!i) {
-    	vnfs_error("Invalid nodeid supplied to OPEN\n");
+    	vnfs_error("Invalid nodeid supplied\n");
         out_hdr->error = -ENOENT;
         return 0;
     }
@@ -482,7 +482,7 @@ int vfsync(struct fuse_session *se, struct virtionfs *vnfs,
     // PUTFH
     struct inode *i = vnfs4_op_putfh(vnfs, &op[1], in_hdr->nodeid);
     if (!i) {
-    	vnfs_error("Invalid nodeid supplied to fsync\n");
+    	vnfs_error("Invalid nodeid supplied\n");
         mpool2_free(vnfs->p, cb_data);
         out_hdr->error = -ENOENT;
         return 0;
@@ -601,7 +601,7 @@ int vwrite(struct fuse_session *se, struct virtionfs *vnfs,
     // PUTFH
     struct inode *i = vnfs4_op_putfh_open(vnfs, &op[1], in_hdr->nodeid);
     if (!i) {
-    	vnfs_error("Invalid nodeid supplied to write\n");
+    	vnfs_error("Invalid nodeid supplied\n");
         mpool2_free(vnfs->p, cb_data);
         out_hdr->error = -ENOENT;
         return 0;
@@ -740,7 +740,7 @@ int vread(struct fuse_session *se, struct virtionfs *vnfs,
     // PUTFH
     struct inode *i = vnfs4_op_putfh_open(vnfs, &op[1], in_hdr->nodeid);
     if (!i) {
-    	vnfs_error("Invalid nodeid supplied to open\n");
+    	vnfs_error("Invalid nodeid supplied\n");
         mpool2_free(vnfs->p, cb_data);
         out_hdr->error = -ENOENT;
         return 0;
@@ -840,7 +840,7 @@ int vopen(struct fuse_session *se, struct virtionfs *vnfs,
     // Get the inode manually because we want the FH of the parent later
     struct inode *i = inode_table_get(vnfs->inodes, in_hdr->nodeid);
     if (!i) {
-    	vnfs_error("Invalid nodeid supplied to OPEN\n");
+    	vnfs_error("Invalid nodeid supplied\n");
         out_hdr->error = -ENOENT;
         return 0;
     }
@@ -1012,7 +1012,7 @@ int setattr(struct fuse_session *se, struct virtionfs *vnfs,
     cb_data->slotid = vnfs4_op_sequence(&op[0], conn, false);
     struct inode *i = vnfs4_op_putfh(vnfs, &op[1], in_hdr->nodeid);
     if (!i) {
-    	vnfs_error("Invalid nodeid supplied to GETATTR\n");
+    	vnfs_error("Invalid nodeid supplied\n");
         mpool2_free(vnfs->p, cb_data);
         out_hdr->error = -ENOENT;
         return 0;
@@ -1288,7 +1288,7 @@ int lookup(struct fuse_session *se, struct virtionfs *vnfs,
     // PUTFH
     struct inode *pi = vnfs4_op_putfh(vnfs, &op[1], in_hdr->nodeid);
     if (!pi) {
-    	vnfs_error("Invalid nodeid supplied to LOOKUP\n");
+    	vnfs_error("Invalid nodeid supplied\n");
         mpool2_free(vnfs->p, cb_data);
         out_hdr->error = -ENOENT;
         return 0;
@@ -1404,7 +1404,7 @@ int getattr(struct fuse_session *se, struct virtionfs *vnfs,
     cb_data->slotid = vnfs4_op_sequence(&op[0], conn, false);
     struct inode *i = vnfs4_op_putfh(vnfs, &op[1], in_hdr->nodeid);
     if (!i) {
-    	vnfs_error("Invalid nodeid supplied to GETATTR\n");
+    	vnfs_error("Invalid nodeid supplied\n");
         mpool2_free(vnfs->p, cb_data);
         out_hdr->error = -ENOENT;
         return 0;

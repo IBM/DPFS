@@ -63,7 +63,7 @@ int mpool2_init(struct mpool2 **p, uint64_t chunk_size, uint64_t chunks) {
 // If not all the chunks have been freed yet, then memory leaks will occur!
 void mpool2_destroy(struct mpool2 *p) {
     void *e = NULL;
-    while (ck_ring_dequeue_spsc(&p->ring, p->buffer, e)) {
+    while (ck_ring_dequeue_spsc(&p->ring, p->buffer, &e)) {
         free(e);
     }
     free(p);

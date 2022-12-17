@@ -152,7 +152,6 @@ static void virtiofs_emu_ll_loop_multithreaded(struct virtio_fs_ctrl *ctrl,
         }
     }
 
-    pthread_setspecific(virtiofs_thread_id_key, (void *) 0);
     // The main thread also does mmio polling and signal handling
     virtiofs_emu_ll_loop_singlethreaded(ctrl, interval, 0);
 
@@ -270,7 +269,9 @@ struct virtiofs_emu_ll *virtiofs_emu_ll_new(struct virtiofs_emu_ll_params *param
     param.num_queues = 64;
     param.queue_depth = 64;
     param.force_in_order = false;
-    param.recover = false; // See snap_virtio_fs_ctrl.c:811, if enabled this controller is supposed to be recovered from the dead
+    // See snap_virtio_fs_ctrl.c:811, if enabled this controller is
+    // supposed to be recovered from the dead
+    param.recover = false;
     param.suspended = false;
     param.virtiofs_emu_handle_req = virtiofs_emu_ll_handle_fuse_req;
     param.vf_change_cb = NULL;
@@ -292,6 +293,13 @@ struct virtiofs_emu_ll *virtiofs_emu_ll_new(struct virtiofs_emu_ll_params *param
     emu->snap_ctrl = virtio_fs_ctrl_init(&param);
     if (!emu->snap_ctrl) {
         fprintf(stderr, "failed to initialize VirtIO-FS controller\n");
+        goto clear_pci_list;
+    }
+
+    // Initialize the thread-local key we use to tell each of the Virtio
+    // polling threads, which thread id it has
+    if (pthread_key_create(&virtiofs_thread_id_key, NULL)) {
+        fprintf(stderr, "Failed to create thread-local key for virtiofs threadid\n");
         goto clear_pci_list;
     }
 
