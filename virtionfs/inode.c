@@ -21,24 +21,19 @@
 #include "virtiofs_emu_ll.h"
 #include "common.h"
 
-struct inode *inode_new(fattr4_fileid fileid, const char *filename,
-        struct inode *parent)
+struct inode *inode_new(fattr4_fileid fileid)
 {
     struct inode *i = calloc(1, sizeof(struct inode));
     if (!i)
         return NULL;
 
     i->fileid = fileid;
-    if (filename)
-        i->filename = strdup(filename);
-    i->parent = parent;
     // We keep the fh at 0, aka no fh
 
     return i;
 }
 
 void inode_destroy(struct inode *i) {
-    free(i->filename);
     free(i);
 }
 
@@ -108,8 +103,7 @@ ret:
     return i;
 }
 
-struct inode *inode_table_getsert(struct inode_table *t, fattr4_fileid fileid,
-        const char *filename, struct inode *parent)
+struct inode *inode_table_getsert(struct inode_table *t, fattr4_fileid fileid)
 {
     size_t hash = inode_table_hash(t, fileid);
 
@@ -119,7 +113,7 @@ struct inode *inode_table_getsert(struct inode_table *t, fattr4_fileid fileid,
         if (i->fileid == fileid)
             goto ret;
 
-    i = inode_new(fileid, filename, parent);
+    i = inode_new(fileid);
     if (!i)
         goto ret;
 

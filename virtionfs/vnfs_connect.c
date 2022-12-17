@@ -101,7 +101,7 @@ static void lookup_true_rootfh_cb(struct rpc_context *rpc, int status, void *dat
     assert(i >= 0);
 
     // Store the filehandle of the TRUE root (aka the filehandle of where our export lives)
-    struct inode *rooti = inode_new(FUSE_ROOT_ID, NULL, NULL);
+    struct inode *rooti = inode_new(FUSE_ROOT_ID);
     nfs4_clone_fh(&rooti->fh, &res->resarray.resarray_val[i].nfs_resop4_u.opgetfh
             .GETFH4res_u.resok4.object); 
     inode_table_insert(vnfs->inodes, rooti);

@@ -243,8 +243,8 @@ int create(struct fuse_session *se, struct virtionfs *vnfs,
         return 0;
     }
     op[1].argop = OP_PUTFH;
-    op[1].nfs_argop4_u.opputfh.object.nfs_fh4_val = i->parent->fh.val;
-    op[1].nfs_argop4_u.opputfh.object.nfs_fh4_len = i->parent->fh.len;
+    op[1].nfs_argop4_u.opputfh.object.nfs_fh4_val = i->fh.val;
+    op[1].nfs_argop4_u.opputfh.object.nfs_fh4_len = i->fh.len;
 
     // OPEN
     op[2].argop = OP_OPEN;
@@ -263,11 +263,7 @@ int create(struct fuse_session *se, struct virtionfs *vnfs,
     op[2].nfs_argop4_u.opopen.owner.owner.owner_len = sizeof(cb_data->owner_val);
     // Tell the server we want to open the file in the current FH dir (aka the parent dir)
     // with the specified filename
-    op[2].nfs_argop4_u.opopen.claim.claim = CLAIM_NULL;
-    // TODO concurrency bug here if the parent gets changed underneath
-    // Don't know yet how that could happen
-    op[2].nfs_argop4_u.opopen.claim.open_claim4_u.file.utf8string_val = i->filename;
-    op[2].nfs_argop4_u.opopen.claim.open_claim4_u.file.utf8string_len = strlen(i->filename);
+    op[2].nfs_argop4_u.opopen.claim.claim = CLAIM_FH;
     // Now we determine whether to CREATE or NOCREATE
     op[2].nfs_argop4_u.opopen.openhow.opentype = OPEN4_CREATE;
     op[2].nfs_argop4_u.opopen.openhow.openflag4_u.how.mode = UNCHECKED4;
@@ -884,8 +880,8 @@ int vopen(struct fuse_session *se, struct virtionfs *vnfs,
     // PUTFH
     cb_data->i = i;
     op[1].argop = OP_PUTFH;
-    op[1].nfs_argop4_u.opputfh.object.nfs_fh4_val = i->parent->fh.val;
-    op[1].nfs_argop4_u.opputfh.object.nfs_fh4_len = i->parent->fh.len;
+    op[1].nfs_argop4_u.opputfh.object.nfs_fh4_val = i->fh.val;
+    op[1].nfs_argop4_u.opputfh.object.nfs_fh4_len = i->fh.len;
 
     // OPEN
     op[2].argop = OP_OPEN;
@@ -904,11 +900,7 @@ int vopen(struct fuse_session *se, struct virtionfs *vnfs,
     op[2].nfs_argop4_u.opopen.owner.owner.owner_len = sizeof(cb_data->owner_val);
     // Tell the server we want to open the file in the current FH dir (aka the parent dir)
     // with the specified filename
-    op[2].nfs_argop4_u.opopen.claim.claim = CLAIM_NULL;
-    // TODO concurrency bug here if the parent gets changed underneath
-    // Don't know yet how that could happen
-    op[2].nfs_argop4_u.opopen.claim.open_claim4_u.file.utf8string_val = i->filename;
-    op[2].nfs_argop4_u.opopen.claim.open_claim4_u.file.utf8string_len = strlen(i->filename);
+    op[2].nfs_argop4_u.opopen.claim.claim = CLAIM_FH;
     // FUSE:OPEN cannot create a file
     op[2].nfs_argop4_u.opopen.openhow.opentype = OPEN4_NOCREATE;
 
@@ -1192,9 +1184,6 @@ struct lookup_cb_data {
     struct vnfs_conn *conn;
     uint32_t slotid;
 
-    char *in_name;
-    struct inode *parent_inode;
-
     struct fuse_out_header *out_hdr;
     struct fuse_entry_out *out_entry;
 };
@@ -1241,7 +1230,7 @@ void lookup_cb(struct rpc_context *rpc, int status, void *data,
     cb_data->out_entry->nodeid = fileid;
     cb_data->out_entry->generation = 0;
 
-    struct inode *i = inode_table_getsert(vnfs->inodes, fileid, cb_data->in_name, cb_data->parent_inode);
+    struct inode *i = inode_table_getsert(vnfs->inodes, fileid);
     if (!i) {
         vnfs_error("Couldn't getsert inode with fileid: %lu\n", fileid);
         cb_data->out_hdr->error = -ENOMEM;
@@ -1303,9 +1292,6 @@ int lookup(struct fuse_session *se, struct virtionfs *vnfs,
         out_hdr->error = -ENOENT;
         return 0;
     }
-    // Store these two for later use when creating the inode
-    cb_data->parent_inode = pi;
-    cb_data->in_name = in_name;
     // LOOKUP
     nfs4_op_lookup(&op[2], in_name);
     // FH now replaced with in_name's FH
