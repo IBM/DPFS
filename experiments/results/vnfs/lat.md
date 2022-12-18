@@ -1,3 +1,6 @@
+This information was accurate on the 30th of November 2022
+Now accurate anymore!
+
 # Statfs
 Half of the time:
 Host statfs latency = 82usec

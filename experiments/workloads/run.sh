@@ -14,7 +14,7 @@ HOST=$(uname -n)
 COMMIT=$(git rev-parse --short HEAD)
 OUT=$SCRIPT_DIR/output/${COMMIT}_${HOST}_${TIMESTAMP}
 
-mkdir $OUT
+mkdir -p $OUT
 # fio
 echo "The output will be stored under $OUT"
 echo "Running: lat.fio"
@@ -33,3 +33,5 @@ gcc ./lat/lat_statfs.c -O3 -o ./lat/lat_statfs
 ./lat/lat_statfs $MNT 50000 1 > $OUT/lat_statfs.out
 
 echo "DONE"
+
+echo If the experiment was successful and the results are verified, please move them to the results folder of the implementation that was used
