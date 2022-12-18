@@ -61,13 +61,18 @@ struct virtiofs_emu_ll {
 };
 
 static volatile int keep_running = 1;
+pthread_key_t virtiofs_thread_id_key;
 
 void signal_handler(int dummy)
 {
     keep_running = 0;
 }
 
-static void virtiofs_emu_ll_loop_singlethreaded(struct virtio_fs_ctrl *ctrl, useconds_t interval, int thread_id) {
+static void virtiofs_emu_ll_loop_singlethreaded(struct virtio_fs_ctrl *ctrl, useconds_t interval, int thread_id)
+{
+    // Only one thread, thread_id=0
+    pthread_setspecific(virtiofs_thread_id_key, (void *) 0);
+
     struct sigaction act;
     memset(&act, 0, sizeof(act));
     act.sa_handler = signal_handler;
@@ -108,7 +113,7 @@ static void virtiofs_emu_ll_loop_singlethreaded(struct virtio_fs_ctrl *ctrl, use
 }
 
 struct emu_ll_tdata {
-    int thread_id;
+    size_t thread_id;
     struct virtio_fs_ctrl *ctrl;
     useconds_t interval;
     pthread_t thread;
@@ -117,6 +122,10 @@ struct emu_ll_tdata {
 static void *virtiofs_emu_ll_loop_thread(void *arg)
 {
     struct emu_ll_tdata *tdata = (struct emu_ll_tdata *)arg;
+
+    // Store the thread_id in thread local storage so that the FUSE implementation
+    // knows what thread number its in when called with a request
+    pthread_setspecific(virtiofs_thread_id_key, (void *) tdata->thread_id);
 
     // poll as fast as we can! Someone else is doing mmio polling
     while (keep_running || !virtio_fs_ctrl_is_suspended(tdata->ctrl))
@@ -257,10 +266,12 @@ struct virtiofs_emu_ll *virtiofs_emu_ll_new(struct virtiofs_emu_ll_params *param
     param.vf_id = emu_params.vf_id;
 
     param.dev_type = "virtiofs_emu";
-    param.num_queues = 2;
+    param.num_queues = 64;
     param.queue_depth = 64;
     param.force_in_order = false;
-    param.recover = false; // See snap_virtio_fs_ctrl.c:811, if enabled this controller is supposed to be recovered from the dead
+    // See snap_virtio_fs_ctrl.c:811, if enabled this controller is
+    // supposed to be recovered from the dead
+    param.recover = false;
     param.suspended = false;
     param.virtiofs_emu_handle_req = virtiofs_emu_ll_handle_fuse_req;
     param.vf_change_cb = NULL;
@@ -282,6 +293,13 @@ struct virtiofs_emu_ll *virtiofs_emu_ll_new(struct virtiofs_emu_ll_params *param
     emu->snap_ctrl = virtio_fs_ctrl_init(&param);
     if (!emu->snap_ctrl) {
         fprintf(stderr, "failed to initialize VirtIO-FS controller\n");
+        goto clear_pci_list;
+    }
+
+    // Initialize the thread-local key we use to tell each of the Virtio
+    // polling threads, which thread id it has
+    if (pthread_key_create(&virtiofs_thread_id_key, NULL)) {
+        fprintf(stderr, "Failed to create thread-local key for virtiofs threadid\n");
         goto clear_pci_list;
     }
 

@@ -8,6 +8,7 @@
 #ifndef VIRTIOFS_EMU_LL_H
 #define VIRTIOFS_EMU_LL_H
 
+#include <pthread.h>
 #include <linux/fuse.h>
 #include <unistd.h>
 
@@ -30,7 +31,6 @@ typedef int (*virtiofs_emu_ll_handler_t) (void *user_data,
                             struct iovec *fuse_out_iov, int out_iovcnt,
                             struct snap_fs_dev_io_done_ctx *cb);
 
-
 struct virtiofs_emu_params {
     useconds_t polling_interval_usec; // Time between every poll
     int pf_id; // Physical function ID
@@ -47,6 +47,9 @@ struct virtiofs_emu_ll_params {
     void *user_data; // Pointer to user data that gets passed with every virtiofs_emu_ll_handler
     struct virtiofs_emu_params emu_params;
 };
+
+extern pthread_key_t virtiofs_thread_id_key;
+
 // Non-user accesible
 struct virtiofs_emu_ll;
 

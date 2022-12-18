@@ -27,25 +27,33 @@ void mpool2_free(struct mpool2 *p, void *e) {
 #define MIN(x, y) x < y ? x : y
 
 // Not thread-safe!
-int mpool2_init(struct mpool2 *p, uint64_t chunk_size, uint64_t chunks) {
+int mpool2_init(struct mpool2 **p, uint64_t chunk_size, uint64_t chunks) {
     if (chunks < 4 || (chunks & (chunks - 1)) == 1) {
         fprintf(stderr, "mpool2: chunks must be >= 4 and a power of 2\n");
         return -EINVAL;
     }
 
-    p->buffer = malloc(sizeof(ck_ring_buffer_t) * chunks);
-    if (!p->buffer) return -ENOMEM;
-    ck_ring_init(&p->ring, chunks);
+    *p = calloc(1, sizeof(struct mpool2));
+    if (!*p)
+        return -ENOMEM;
+
+    (*p)->buffer = malloc(sizeof(ck_ring_buffer_t) * chunks);
+    if (!(*p)->buffer) {
+        free(*p);
+        return -ENOMEM;
+    }
+    ck_ring_init(&(*p)->ring, chunks);
 
     for (int i = 0; i < chunks; i++) {
         void *e = malloc(chunk_size);
         if (!e) {
             for (int j = 0; j < i; j++) {
-                free(mpool2_alloc(p));
+                free(mpool2_alloc(*p));
             }
+            free(*p);
             return -ENOMEM;
         }
-        mpool2_free(p, e);
+        mpool2_free(*p, e);
     }
 
     return 0;
@@ -55,7 +63,8 @@ int mpool2_init(struct mpool2 *p, uint64_t chunk_size, uint64_t chunks) {
 // If not all the chunks have been freed yet, then memory leaks will occur!
 void mpool2_destroy(struct mpool2 *p) {
     void *e = NULL;
-    while (ck_ring_dequeue_spsc(&p->ring, p->buffer, e)) {
+    while (ck_ring_dequeue_spsc(&p->ring, p->buffer, &e)) {
         free(e);
     }
+    free(p);
 }

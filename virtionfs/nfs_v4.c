@@ -36,9 +36,11 @@ int nfs4_clone_fh(vnfs_fh4 *dst, nfs_fh4 *src) {
 int32_t nfs_error_to_fuse_error(nfsstat4 status) {
     if (status <= NFS4ERR_MLINK) {
         return status;
+    } else if (status == NFS4ERR_GRACE) {
+        return EAGAIN;
     } else {
         fprintf(stderr, "Unknown NFS status code in nfs_error_to_fuse_error!\n");
-        return -ENOSYS;
+        return ENOSYS;
     }
 }
 
@@ -92,45 +94,140 @@ int nfs4_fill_create_attrs(struct fuse_in_header *in_hdr, uint32_t mode, fattr4 
     return 0;
 }
 
+bool nfs4_check_session_trunking_allowed(EXCHANGE_ID4resok *l, EXCHANGE_ID4resok *r) {
+    return l->eir_clientid == r->eir_clientid 
+        && l->eir_server_owner.so_major_id.so_major_id_len == r->eir_server_owner.so_major_id.so_major_id_len
+        && memcmp(l->eir_server_owner.so_major_id.so_major_id_val, r->eir_server_owner
+            .so_major_id.so_major_id_val, l->eir_server_owner.so_major_id.so_major_id_len) == 0
+        && l->eir_server_owner.so_minor_id == r->eir_server_owner.so_minor_id
+        && l->eir_server_scope.eir_server_scope_len == r->eir_server_scope.eir_server_scope_len
+        && memcmp(l->eir_server_scope.eir_server_scope_val, r->eir_server_scope
+            .eir_server_scope_val, l->eir_server_scope.eir_server_scope_len) == 0;
+}
+
+// With clientid trunking the server owner's minor id does not have to match
+bool nfs4_check_clientid_trunking_allowed(EXCHANGE_ID4resok *l, EXCHANGE_ID4resok *r) {
+    return l->eir_clientid == r->eir_clientid 
+        && l->eir_server_owner.so_major_id.so_major_id_len == r->eir_server_owner.so_major_id.so_major_id_len
+        && memcmp(l->eir_server_owner.so_major_id.so_major_id_val, r->eir_server_owner
+            .so_major_id.so_major_id_val, l->eir_server_owner.so_major_id.so_major_id_len) == 0
+        && l->eir_server_scope.eir_server_scope_len == r->eir_server_scope.eir_server_scope_len
+        && memcmp(l->eir_server_scope.eir_server_scope_val, r->eir_server_scope
+            .eir_server_scope_val, l->eir_server_scope.eir_server_scope_len) == 0;
+}
+
+int nfs4_op_createsession(nfs_argop4 *op, clientid4 clientid, sequenceid4 seqid)
+{
+   op[0].argop = OP_CREATE_SESSION;
+   CREATE_SESSION4args *arg = &op[0].nfs_argop4_u.opcreatesession;
+
+   arg->csa_clientid = clientid;
+   arg->csa_sequence = seqid;
+   // Don't request a back channel on this connection
+   arg->csa_flags = 0;
+   arg->csa_cb_program = 0;
+   arg->csa_sec_parms.csa_sec_parms_val = NULL;
+   arg->csa_sec_parms.csa_sec_parms_len = 0;
+
+   // Currently no caching support
+   arg->csa_fore_chan_attrs.ca_maxrequests = NFS4_MAX_OUTSTANDING_REQUESTS;
+   // Magic from the Linux kernel, 8 seems about right
+   arg->csa_fore_chan_attrs.ca_maxoperations = NFS4_MAX_OPS;
+   arg->csa_fore_chan_attrs.ca_maxresponsesize_cached = 0;
+   arg->csa_fore_chan_attrs.ca_maxresponsesize = NFS4_MAXRESPONSESIZE;
+   arg->csa_fore_chan_attrs.ca_maxrequestsize = NFS4_MAXREQUESTSIZE;
+   // We have too little control over libnfs to properly use this
+   arg->csa_fore_chan_attrs.ca_headerpadsize = 0;
+   // No RDMA here
+   arg->csa_fore_chan_attrs.ca_rdma_ird.ca_rdma_ird_val = NULL;
+   arg->csa_fore_chan_attrs.ca_rdma_ird.ca_rdma_ird_len = 0;
+
+   // No back channel support (see Github issue #17)
+   // But the server would like us to set these anyway
+   arg->csa_back_chan_attrs.ca_maxrequests = 0;
+   arg->csa_back_chan_attrs.ca_maxresponsesize_cached = 0;
+   arg->csa_back_chan_attrs.ca_maxoperations = NFS4_MAX_OPS;
+   arg->csa_back_chan_attrs.ca_maxresponsesize = NFS4_MAXRESPONSESIZE;
+   arg->csa_back_chan_attrs.ca_maxrequestsize = NFS4_MAXREQUESTSIZE;
+   arg->csa_back_chan_attrs.ca_headerpadsize = 0;
+   arg->csa_back_chan_attrs.ca_rdma_ird.ca_rdma_ird_val = NULL;
+   arg->csa_back_chan_attrs.ca_rdma_ird.ca_rdma_ird_len = 0;
+
+   return 1;
+}
+
+
+int nfs4_op_bindconntosession(nfs_argop4 *op, sessionid4 *sessionid, channel_dir_from_client4 channel, bool rdma)
+{
+   BIND_CONN_TO_SESSION4args *bindargs;
+   op[0].argop = OP_BIND_CONN_TO_SESSION;
+   bindargs = &op[0].nfs_argop4_u.opbindconntosession;
+
+   memcpy(&bindargs->bctsa_sessid, sessionid, sizeof(sessionid4));
+   bindargs->bctsa_dir = CDFC4_FORE_OR_BOTH;
+   bindargs->bctsa_use_conn_in_rdma_mode = rdma;
+
+   return 1;
+}
+
+int nfs4_op_exchangeid(nfs_argop4 *op, verifier4 verifier, const char *client_name)
+{
+   op[0].argop = OP_EXCHANGE_ID;
+   EXCHANGE_ID4args *exidargs = &op[0].nfs_argop4_u.opexchangeid;
+
+   memcpy(exidargs->eia_clientowner.co_verifier, verifier, sizeof(verifier4));
+   exidargs->eia_clientowner.co_ownerid.co_ownerid_val = (char *) client_name;
+   exidargs->eia_clientowner.co_ownerid.co_ownerid_len = strlen(client_name);
+
+   exidargs->eia_state_protect.spa_how = SP4_NONE;
+
+   exidargs->eia_flags = 0;
+
+   exidargs->eia_client_impl_id.eia_client_impl_id_val = NULL;
+   exidargs->eia_client_impl_id.eia_client_impl_id_len = 0;
+
+   return 1;
+}
+
 /* Functions taken and modified from libnfs/lib/nfs_v4.c
  * commit: 2678dfecd9c797991b7768490929b1478f339809 */
 
 int nfs4_op_setclientid(nfs_argop4 *op, verifier4 verifier, const char *client_name)
 {
-        SETCLIENTID4args *scidargs;
+   SETCLIENTID4args *scidargs;
+   op[0].argop = OP_SETCLIENTID;
+   scidargs = &op[0].nfs_argop4_u.opsetclientid;
 
-        op[0].argop = OP_SETCLIENTID;
-        scidargs = &op[0].nfs_argop4_u.opsetclientid;
-        memcpy(scidargs->client.verifier, verifier, sizeof(verifier4));
-        scidargs->client.id.id_len = strlen(client_name);
-        scidargs->client.id.id_val = (char *) client_name;
-        /* TODO: Decide what we should do here. As long as we only
-         * expose a single FD to the application we will not be able to
-         * do NFSv4 callbacks easily.
-         * Just give it garbage for now until we figure out how we should
-         * solve this. Until then we will just have to avoid doing things
-         * that require a callback.
-         * ( Clients (i.e. Linux) ignore this anyway and just call back to
-         *   the originating address and program anyway. )
-         */
-        scidargs->callback.cb_program = 0; /* NFS4_CALLBACK */
-        scidargs->callback.cb_location.r_netid = "tcp";
-        scidargs->callback.cb_location.r_addr = "0.0.0.0.0.0";
-        scidargs->callback_ident = 0x00000001;
+   memcpy(scidargs->client.verifier, verifier, sizeof(verifier4));
+   scidargs->client.id.id_len = strlen(client_name);
+   scidargs->client.id.id_val = (char *) client_name;
+   /* TODO: Decide what we should do here. As long as we only
+    * expose a single FD to the application we will not be able to
+    * do NFSv4 callbacks easily.
+    * Just give it garbage for now until we figure out how we should
+    * solve this. Until then we will just have to avoid doing things
+    * that require a callback.
+    * ( Clients (i.e. Linux) ignore this anyway and just call back to
+    *   the originating address and program anyway. )
+    */
+   scidargs->callback.cb_program = 0; /* NFS4_CALLBACK */
+   scidargs->callback.cb_location.r_netid = "tcp";
+   scidargs->callback.cb_location.r_addr = "0.0.0.0.0.0";
+   scidargs->callback_ident = 0x00000001;
 
-        return 1;
+   return 1;
 }
 
 int nfs4_op_setclientid_confirm(struct nfs_argop4 *op, uint64_t clientid, verifier4 verifier)
 {
-        SETCLIENTID_CONFIRM4args *scidcargs;
+   SETCLIENTID_CONFIRM4args *scidcargs;
 
-        op[0].argop = OP_SETCLIENTID_CONFIRM;
-        scidcargs = &op[0].nfs_argop4_u.opsetclientid_confirm;
-        scidcargs->clientid = clientid;
-        memcpy(scidcargs->setclientid_confirm, verifier, NFS4_VERIFIER_SIZE);
+   op[0].argop = OP_SETCLIENTID_CONFIRM;
+   scidcargs = &op[0].nfs_argop4_u.opsetclientid_confirm;
+   scidcargs->clientid = clientid;
+   memcpy(scidcargs->setclientid_confirm, verifier, NFS4_VERIFIER_SIZE);
 
-        return 1;
+   return 1;
 }
 
 int nfs4_find_op(COMPOUND4res *res, int op)

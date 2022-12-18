@@ -21,11 +21,10 @@ int main(int argc, char **argv)
     char *emu_manager = NULL; // the rdma device name which supports being an emulation manager and virtio_fs emu
     char *server = NULL;
     char *export = NULL;
-    uint32_t nthreads_virtio = 0;
-    uint32_t nthreads_nfs = 1;
+    uint32_t nthreads = 1;
 
     int opt;
-    while ((opt = getopt(argc, argv, "p:v:e:s:x:t:y:")) != -1) {
+    while ((opt = getopt(argc, argv, "p:v:e:s:x:t:")) != -1) {
         switch (opt) {
             case 'p':
                 pf = atoi(optarg);
@@ -43,10 +42,7 @@ int main(int argc, char **argv)
                 export = optarg;
                 break;
             case 't':
-                nthreads_virtio = strtoul(optarg, NULL, 10);
-                break;
-            case 'y':
-                nthreads_nfs = strtoul(optarg, NULL, 10);
+                nthreads = strtoul(optarg, NULL, 10);
                 break;
             default: /* '?' */
                 usage();
@@ -91,10 +87,10 @@ int main(int argc, char **argv)
     printf("Connecting to %s:%s\n", server, export);
 
     emu_params.polling_interval_usec = 0;
-    emu_params.nthreads = nthreads_virtio;
+    emu_params.nthreads = nthreads;
     emu_params.tag = "virtionfs";
 
-    virtionfs_main(server, export, false, false, nthreads_nfs, &emu_params);
+    virtionfs_main(server, export, false, false, nthreads, &emu_params);
 
     return 0;
 }

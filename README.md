@@ -21,7 +21,7 @@ This implemention is currently unmaintained. Ever since the `virtiofs_emu_fuse_l
 Reflects a NFS folder with the asynchronous userspace NFS library `libnfs` by implementing the lowlevel FUSE API in `virtiofs_emu_fuse_lowlevel`. Current work in progress. The Linux fuse implementation's FUSE:init timeout is too short for the full NFS connect handshake (RPC connect, setting clientid and resolving the filehandle of the export path), so wait for `virtionfs` to report that the handshake is done before starting a workload!
 
 The NFS server needs to support NFS 4.1 or greater!
-Since upstream `libnfs` does not fully implement NFS 4.1 yet (+ no polling timeout), [this fork of `libnfs`](https://github.com/Peter-JanGootzen/libnfs) is needed, which implements the missing functionality we need.
+Since the current release version of `libnfs` does not fully implement NFS 4.1 yet (+ no polling timeout), [this new version of `libnfs`](https://github.com/sahlberg/libnfs/commit/7e91d041c74ee33f48fc81465aa97d6610772890) is needed, which implements the missing functionality we need.
 ### `list_emulation_managers`
 Standalone program to find out which RDMA devices have emulation capabilities
 
@@ -30,4 +30,4 @@ Standalone program to find out which RDMA devices have emulation capabilities
 * Determine the RDMA device that has virtio-fs emulation capabilities by running `list_emulation_managers`
 * Use `virtiofuser`, `virtiofuser_aio` or `virtionfs` by specifying the correct physical function (PF) with `-p`, virtual function (VF) zero `-v 0` and the RDMA device name that has virtio-fs emulation capabilities with `-e`
 
-## :switzerland: Cloud Data Platforms group at IBM Research Zurich
+## :switzerland: Hybrid Cloud / Infrastructure Software group at IBM Research Zurich
