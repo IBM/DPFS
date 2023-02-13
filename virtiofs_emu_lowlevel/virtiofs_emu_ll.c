@@ -311,6 +311,7 @@ struct virtiofs_emu_ll *virtiofs_emu_ll_new(struct virtiofs_emu_ll_params *param
 clear_pci_list:
     mlnx_snap_pci_manager_clear();
 out:
+    free(param.virtiofs_emu);
     return NULL;
 }
 

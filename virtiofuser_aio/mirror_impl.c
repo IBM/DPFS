@@ -556,7 +556,7 @@ int fuser_mirror_fsyncdir(struct fuse_session *se, void *user_data,
 }
 
 int fuser_mirror_create(struct fuse_session *se, struct fuser *f,
-    struct fuse_in_header *in_hdr, struct fuse_create_in in_create, const char *in_name,
+    struct fuse_in_header *in_hdr, struct fuse_create_in in_create, const char *const in_name,
     struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry, struct fuse_open_out *out_open)
 {
     struct fuse_file_info fi;
@@ -717,12 +717,15 @@ static int make_something(struct fuser *f, fuse_ino_t parent,
     int res;
     struct inode *ip = ino_to_inodeptr(f, parent);
 
-    if (S_ISDIR(mode))
+    if (S_ISDIR(mode)) {
         res = mkdirat(ip->fd, name, mode);
-    else if (S_ISLNK(mode))
+    } else if (S_ISLNK(mode)) {
+        if (!link)
+            return EINVAL;
         res = symlinkat(link, ip->fd, name);
-    else
+    } else {
         res = mknodat(ip->fd, name, mode, rdev);
+    }
     int saverr = errno;
     if (res == -1)
         goto out_err;

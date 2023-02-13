@@ -1072,10 +1072,11 @@ int setattr(struct fuse_session *se, struct virtionfs *vnfs,
     size_t attrlist_len = 0;
     if (in_setattr->valid & FUSE_SET_ATTR_MODE) {
         *bitmap |= (1UL << FATTR4_MODE);
-        attrlist_len += 4;
+        attrlist_len += sizeof(mode4);
     }
     if (in_setattr->valid & FUSE_SET_ATTR_SIZE) {
         *bitmap |= (1UL << FATTR4_SIZE);
+        attrlist_len += sizeof(uint64_t);
     }
     char *attrlist = malloc(attrlist_len);
 

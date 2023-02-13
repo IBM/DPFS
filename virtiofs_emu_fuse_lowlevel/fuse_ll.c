@@ -715,6 +715,7 @@ static int fuse_ll_create(struct fuse_ll *f_ll,
         in_create->flags = in_open->flags;
         in_create->mode = 0;
         in_create->umask = 0;
+        in_create->padding = 0;
         name = ((char *) fuse_in_iov[1].iov_base) + sizeof(struct fuse_open_in);
     }
 

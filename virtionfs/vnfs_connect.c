@@ -148,10 +148,11 @@ static int lookup_true_rootfh(struct virtionfs *vnfs)
     if (rpc_nfs4_compound_async(conn->rpc, lookup_true_rootfh_cb, &args, vnfs) != 0) {
     	fprintf(stderr, "%s: Failed to send nfs4 LOOKUP request\n", __func__);
         vnfs_destroy_connection(conn, VNFS_CONN_STATE_SHOULD_CLOSE);
+        free(export);
         return -1;
     }
-    free(export);
 
+    free(export);
     return 0;
 }
 

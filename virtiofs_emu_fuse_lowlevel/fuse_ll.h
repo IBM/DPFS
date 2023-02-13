@@ -165,7 +165,7 @@ struct fuse_ll_operations {
                           struct fuse_out_header *out_hdr, struct fuse_attr_out *,
                           struct snap_fs_dev_io_done_ctx *cb);
     int (*create) (struct fuse_session *, void *user_data,
-                   struct fuse_in_header *in_hdr, struct fuse_create_in in_create, const char *in_name,
+                   struct fuse_in_header *in_hdr, struct fuse_create_in in_create, const char *const in_name,
                    struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry, struct fuse_open_out *out_open,
                    struct snap_fs_dev_io_done_ctx *cb);
     int (*flush) (struct fuse_session *, void *user_data,
