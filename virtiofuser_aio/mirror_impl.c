@@ -362,7 +362,7 @@ static bool is_dot_or_dotdot(const char *name) {
 
 int fuser_mirror_readdir(struct fuse_session *se, struct fuser *f,
                        struct fuse_in_header *in_hdr, struct fuse_read_in *in_read, bool plus,
-                       struct fuse_out_header *out_hdr, struct iov *read_iov)
+                       struct fuse_out_header *out_hdr, struct iov read_iov)
 {
     const off_t off = in_read->offset;
     struct directory *d = (struct directory *) in_read->fh;
@@ -404,7 +404,7 @@ int fuser_mirror_readdir(struct fuse_session *se, struct fuser *f,
             err = do_lookup(f, in_hdr->nodeid, entry->d_name, &e);
             if (err)
                 goto error;
-            written = fuse_add_direntry_plus(read_iov, entry->d_name, &e, entry->d_off);
+            written = fuse_add_direntry_plus(&read_iov, entry->d_name, &e, entry->d_off);
 
             if (written == 0) {
                 if (f->debug)
@@ -415,7 +415,7 @@ int fuser_mirror_readdir(struct fuse_session *se, struct fuser *f,
         } else {
             e.attr.st_ino = entry->d_ino;
             e.attr.st_mode = entry->d_type << 12;
-            written = fuse_add_direntry(read_iov, entry->d_name, &e.attr, entry->d_off);
+            written = fuse_add_direntry(&read_iov, entry->d_name, &e.attr, entry->d_off);
 
             if (written == 0) {
                 if (f->debug)
@@ -556,12 +556,12 @@ int fuser_mirror_fsyncdir(struct fuse_session *se, void *user_data,
 }
 
 int fuser_mirror_create(struct fuse_session *se, struct fuser *f,
-    struct fuse_in_header *in_hdr, struct fuse_create_in *in_create, const char *in_name,
+    struct fuse_in_header *in_hdr, struct fuse_create_in in_create, const char *in_name,
     struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry, struct fuse_open_out *out_open)
 {
     struct fuse_file_info fi;
     memset(&fi, 0, sizeof(fi));
-    fi.flags = in_create->flags; // from fuse_lowlevel.c
+    fi.flags = in_create.flags; // from fuse_lowlevel.c
     struct inode *ip = ino_to_inodeptr(f, in_hdr->nodeid);
     if (!ip) {
         out_hdr->error = -EINVAL;
@@ -569,7 +569,7 @@ int fuser_mirror_create(struct fuse_session *se, struct fuser *f,
     }
 
     int fd = openat(ip->fd, in_name,
-                     (fi.flags | O_CREAT) & ~O_NOFOLLOW, in_create->mode);
+                     (fi.flags | O_CREAT) & ~O_NOFOLLOW, in_create.mode);
     if (fd == -1) {
         int err = errno;
         if (err == ENFILE || err == EMFILE)

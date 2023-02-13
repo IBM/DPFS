@@ -732,7 +732,7 @@ static int fuse_ll_create(struct fuse_ll *f_ll,
         return 0;
     }
 
-    return f_ll->ops.create(f_ll->se, f_ll->user_data, in_hdr, in_create, name, out_hdr, out_entry, out_open, cb);
+    return f_ll->ops.create(f_ll->se, f_ll->user_data, in_hdr, *in_create, name, out_hdr, out_entry, out_open, cb);
 }
 
 static int fuse_ll_flush(struct fuse_ll *f_ll,
@@ -992,7 +992,7 @@ static int fuse_ll_readdir_common(struct fuse_ll *f_ll,
     struct iov read_iov;
     iov_init(&read_iov, &fuse_out_iov[1], out_iovcnt-1);
 
-    return f_ll->ops.readdir(f_ll->se, f_ll->user_data, in_hdr, in_read, plus, out_hdr, &read_iov, cb);
+    return f_ll->ops.readdir(f_ll->se, f_ll->user_data, in_hdr, in_read, plus, out_hdr, read_iov, cb);
 }
 
 static int fuse_ll_readdir(struct fuse_ll *f_ll,

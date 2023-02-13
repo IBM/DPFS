@@ -133,15 +133,15 @@ int fuse_ll_reply_attr(struct fuse_session *se, struct fuse_out_header *, struct
 int fuse_ll_reply_entry(struct fuse_session *se, struct fuse_out_header *, struct fuse_entry_out *, struct fuse_entry_param *);
 int fuse_ll_reply_open(struct fuse_session *se, struct fuse_out_header *out_hdr, struct fuse_open_out *out_open, struct fuse_file_info *fi);
 int fuse_ll_reply_create(struct fuse_session *se, struct fuse_out_header *out_hdr,
-    struct fuse_entry_out *out_entry, struct fuse_open_out *out_open,
-    const struct fuse_entry_param *e, const struct fuse_file_info *fi);
+        struct fuse_entry_out *out_entry, struct fuse_open_out *out_open,
+        const struct fuse_entry_param *e, const struct fuse_file_info *fi);
 int fuse_ll_reply_statfs(struct fuse_session *se, struct fuse_out_header *out_hdr,
-    struct fuse_statfs_out *out_statfs, const struct statvfs *stbuf);
+        struct fuse_statfs_out *out_statfs, const struct statvfs *stbuf);
 
 size_t fuse_add_direntry(struct iov *read_iov, const char *name,
-                  const struct stat *stbuf, off_t off);
+        const struct stat *stbuf, off_t off);
 size_t fuse_add_direntry_plus(struct iov *read_iov, const char *name,
-                  const struct fuse_entry_param *e, off_t off);
+        const struct fuse_entry_param *e, off_t off);
 
 struct fuse_ll_operations {
     int (*init) (struct fuse_session *, void *user_data,
@@ -165,7 +165,7 @@ struct fuse_ll_operations {
                           struct fuse_out_header *out_hdr, struct fuse_attr_out *,
                           struct snap_fs_dev_io_done_ctx *cb);
     int (*create) (struct fuse_session *, void *user_data,
-                   struct fuse_in_header *in_hdr, struct fuse_create_in *in_create, const char *in_name,
+                   struct fuse_in_header *in_hdr, struct fuse_create_in in_create, const char *in_name,
                    struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry, struct fuse_open_out *out_open,
                    struct snap_fs_dev_io_done_ctx *cb);
     int (*flush) (struct fuse_session *, void *user_data,
@@ -192,7 +192,7 @@ struct fuse_ll_operations {
                        struct snap_fs_dev_io_done_ctx *cb);
     int (*readdir) (struct fuse_session *, void *user_data,
                     struct fuse_in_header *, struct fuse_read_in *, bool plus,
-                    struct fuse_out_header *, struct iov *,
+                    struct fuse_out_header *, struct iov,
                     struct snap_fs_dev_io_done_ctx *cb);
     // Reply with fuse_ll_reply_open()
     int (*open) (struct fuse_session *, void *user_data,
