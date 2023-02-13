@@ -844,12 +844,12 @@ int fuser_mirror_unlink(struct fuse_session *se, struct fuser *f,
 
 int fuser_mirror_flush(struct fuser *f,
                struct fuse_in_header *in_hdr, struct fuse_out_header *out_hdr,
-               struct fuse_file_info *fi)
+               struct fuse_file_info fi)
 {
     (void) f;
     (void) in_hdr;
 
-    int res = close(dup(fi->fh));
+    int res = close(dup(fi.fh));
 
     if (res == -1)
         out_hdr->error = -errno;
@@ -857,11 +857,11 @@ int fuser_mirror_flush(struct fuser *f,
 }
 
 int fuser_mirror_flock(struct fuser *f, struct fuse_in_header *in_hdr,
-                struct fuse_out_header *out_hdr, struct fuse_file_info *fi, int op)
+                struct fuse_out_header *out_hdr, struct fuse_file_info fi, int op)
 {
     (void) f;
     (void) in_hdr;
-    int res = flock(fi->fh, op);
+    int res = flock(fi.fh, op);
 
     if (res == -1)
         out_hdr->error = -errno;

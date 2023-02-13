@@ -736,9 +736,9 @@ static int fuse_ll_create(struct fuse_ll *f_ll,
 }
 
 static int fuse_ll_flush(struct fuse_ll *f_ll,
-               struct iovec *fuse_in_iov, int in_iovcnt,
-               struct iovec *fuse_out_iov, int out_iovcnt,
-                  struct snap_fs_dev_io_done_ctx *cb) {
+                struct iovec *fuse_in_iov, int in_iovcnt,
+                struct iovec *fuse_out_iov, int out_iovcnt,
+                struct snap_fs_dev_io_done_ctx *cb) {
     if (in_iovcnt != 2 || out_iovcnt != 1) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
@@ -773,7 +773,7 @@ static int fuse_ll_flush(struct fuse_ll *f_ll,
     if (f_ll->se->conn.proto_minor >= 7)
         fi.lock_owner = in_flush->lock_owner;
 
-    return f_ll->ops.flush(f_ll->se, f_ll->user_data, in_hdr, &fi, out_hdr, cb);
+    return f_ll->ops.flush(f_ll->se, f_ll->user_data, in_hdr, fi, out_hdr, cb);
 }
 
 static int fuse_ll_setlk_common(struct fuse_ll *f_ll,
@@ -826,7 +826,7 @@ static int fuse_ll_setlk_common(struct fuse_ll *f_ll,
             op |= LOCK_NB;
 
         if (f_ll->ops.flock) {
-            return f_ll->ops.flock(f_ll->se, f_ll->user_data, in_hdr, &fi, op, out_hdr, cb);
+            return f_ll->ops.flock(f_ll->se, f_ll->user_data, in_hdr, fi, op, out_hdr, cb);
         } else {
             out_hdr->error = -ENOSYS;
             return 0;

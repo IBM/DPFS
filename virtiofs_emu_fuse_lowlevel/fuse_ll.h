@@ -169,11 +169,11 @@ struct fuse_ll_operations {
                    struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry, struct fuse_open_out *out_open,
                    struct snap_fs_dev_io_done_ctx *cb);
     int (*flush) (struct fuse_session *, void *user_data,
-                   struct fuse_in_header *, struct fuse_file_info *fi,
+                   struct fuse_in_header *, struct fuse_file_info fi,
                    struct fuse_out_header *,
                    struct snap_fs_dev_io_done_ctx *cb);
     int (*flock) (struct fuse_session *, void *user_data,
-                  struct fuse_in_header *, struct fuse_file_info *fi, int op,
+                  struct fuse_in_header *, struct fuse_file_info fi, int op,
                   struct fuse_out_header *,
                   struct snap_fs_dev_io_done_ctx *cb);
     // Reply with fuse_ll_reply_attr()
