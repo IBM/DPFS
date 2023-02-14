@@ -60,6 +60,7 @@ static uint32_t standard_attributes[2] = {
 // namelen = FATTR4_MAXNAME
 // frsize  = BLOCKSIZE
 
+#ifndef VNFS_NULLDEV
 static uint32_t statfs_attributes[2] = {
         (1 << FATTR4_FILES_FREE |
          1 << FATTR4_FILES_TOTAL |
@@ -68,8 +69,13 @@ static uint32_t statfs_attributes[2] = {
          1 << (FATTR4_SPACE_FREE - 32) |
          1 << (FATTR4_SPACE_TOTAL - 32))
 };
+#endif
 
+#ifdef VNFS_NULLDEV
 // supported_attributes = standard_attributes | statfs_attributes
+#else
+// supported_attributes = standard_attributes
+#endif
 
 // All the cb_data structs, nice and cozy together
 struct getattr_cb_data {
@@ -648,6 +654,11 @@ int vwrite(struct fuse_session *se, struct virtionfs *vnfs,
          struct fuse_out_header *out_hdr, struct fuse_write_out *out_write,
          struct snap_fs_dev_io_done_ctx *cb)
 {
+#ifdef VNFS_NULLDEV
+    out_write->size = in_write->size;
+    out_hdr->len += sizeof(*out_write);
+    return 0;
+#else
 #ifdef DEBUG_ENABLED
     if (in_iov_cnt > 1)
         vnfs_error("called with >1 iovecs, this is not supported!\n");
@@ -716,6 +727,7 @@ int vwrite(struct fuse_session *se, struct virtionfs *vnfs,
     }
 
     return EWOULDBLOCK;
+#endif
 }
 
 #define MIN(x, y) x < y ? x : y
@@ -778,10 +790,14 @@ ret:;
 }
 
 int vread(struct fuse_session *se, struct virtionfs *vnfs,
-         struct fuse_in_header *in_hdr, struct fuse_read_in *in_read,
-         struct fuse_out_header *out_hdr, struct iovec *out_iov, int out_iovcnt,
-         struct snap_fs_dev_io_done_ctx *cb)
+          struct fuse_in_header *in_hdr, struct fuse_read_in *in_read,
+          struct fuse_out_header *out_hdr, struct iovec *out_iov, int out_iovcnt,
+          struct snap_fs_dev_io_done_ctx *cb)
 {
+#ifdef VNFS_NULLDEV
+    out_hdr->len += in_read->size;
+    return 0;
+#else
     struct vnfs_conn *conn = vnfs_get_conn(vnfs);
     struct read_cb_data *cb_data = mpool2_alloc(vnfs->p);
     if (!cb_data) {
@@ -826,6 +842,7 @@ int vread(struct fuse_session *se, struct virtionfs *vnfs,
     }
 
     return EWOULDBLOCK;
+#endif
 }
 
 void vopen_cb(struct rpc_context *rpc, int status, void *data,
@@ -1159,6 +1176,13 @@ int statfs(struct fuse_session *se, struct virtionfs *vnfs,
            struct fuse_out_header *out_hdr, struct fuse_statfs_out *stat,
            struct snap_fs_dev_io_done_ctx *cb)
 {
+#ifdef VNFS_NULLDEV
+    // We need to provide the host with plausibly real data
+    memset(stat, 0, sizeof(*stat));
+    out_hdr->len = vnfs->se->conn.proto_minor < 4 ?
+        FUSE_COMPAT_STATFS_SIZE : sizeof(*statfs);
+    return 0;
+#else
     struct vnfs_conn *conn = vnfs_get_conn(vnfs);
     struct statfs_cb_data *cb_data = mpool2_alloc(vnfs->p);
     if (!cb_data) {
@@ -1204,6 +1228,7 @@ int statfs(struct fuse_session *se, struct virtionfs *vnfs,
     }
 
     return EWOULDBLOCK;
+#endif
 }
 
 void lookup_cb(struct rpc_context *rpc, int status, void *data,

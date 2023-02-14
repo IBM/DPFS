@@ -26,7 +26,7 @@ static int fuse_init(void *user_data,
 
 void usage()
 {
-    printf("virtiofs_nulldev [-p pf_id] [-v vf_id ] [-e emulation_manager_name]\n");
+    printf("virtiofs_template [-p pf_id] [-v vf_id ] [-e emulation_manager_name]\n");
 }
 
 int main(int argc, char **argv)
@@ -95,12 +95,12 @@ int main(int argc, char **argv)
         usage();
         exit(1);
     }
-    printf("virtiofs_nulldev starting up!\n");
+    printf("virtiofs_template starting up!\n");
     printf("Connecting to %s:%s\n", server, export);
 
     emu_params->polling_interval_usec = 0;
     emu_params->nthreads = 0;
-    emu_params->tag = "virtiofs_nulldev";
+    emu_params->tag = "virtiofs_template";
 
     emu_ll_params.fuse_handlers[FUSE_INIT] = fuse_init;
     // Only implement for nodeid = 0, return garbage
