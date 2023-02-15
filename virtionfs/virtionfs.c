@@ -318,11 +318,12 @@ ret:;
 }
 
 
-int create(struct fuse_session *se, struct virtionfs *vnfs,
+int create(struct fuse_session *se, void *user_data,
            struct fuse_in_header *in_hdr, struct fuse_create_in *in_create, const char *in_name,
            struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry, struct fuse_open_out *out_open,
            struct snap_fs_dev_io_done_ctx *cb)
 {
+    struct virtionfs *vnfs = user_data;
     struct vnfs_conn *conn = vnfs_get_conn(vnfs);
     struct create_cb_data *cb_data = mpool2_alloc(vnfs->p);
     if (!cb_data) {
@@ -446,11 +447,12 @@ ret:;
     cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb->user_arg);
 }
 
-int release(struct fuse_session *se, struct virtionfs *vnfs,
+int release(struct fuse_session *se, void *user_data,
            struct fuse_in_header *in_hdr, struct fuse_release_in *in_release,
            struct fuse_out_header *out_hdr,
            struct snap_fs_dev_io_done_ctx *cb)
 {
+    struct virtionfs *vnfs = user_data;
     struct inode *i = inode_table_get(vnfs->inodes, in_hdr->nodeid);
     if (!i) {
     	vnfs_error("Invalid nodeid supplied\n");
@@ -550,11 +552,12 @@ ret:;
 }
 
 // FUSE_FSYNC_FDATASYNC is not really adhered to, we always commit metadata
-int vfsync(struct fuse_session *se, struct virtionfs *vnfs,
+int vfsync(struct fuse_session *se, void *user_data,
            struct fuse_in_header *in_hdr, struct fuse_fsync_in *in_fsync,
            struct fuse_out_header *out_hdr,
            struct snap_fs_dev_io_done_ctx *cb)
 {
+    struct virtionfs *vnfs = user_data;
     struct vnfs_conn *conn = vnfs_get_conn(vnfs);
     struct fsync_cb_data *cb_data = mpool2_alloc(vnfs->p);
     if (!cb_data) {
@@ -648,7 +651,7 @@ ret:;
 // this write implementation only send the first iov. 
 // When the host receives the written len of just the first iov, it will retry with the others
 // TLDR: Not efficient (but functional) with multiple I/O vectors!
-int vwrite(struct fuse_session *se, struct virtionfs *vnfs,
+int vwrite(struct fuse_session *se, void *user_data,
          struct fuse_in_header *in_hdr, struct fuse_write_in *in_write,
          struct iovec *in_iov, int in_iov_cnt,
          struct fuse_out_header *out_hdr, struct fuse_write_out *out_write,
@@ -664,6 +667,7 @@ int vwrite(struct fuse_session *se, struct virtionfs *vnfs,
         vnfs_error("called with >1 iovecs, this is not supported!\n");
 #endif
 
+    struct virtionfs *vnfs = user_data;
     struct vnfs_conn *conn = vnfs_get_conn(vnfs);
     struct write_cb_data *cb_data = mpool2_alloc(vnfs->p);
     if (!cb_data) {
@@ -789,7 +793,7 @@ ret:;
     cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb->user_arg);
 }
 
-int vread(struct fuse_session *se, struct virtionfs *vnfs,
+int vread(struct fuse_session *se, void *user_data,
           struct fuse_in_header *in_hdr, struct fuse_read_in *in_read,
           struct fuse_out_header *out_hdr, struct iovec *out_iov, int out_iovcnt,
           struct snap_fs_dev_io_done_ctx *cb)
@@ -798,6 +802,8 @@ int vread(struct fuse_session *se, struct virtionfs *vnfs,
     out_hdr->len += in_read->size;
     return 0;
 #else
+
+    struct virtionfs *vnfs = user_data;
     struct vnfs_conn *conn = vnfs_get_conn(vnfs);
     struct read_cb_data *cb_data = mpool2_alloc(vnfs->p);
     if (!cb_data) {
@@ -903,11 +909,12 @@ ret:;
     cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb->user_arg);
 }
 
-int vopen(struct fuse_session *se, struct virtionfs *vnfs,
+int vopen(struct fuse_session *se, void *user_data,
          struct fuse_in_header *in_hdr, struct fuse_open_in *in_open,
          struct fuse_out_header *out_hdr, struct fuse_open_out *out_open,
          struct snap_fs_dev_io_done_ctx *cb)
 {
+    struct virtionfs *vnfs = user_data;
     // Get the inode manually because we want the FH of the parent later
     struct inode *i = inode_table_get(vnfs->inodes, in_hdr->nodeid);
     if (!i) {
@@ -1039,11 +1046,12 @@ ret:;
     cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb->user_arg);
 }
 
-int setattr(struct fuse_session *se, struct virtionfs *vnfs,
+int setattr(struct fuse_session *se, void *user_data,
             struct fuse_in_header *in_hdr, struct fuse_setattr_in *in_setattr,
             struct fuse_out_header *out_hdr, struct fuse_attr_out *out_attr,
             struct snap_fs_dev_io_done_ctx *cb)
 {
+    struct virtionfs *vnfs = user_data;
     struct vnfs_conn *conn = vnfs_get_conn(vnfs);
     struct setattr_cb_data *cb_data = mpool2_alloc(vnfs->p);
     if (!cb_data) {
@@ -1171,7 +1179,7 @@ ret:;
 }
 
 
-int statfs(struct fuse_session *se, struct virtionfs *vnfs,
+int statfs(struct fuse_session *se, void *user_data,
            struct fuse_in_header *in_hdr,
            struct fuse_out_header *out_hdr, struct fuse_statfs_out *stat,
            struct snap_fs_dev_io_done_ctx *cb)
@@ -1183,6 +1191,8 @@ int statfs(struct fuse_session *se, struct virtionfs *vnfs,
         FUSE_COMPAT_STATFS_SIZE : sizeof(*statfs);
     return 0;
 #else
+
+    struct virtionfs *vnfs = user_data;
     struct vnfs_conn *conn = vnfs_get_conn(vnfs);
     struct statfs_cb_data *cb_data = mpool2_alloc(vnfs->p);
     if (!cb_data) {
@@ -1301,11 +1311,12 @@ ret:;
     cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb->user_arg);
 }
 
-int lookup(struct fuse_session *se, struct virtionfs *vnfs,
-           struct fuse_in_header *in_hdr, char *in_name,
+int lookup(struct fuse_session *se, void *user_data,
+           struct fuse_in_header *in_hdr, const char *const in_name,
            struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry,
            struct snap_fs_dev_io_done_ctx *cb)
 {
+    struct virtionfs *vnfs = user_data;
     struct vnfs_conn *conn = vnfs_get_conn(vnfs);
     struct lookup_cb_data *cb_data = mpool2_alloc(vnfs->p);
     if (!cb_data) {
@@ -1407,11 +1418,12 @@ ret:;
     cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb->user_arg);
 }
 
-int getattr(struct fuse_session *se, struct virtionfs *vnfs,
+int getattr(struct fuse_session *se, void *user_data,
             struct fuse_in_header *in_hdr, struct fuse_getattr_in *in_getattr,
             struct fuse_out_header *out_hdr, struct fuse_attr_out *out_attr,
             struct snap_fs_dev_io_done_ctx *cb)
 {
+    struct virtionfs *vnfs = user_data;
     struct vnfs_conn *conn = vnfs_get_conn(vnfs);
     struct getattr_cb_data *cb_data = mpool2_alloc(vnfs->p);
     if (!cb_data) {
@@ -1458,12 +1470,13 @@ int getattr(struct fuse_session *se, struct virtionfs *vnfs,
 
     return EWOULDBLOCK;
 }
-int destroy(struct fuse_session *se, struct virtionfs *vnfs,
+int destroy(struct fuse_session *se, void *user_data,
             struct fuse_in_header *in_hdr,
             struct fuse_out_header *out_hdr,
             struct snap_fs_dev_io_done_ctx *cb)
 {
 #ifdef LATENCY_MEASURING_ENABLED
+    struct virtionfs *vnfs = user_data;
     if (vnfs->nthreads == 1) {
         for (int i = 1; i <= FUSE_REMOVEMAPPING; i++) {
             if (ft[i].running) {
@@ -1480,10 +1493,11 @@ int destroy(struct fuse_session *se, struct virtionfs *vnfs,
     return 0;
 }
 
-int init(struct fuse_session *se, struct virtionfs *vnfs,
+int init(struct fuse_session *se, void *user_data,
     struct fuse_in_header *in_hdr, struct fuse_init_in *in_init,
     struct fuse_conn_info *conn, struct fuse_out_header *out_hdr)
 {
+    struct virtionfs *vnfs = user_data;
 #ifdef LATENCY_MEASURING_ENABLED
     if (vnfs->nthreads == 1) {
         for (int i = 0; i < FUSE_REMOVEMAPPING+1; i++) {
@@ -1528,24 +1542,24 @@ int init(struct fuse_session *se, struct virtionfs *vnfs,
 }
 
 void virtionfs_assign_ops(struct fuse_ll_operations *ops) {
-    ops->init = (typeof(ops->init)) init;
-    ops->lookup = (typeof(ops->lookup)) lookup;
-    ops->getattr = (typeof(ops->getattr)) getattr;
+    ops->init = init;
+    ops->lookup = lookup;
+    ops->getattr = getattr;
     // NFS accepts the NFS:fh (received from a NFS:lookup==FUSE:lookup) as
     // its parameter to the dir ops like readdir
     ops->opendir = NULL;
-    ops->open = (typeof(ops->open)) vopen;
-    ops->read = (typeof(ops->read)) vread;
-    ops->write = (typeof(ops->write)) vwrite;
-    ops->fsync = (typeof(ops->fsync)) vfsync;
-    ops->release = (typeof(ops->release)) release;
+    ops->open = vopen;
+    ops->read = vread;
+    ops->write = vwrite;
+    ops->fsync = vfsync;
+    ops->release = release;
     // NFS only does fsync(aka COMMIT) on files
     ops->fsyncdir = NULL;
     // The concept of flushing
     ops->flush = NULL;
     //ops->setattr = (typeof(ops->setattr)) setattr;
-    ops->statfs = (typeof(ops->statfs)) statfs;
-    ops->destroy = (typeof(ops->destroy)) destroy;
+    ops->statfs = statfs;
+    ops->destroy = destroy;
 }
 
 void virtionfs_main(char *server, char *export,
