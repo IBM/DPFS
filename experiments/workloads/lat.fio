@@ -3,8 +3,14 @@ name=fio-lat-read
 filename=${MNT}/fio-10g
 size=10G
 
+ioengine=io_uring
+# Not supported with virtio-fs
+# registerfiles=1
+# sqthread_poll=1
+# hipri=1
+# fixedbufs=1
+
 bs=1
-ioengine=libaio
 iodepth=1
 direct=1
 numjobs=1
@@ -12,7 +18,7 @@ numjobs=1
 time_based
 group_reporting
 lat_percentiles=1
-percentile_list=25:50:75
+norandommap=1
 
 [read]
 stonewall

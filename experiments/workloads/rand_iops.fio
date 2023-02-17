@@ -3,14 +3,22 @@ name=fio-rand_iops
 filename=${MNT}/fio-10g
 size=10G
 
-rw=readwrite
+ioengine=io_uring
+# Not supported with virtio-fs
+# registerfiles=1
+# sqthread_poll=1
+# hipri=1
+# fixedbufs=1
+
+rw=randrw
 bs=4096
-ioengine=libaio
 iodepth=128
 direct=1
+thread=1
 
 time_based
 group_reporting
+norandommap=1
 
 [one]
 stonewall
@@ -38,7 +46,7 @@ runtime=15s
 
 [ten]
 stonewall
-numjobs=10
+numjobs=16
 ramp_time=5s
 runtime=15s
 
