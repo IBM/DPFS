@@ -16,4 +16,5 @@ void ft_start(struct ftimer *ft);
 void ft_stop(struct ftimer *ft);
 double ft_get_sec(struct ftimer *ft);
 long ft_get_nsec(struct ftimer *ft);
+void ft_add(struct ftimer *, struct ftimer *);
 #endif // FTIMER_HEADER

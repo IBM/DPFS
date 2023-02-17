@@ -15,6 +15,9 @@
 #include <nfsc/libnfs-raw-nfs4.h>
 #include "virtiofs_emu_ll.h"
 #include "mpool2.h"
+#ifdef LATENCY_MEASURING_ENABLED
+#include "ftimer.h"
+#endif
 
 void virtionfs_main(char *server, char *export,
                bool debug, double timeout, uint32_t nthreads,
@@ -51,6 +54,10 @@ struct vnfs_conn {
     struct rpc_context *rpc;
     // The session under which this connection is operating
     struct vnfs_session session;
+#ifdef LATENCY_MEASURING_ENABLED
+    struct ftimer ft[FUSE_REMOVEMAPPING+1];
+    uint64_t op_calls[FUSE_REMOVEMAPPING+1];
+#endif
 };
 
 struct virtionfs {

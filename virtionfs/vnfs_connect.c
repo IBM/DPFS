@@ -297,7 +297,14 @@ void vnfs_destroy_connection(struct vnfs_conn *conn, enum vnfs_conn_state state)
 
 int vnfs_new_connection(struct virtionfs *vnfs) {
     struct vnfs_conn *conn = &vnfs->conns[vnfs->conn_cntr];
+    // This might be the second FUSE_INIT call
+    memset(conn, 0, sizeof(struct vnfs_conn));
     conn->vnfs_conn_id = vnfs->conn_cntr;
+#ifdef LATENCY_MEASURING_ENABLED
+    for (int i = 0; i < FUSE_REMOVEMAPPING+1; i++) {
+        ft_init(&conn->ft[i]);
+    }
+#endif
 
     struct nfs_context *nfs = nfs_init_context();
     if (nfs == NULL) {

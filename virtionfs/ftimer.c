@@ -22,3 +22,7 @@ double ft_get_sec(struct ftimer *ft) {
 long ft_get_nsec(struct ftimer *ft) {
     return ft->sec * 1e9 + ft->nsec;
 }
+void ft_add(struct ftimer *a, struct ftimer *b) {
+    a->sec += b->sec;
+    a->nsec += b->nsec;
+}
