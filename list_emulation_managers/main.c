@@ -26,7 +26,7 @@ int main(void) {
     if (mlnx_snap_pci_manager_init())
         err(1, "Failed to init SNAP pci manager, this can mean two things:\n"
                 "* No emulation capability is turned on in the firmware. (virtio-fs, virtio-blk, virtio-net or nvme)"
-                "* The BF needs to be reboted (full host external power cycle), because the new firmware configuration is not yet applied or the emulation firmware is in a crashed state (happens if a SNAP application was not correctly shut down)\n");
+                "* The BF needs to be rebooted (full host external power cycle), because the new firmware configuration is not yet applied or the emulation firmware is in a crashed state (happens if a SNAP application was not correctly shut down)\n");
 
     int ibv_count;
     struct ibv_device **ibv_list = ibv_get_device_list(&ibv_count);
@@ -43,23 +43,33 @@ int main(void) {
             continue;
 
         printf("The reported number of VFs is incorrect\n");
-        printf("Emulation manager \"%s\" supports:\n", rdma_device);
+        printf("Emulation manager (aka RDMA device) \"%s\" supports:\n", rdma_device);
 
         if (sctx->emulation_caps & SNAP_VIRTIO_FS) {
             printf("* virtio_fs\n");
             print_pfs_vfs(&sctx->virtio_fs_pfs);
+            printf("    * Maximum number of emulated virtqueues = %u\n",
+                    sctx->virtio_fs_caps.max_emulated_virtqs);
         }
         if (sctx->emulation_caps & SNAP_VIRTIO_BLK) {
             printf("* virtio_blk\n");
             print_pfs_vfs(&sctx->virtio_blk_pfs);
+            printf("    * Maximum number of emulated virtqueues = %u\n",
+                    sctx->virtio_blk_caps.max_emulated_virtqs);
         }
         if (sctx->emulation_caps & SNAP_VIRTIO_NET) {
             printf("* virtio_net\n");
             print_pfs_vfs(&sctx->virtio_net_pfs);
+            printf("    * Maximum number of emulated virtqueues = %u\n",
+                    sctx->virtio_net_caps.max_emulated_virtqs);
         }
         if (sctx->emulation_caps & SNAP_NVME) {
             printf("* nvme\n");
             print_pfs_vfs(&sctx->nvme_pfs);
+            printf("    * Maximum number of emulated completion queues = %u\n",
+                    sctx->nvme_caps.max_emulated_nvme_cqs);
+            printf("    * Maximum number of emulated submission queues = %u\n",
+                    sctx->nvme_caps.max_emulated_nvme_cqs);
         }
     } 
 
