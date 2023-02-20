@@ -678,10 +678,6 @@ int vwrite(struct fuse_session *se, void *user_data,
     out_hdr->len += sizeof(*out_write);
     return 0;
 #else
-#ifdef DEBUG_ENABLED
-    if (in_iov_cnt > 1)
-        vnfs_error("called with >1 iovecs, this is not supported!\n");
-#endif
 
     struct virtionfs *vnfs = user_data;
     struct vnfs_conn *conn = vnfs_get_conn(vnfs);
@@ -700,7 +696,7 @@ int vwrite(struct fuse_session *se, void *user_data,
     cb_data->out_write = out_write;
 
     COMPOUND4args args;
-    nfs_argop4 op[3];
+    nfs_argop4 op[2+in_iov_cnt];
     memset(&args.tag, 0, sizeof(args.tag));
     args.minorversion = NFS4DOT1_MINOR;
     args.argarray.argarray_len = sizeof(op) / sizeof(nfs_argop4);
@@ -716,12 +712,17 @@ int vwrite(struct fuse_session *se, void *user_data,
         return 0;
     }
     // WRITE
-    op[2].argop = OP_WRITE;
-    op[2].nfs_argop4_u.opwrite.stateid = i->open_stateid;
-    op[2].nfs_argop4_u.opwrite.offset = in_write->offset;
-    op[2].nfs_argop4_u.opwrite.stable = UNSTABLE4;
-    op[2].nfs_argop4_u.opwrite.data.data_val = in_iov->iov_base;
-    op[2].nfs_argop4_u.opwrite.data.data_len = in_iov->iov_len;
+    // Spread the iovectors over seperate WRITE4 ops in the same compound
+    uint64_t offset = in_write->offset;
+    for (int j = 0; j < in_iov_cnt; j++) {
+        op[2+j].argop = OP_WRITE;
+        op[2+j].nfs_argop4_u.opwrite.stateid = i->open_stateid;
+        op[2+j].nfs_argop4_u.opwrite.offset = offset;
+        op[2+j].nfs_argop4_u.opwrite.stable = UNSTABLE4;
+        op[2+j].nfs_argop4_u.opwrite.data.data_val = in_iov[j].iov_base;
+        op[2+j].nfs_argop4_u.opwrite.data.data_len = in_iov[j].iov_len;
+        offset += in_iov[j].iov_len;
+    }
 
     // libnfs by default allocates a buffer for the fully encoded NFS packet (rpc_pdu)
     // of sizeof(rpc header) + sizeof(COMPOUNF4args) + ZDR_ENCODEBUF_MINSIZE + alloc_hint
@@ -1396,6 +1397,13 @@ int getattr(struct fuse_session *se, void *user_data,
             struct snap_fs_dev_io_done_ctx *cb)
 {
     struct virtionfs *vnfs = user_data;
+#ifdef VNFS_NULLDEV
+    // We need to provide the host with plausibly real data
+    memset(out_attr, 0, sizeof(*out_attr));
+    cb_data->out_hdr->len += vnfs->se->conn.proto_minor < 9 ?
+        FUSE_COMPAT_ATTR_OUT_SIZE : sizeof(*out_attr);
+    return 0;
+#else
     struct vnfs_conn *conn = vnfs_get_conn(vnfs);
     struct getattr_cb_data *cb_data = mpool2_alloc(vnfs->p);
     if (!cb_data) {
@@ -1435,6 +1443,7 @@ int getattr(struct fuse_session *se, void *user_data,
     }
 
     return EWOULDBLOCK;
+#endif
 }
 int destroy(struct fuse_session *se, void *user_data,
             struct fuse_in_header *in_hdr,
