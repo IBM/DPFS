@@ -333,7 +333,7 @@ static int fuse_ll_init(struct fuse_ll *f_ll,
     }
 
     size_t bufsize = se->bufsize;
-    size_t outargsize = sizeof(*inarg);
+    size_t outargsize = sizeof(*outarg);
 #ifdef DEBUG_ENABLED
     printf("INIT in: %u.%u\n", inarg->major, inarg->minor);
     if (inarg->major == 7 && inarg->minor >= 6) {
