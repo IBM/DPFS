@@ -719,9 +719,11 @@ int vwrite(struct fuse_session *se, void *user_data,
     }
     // WRITE
     // Spread the iovectors over seperate WRITE4 ops in the same compound
-    // This adds a relatively small amount of overhead for the WRITE4 op header
-    // for every iov (compared to the 4k of data being put into the packet), 
-    // but it doesn't require any fancy shenanigans of iov writing to the rpc pdu
+    // so that it doesn't require any fancy shenanigans of iov writing to the rpc pdu.
+    // It does however make the complete write much slower
+    // in Linux nfsd (as of 6.2) each write in a single compound is individually sent to the VFS
+    // TODO modify libnfs to support iovs with write or copy to a single buffer (that
+    // neds a performance sanity check)
     uint64_t offset = 0;
     // We play it safe and assume that the other stuff in the request is 4k in size
     count4 maxwritesize = conn->session.attrs.ca_maxrequestsize - 4096;
