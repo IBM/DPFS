@@ -13,6 +13,8 @@
 #include <sys/time.h>
 #include <nfsc/libnfs.h>
 #include <nfsc/libnfs-raw-nfs4.h>
+
+#include "config.h"
 #include "virtiofs_emu_ll.h"
 #include "mpool2.h"
 #ifdef LATENCY_MEASURING_ENABLED

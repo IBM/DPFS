@@ -16,8 +16,8 @@
 #include <stdatomic.h>
 #include <err.h>
 
-#include "fuse_ll.h"
 #include "config.h"
+#include "fuse_ll.h"
 #include "virtionfs.h"
 #include "vnfs_connect.h"
 #include "mpool2.h"
@@ -96,6 +96,9 @@ struct getattr_cb_data {
 
 #ifdef LATENCY_MEASURING_ENABLED
     struct ftimer ft;
+#endif
+#ifdef VNFS_NULLDEV
+    struct inode *i;
 #endif
 
     struct fuse_out_header *out_hdr;
@@ -1390,6 +1393,10 @@ void getattr_cb(struct rpc_context *rpc, int status, void *data,
         cb_data->out_attr->attr_valid_nsec = 0;
         cb_data->out_hdr->len += vnfs->se->conn.proto_minor < 9 ?
             FUSE_COMPAT_ATTR_OUT_SIZE : sizeof(*cb_data->out_attr);
+#ifdef VNFS_NULLDEV
+        cb_data->i->cached = true;
+        cb_data->i->cached_attr = cb_data->out_attr->attr;
+#endif
     } else {
         cb_data->out_hdr->error = -EREMOTEIO;
     }
@@ -1406,13 +1413,26 @@ int getattr(struct fuse_session *se, void *user_data,
             struct snap_fs_dev_io_done_ctx *cb)
 {
     struct virtionfs *vnfs = user_data;
+
 #ifdef VNFS_NULLDEV
-    // We need to provide the host with plausibly real data
-    memset(out_attr, 0, sizeof(*out_attr));
-    out_hdr->len += vnfs->se->conn.proto_minor < 9 ?
-        FUSE_COMPAT_ATTR_OUT_SIZE : sizeof(*out_attr);
-    return 0;
-#else
+    struct inode *i = inode_table_get(vnfs->inodes, in_hdr->nodeid);
+    if (!i) {
+    	vnfs_error("Invalid nodeid supplied\n");
+        out_hdr->error = -ENOENT;
+        return 0;
+    }
+    if (i->cached) {
+        out_attr->attr_valid = 0;
+        out_attr->attr_valid_nsec = 0;
+        out_attr->dummy = 0;
+        out_attr->attr = i->cached_attr;
+        out_hdr->len += vnfs->se->conn.proto_minor < 9 ?
+            FUSE_COMPAT_ATTR_OUT_SIZE : sizeof(*out_attr);
+        return 0;
+    }
+    // else we should first get a copy of the attr, for later getattrs
+#endif
+
     struct vnfs_conn *conn = vnfs_get_conn(vnfs);
     struct getattr_cb_data *cb_data = mpool2_alloc(vnfs->p);
     if (!cb_data) {
@@ -1434,6 +1454,10 @@ int getattr(struct fuse_session *se, void *user_data,
     args.argarray.argarray_val = op;
 
     cb_data->slotid = vnfs4_op_sequence(&op[0], conn, false);
+#ifdef VNFS_NULLDEV // we already have the inode
+    vnfs4_op_putfh(vnfs, &op[1], in_hdr->nodeid);
+    cb_data->i = i;
+#else
     struct inode *i = vnfs4_op_putfh(vnfs, &op[1], in_hdr->nodeid);
     if (!i) {
     	vnfs_error("Invalid nodeid supplied\n");
@@ -1441,6 +1465,7 @@ int getattr(struct fuse_session *se, void *user_data,
         out_hdr->error = -ENOENT;
         return 0;
     }
+#endif
     nfs4_op_getattr(&op[2], standard_attributes, 2);
     
     LATENCY_MEASURING_START(GETATTR);
@@ -1452,7 +1477,6 @@ int getattr(struct fuse_session *se, void *user_data,
     }
 
     return EWOULDBLOCK;
-#endif
 }
 int destroy(struct fuse_session *se, void *user_data,
             struct fuse_in_header *in_hdr,

@@ -12,9 +12,10 @@
 #include <sys/time.h>
 #include <nfsc/libnfs.h>
 #include <nfsc/libnfs-raw-nfs4.h>
+
+#include "config.h"
 #include "fuse_ll.h"
 #include "virtiofs_emu_ll.h"
-
 #include "nfs_v4.h"
 
 struct inode {
@@ -39,6 +40,11 @@ struct inode {
     atomic_size_t nopen;
 
     struct inode *next;
+
+#ifdef VNFS_NULLDEV
+    bool cached;
+    struct fuse_attr cached_attr;
+#endif
 };
 
 struct inode_table {
