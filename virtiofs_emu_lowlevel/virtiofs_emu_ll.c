@@ -268,7 +268,9 @@ struct virtiofs_emu_ll *virtiofs_emu_ll_new(struct virtiofs_emu_ll_params *param
     param.dev_type = "virtiofs_emu";
     // A queue per thread
     param.num_queues = 1 + emu_params.nthreads;
-    param.queue_depth = 128;
+    // Must be an order of 2 or you will get err 121
+    // queue slots that are left unused significantly decrease performance because of the snap poller
+    param.queue_depth = 64;
     param.force_in_order = false;
     // See snap_virtio_fs_ctrl.c:811, if enabled this controller is
     // supposed to be recovered from the dead
