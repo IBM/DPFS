@@ -308,7 +308,7 @@ int vnfs4_op_sequence(nfs_argop4 *op, struct vnfs_conn *conn, bool cachethis)
         vnfs_error("All slots for connection %u are in use, suspending the Virtio poller"
                    "thread for a bit.\n Please performance tune (the max_background operations in FUSE"
                    "and the Virtio queue_depth so that this never happens!\n", conn->vnfs_conn_id);
-        usleep(100);
+        usleep(10);
     }
 slot_found:
     // Determine the highest in_use slot
@@ -652,7 +652,10 @@ void vwrite_cb(struct rpc_context *rpc, int status, void *data,
         goto ret;
     }
     
-    uint32_t written =  res->resarray.resarray_val[2].nfs_resop4_u.opwrite.WRITE4res_u.resok4.count;
+    uint32_t written = 0;
+    for (int i = 0; i < res->resarray.resarray_len-2; i++) {
+        written += res->resarray.resarray_val[2+i].nfs_resop4_u.opwrite.WRITE4res_u.resok4.count;
+    }
     cb_data->out_write->size = written;
 
     cb_data->out_hdr->len += sizeof(*cb_data->out_write);
@@ -713,11 +716,17 @@ int vwrite(struct fuse_session *se, void *user_data,
     }
     // WRITE
     // Spread the iovectors over seperate WRITE4 ops in the same compound
-    uint64_t offset = in_write->offset;
-    for (int j = 0; j < in_iov_cnt; j++) {
+    // This adds a relatively small amount of overhead for the WRITE4 op header
+    // for every iov (compared to the 4k of data being put into the packet), 
+    // but it doesn't require any fancy shenanigans of iov writing to the rpc pdu
+    uint64_t offset = 0;
+    // We play it safe and assume that the other stuff in the request is 4k in size
+    count4 maxwritesize = conn->session.attrs.ca_maxrequestsize - 4096;
+    for (int j = 0; j < in_iov_cnt && offset + in_iov[j].iov_len < maxwritesize &&
+           2+j < NFS4_MAX_OPS; j++) {
         op[2+j].argop = OP_WRITE;
         op[2+j].nfs_argop4_u.opwrite.stateid = i->open_stateid;
-        op[2+j].nfs_argop4_u.opwrite.offset = offset;
+        op[2+j].nfs_argop4_u.opwrite.offset = in_write->offset + offset;
         op[2+j].nfs_argop4_u.opwrite.stable = UNSTABLE4;
         op[2+j].nfs_argop4_u.opwrite.data.data_val = in_iov[j].iov_base;
         op[2+j].nfs_argop4_u.opwrite.data.data_len = in_iov[j].iov_len;
@@ -732,7 +741,7 @@ int vwrite(struct fuse_session *se, void *user_data,
     // Because this alloc_hint is really naive, the only way to safely make sure there
     // is enough buffer space, is to set the alloc_hint to our write buffer size...
     // This allocates way too much, but atleast it is safe
-    uint64_t alloc_hint = in_iov->iov_len; 
+    uint64_t alloc_hint = offset; 
 
     LATENCY_MEASURING_START(WRITE);
     if (rpc_nfs4_compound_async2(conn->rpc, vwrite_cb, &args, cb_data, alloc_hint) != 0) {
@@ -1400,7 +1409,7 @@ int getattr(struct fuse_session *se, void *user_data,
 #ifdef VNFS_NULLDEV
     // We need to provide the host with plausibly real data
     memset(out_attr, 0, sizeof(*out_attr));
-    cb_data->out_hdr->len += vnfs->se->conn.proto_minor < 9 ?
+    out_hdr->len += vnfs->se->conn.proto_minor < 9 ?
         FUSE_COMPAT_ATTR_OUT_SIZE : sizeof(*out_attr);
     return 0;
 #else

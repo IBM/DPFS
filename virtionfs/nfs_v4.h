@@ -24,7 +24,10 @@
 #define NFS4_MAXRESPONSESIZE (1 << 20)
 #define NFS4_MAXREQUESTSIZE (1 << 20)
 
-#define NFS4_MAX_OUTSTANDING_REQUESTS 64
+// https://elixir.bootlin.com/linux/v6.2/source/fs/nfsd/state.h#L176
+#define NFS4_MAX_OUTSTANDING_REQUESTS 160
+// Linux nfsd will propose 8 (NFS4_MAX_OPS) but accepts up to 50
+#define NFS4_MAX_OPS   50
 
 #define NFS4DOT1_MINOR 1
 
@@ -40,10 +43,6 @@
  *  Andy Adamson   <andros@umich.edu>
  */
 
-/* An NFS4 sessions server must support at least NFS4_MAX_OPS operations.
- * If a compound requires more operations, adjust NFS4_MAX_OPS accordingly.
- */
-#define NFS4_MAX_OPS   8
 
 /* Our NFS4 client back channel server only wants the cb_sequene and the
  * actual operation per compound
