@@ -435,7 +435,10 @@ static int fuse_ll_init(struct fuse_ll *f_ll,
         se->conn.want |= (cap)
     LL_SET_DEFAULT(1, FUSE_CAP_ASYNC_READ);
     LL_SET_DEFAULT(1, FUSE_CAP_PARALLEL_DIROPS);
-    LL_SET_DEFAULT(1, FUSE_CAP_AUTO_INVAL_DATA);
+    // We disable FUSE_CAP_AUTO_INVAL_DATA by default because it kills read performance
+    // It causes every read to first send a getattr and then a read
+    // To provide better consistency, properly use the timeouts in the attr
+    //LL_SET_DEFAULT(1, FUSE_CAP_AUTO_INVAL_DATA);
     LL_SET_DEFAULT(1, FUSE_CAP_HANDLE_KILLPRIV);
     LL_SET_DEFAULT(1, FUSE_CAP_ASYNC_DIO);
     LL_SET_DEFAULT(1, FUSE_CAP_IOCTL_DIR);
