@@ -15,14 +15,43 @@ COMMIT=$(git rev-parse --short HEAD)
 OUT=$SCRIPT_DIR/output/${COMMIT}_${HOST}_${TIMESTAMP}
 
 mkdir -p $OUT
-# fio
 echo "The output will be stored under $OUT"
-echo "Running: lat.fio"
-fio lat.fio > $OUT/lat.fio.out
-echo "Running: rand_iops.fio"
-fio rand_iops.fio > $OUT/rand_iops.fio.out
-echo "Running: seq_tp.fio"
-fio seq_tp.fio > $OUT/seq_tp.fio.out
+
+echo "Running: fio latency benchmarks"
+for RW in "randread" "randwrite"; do
+	for BS in "1" "4k" "8k" "16k" "32k" "64k" "128k"; do
+		for IODEPTH in 1; do
+			for P in 1; do
+				echo fio RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P
+				RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P $SCRIPT_DIR/fio.sh > $OUT/fio_${RW}_${BS}_${IODEPTH}_${P}.out
+			done
+		done
+	done
+done
+
+echo "Running: fio IOPS benchmarks"
+for RW in "randrw"; do
+	for BS in "1" "4k" "8k" "16k" "32k" "64k" "128k"; do
+		for IODEPTH in 1 2 4 8 16 32 64 128; do
+			for P in 1 2 4 8 16; do
+				echo fio RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P
+				RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P $SCRIPT_DIR/fio.sh > $OUT/fio_${RW}_${BS}_${IODEPTH}_${P}.out
+			done
+		done
+	done
+done
+
+echo "Running: fio read, write throughput benchmarks"
+for RW in "read" "write" "randrw"; do
+	for BS in "4k" "8k" "16k" "32k" "64k" "128k"; do
+		for IODEPTH in 1 2 4 8 16 32 64 128; do
+			for P in 1 2 4 8 16; do
+				echo fio RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P
+				RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P $SCRIPT_DIR/fio.sh > $OUT/fio_${RW}_${BS}_${IODEPTH}_${P}.out
+			done
+		done
+	done
+done
 
 # Single operation latency
 echo "Running: stat (getattr) latency"
