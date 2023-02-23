@@ -9,14 +9,23 @@ if [ -z $MNT ]; then
 fi
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+cd $SCRIPT_DIR
+
 TIMESTAMP=$(date +"%Y-%m-%d_%T")
 HOST=$(uname -n)
 COMMIT=$(git rev-parse --short HEAD)
-OUT=$SCRIPT_DIR/output/${COMMIT}_${HOST}_${TIMESTAMP}
+OUT=./output/${COMMIT}_${HOST}_${TIMESTAMP}
+
+echo "Setting CPU/DMA latency to 0. A sudo prompt will now come up"
+gcc setcpulatency.c -o setcpulatency
+sudo ./setcpulatency 0 & 
+
+echo "Setting /proc/sys/kernel/perf_event_paranoid to -1 for perf."
+sudo sh -c "echo -1 > /proc/sys/kernel/perf_event_paranoid"
 
 mkdir -p $OUT
 echo "The output will be stored under $OUT"
-echo "This run.sh will take $(python -c 'print(round((2*7*25+7*8*5*25+3*6*8*5*25)/60/60, 2))') hours."
+echo "This run.sh will take $(python -c 'print(round((2*7*25 + 7*8*5*25 + 3*6*8*5*25 + 600)/60/60, 2))') hours."
 
 echo "Running: fio latency benchmarks"
 for RW in "randread" "randwrite"; do
@@ -24,7 +33,7 @@ for RW in "randread" "randwrite"; do
 		for IODEPTH in 1; do
 			for P in 1; do
 				echo fio RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P
-				RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P $SCRIPT_DIR/fio.sh > $OUT/fio_${RW}_${BS}_${IODEPTH}_${P}.out
+				RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P ./workloads/fio.sh > $OUT/fio_${RW}_${BS}_${IODEPTH}_${P}.out
 			done
 		done
 	done
@@ -36,7 +45,7 @@ for RW in "randrw"; do
 		for IODEPTH in 1 2 4 8 16 32 64 128; do
 			for P in 1 2 4 8 16; do
 				echo fio RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P
-				RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P $SCRIPT_DIR/fio.sh > $OUT/fio_${RW}_${BS}_${IODEPTH}_${P}.out
+				RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P ./workloads/fio.sh > $OUT/fio_${RW}_${BS}_${IODEPTH}_${P}.out
 			done
 		done
 	done
@@ -48,7 +57,7 @@ for RW in "read" "write" "randrw"; do
 		for IODEPTH in 1 2 4 8 16 32 64 128; do
 			for P in 1 2 4 8 16; do
 				echo fio RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P
-				RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P $SCRIPT_DIR/fio.sh > $OUT/fio_${RW}_${BS}_${IODEPTH}_${P}.out
+				RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P ./workloads/fio.sh > $OUT/fio_${RW}_${BS}_${IODEPTH}_${P}.out
 			done
 		done
 	done
@@ -61,6 +70,14 @@ gcc ./lat/lat_stat.c -O3 -o ./lat/lat_stat
 echo "Running: statfs latency"
 gcc ./lat/lat_statfs.c -O3 -o ./lat/lat_statfs
 ./lat/lat_statfs $MNT 50000 1 > $OUT/lat_statfs.out
+
+pkill setcpulatency
+echo "Reset CPU/DMA latency to default value"
+
+RUNTIME="300s"
+echo "Running: perf CPU cycle analysis for $RUNTIME seconds with a fio stress load"
+# We are doing -a (system wide profiling) to take the RX path into account that partially doesn't get attributed to the process.
+RW=randrw BS=4k IODEPTH=128 P=1 RUNTIME=$RUNTIME perf stat -a -- ./workloads/fio.sh > $OUT/perf_${RW}_${BS}_${IODEPTH}_${P}_${RUNTIME}.out
 
 echo "DONE"
 
