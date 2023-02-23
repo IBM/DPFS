@@ -23,9 +23,15 @@ sudo ./setcpulatency 0 &
 echo "Setting /proc/sys/kernel/perf_event_paranoid to -1 for perf."
 sudo sh -c "echo -1 > /proc/sys/kernel/perf_event_paranoid"
 
-mkdir -p $OUT
 echo "The output will be stored under $OUT"
 echo "This run.sh will take $(python -c 'print(round((2*7*25 + 7*8*5*25 + 3*6*8*5*25 + 600)/60/60, 2))') hours."
+
+echo "Please confirm that all the above is correct and that the host has been cleared of resource hogs"
+read
+
+echo "START"
+
+mkdir -p $OUT
 
 echo "Running: fio latency benchmarks"
 for RW in "randread" "randwrite"; do
@@ -52,7 +58,7 @@ for RW in "randrw"; do
 done
 
 echo "Running: fio read, write throughput benchmarks"
-for RW in "read" "write" "randrw"; do
+for RW in "read" "write"; do
 	for BS in "4k" "8k" "16k" "32k" "64k" "128k"; do
 		for IODEPTH in 1 2 4 8 16 32 64 128; do
 			for P in 1 2 4 8 16; do
@@ -74,10 +80,13 @@ gcc ./lat/lat_statfs.c -O3 -o ./lat/lat_statfs
 pkill setcpulatency
 echo "Reset CPU/DMA latency to default value"
 
-RUNTIME="300s"
-echo "Running: perf CPU cycle analysis for $RUNTIME seconds with a fio stress load"
+RUNTIME="300"
+echo "Running: perf CPU cycle analysis for ${RUNTIME}s seconds without a load (baseline)"
 # We are doing -a (system wide profiling) to take the RX path into account that partially doesn't get attributed to the process.
-RW=randrw BS=4k IODEPTH=128 P=1 RUNTIME=$RUNTIME perf stat -a -- ./workloads/fio.sh > $OUT/perf_${RW}_${BS}_${IODEPTH}_${P}_${RUNTIME}.out
+perf stat -a -x "," -- sleep $RUNTIME 2> $OUT/cpu_baseline_perf.out
+
+echo "Running: perf CPU cycle analysis for ${RUNTIME}s seconds with a fio stress load"
+perf stat -a -x "," -- env RW=randrw BS=4k IODEPTH=128 P=1 RUNTIME="${RUNTIME}s" ./workloads/fio.sh 1> $OUT/cpu_load_fio.out 2> $OUT/cpu_load_perf.out
 
 echo "DONE"
 
