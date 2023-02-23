@@ -650,8 +650,11 @@ void vwrite_cb(struct rpc_context *rpc, int status, void *data,
     COMPOUND4res *res = data;
     if (res->status != NFS4_OK) {
         cb_data->out_hdr->error = -nfs_error_to_fuse_error(res->status);
+#ifdef DEBUG_ENABLED
+        // Let's not do this error printing on the fast path
         vnfs_error("FUSE_WRITE:%lu - NFS error=%d, FUSE error=%d\n",
                 cb_data->out_hdr->unique, res->status, cb_data->out_hdr->error);
+#endif
         goto ret;
     }
     
@@ -800,8 +803,11 @@ void vread_cb(struct rpc_context *rpc, int status, void *data,
     COMPOUND4res *res = data;
     if (res->status != NFS4_OK) {
         cb_data->out_hdr->error = -nfs_error_to_fuse_error(res->status);
+#ifdef DEBUG_ENABLED
+        // Let's not do this error printing on the fast path
         vnfs_error("FUSE_READ:%lu - NFS error=%d, FUSE error=%d\n",
                 cb_data->out_hdr->unique, res->status, cb_data->out_hdr->error);
+#endif
         goto ret;
     }
 

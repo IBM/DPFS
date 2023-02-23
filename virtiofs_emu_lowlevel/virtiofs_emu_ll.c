@@ -47,6 +47,7 @@
 #include "compiler.h"
 #include "mlnx_snap_pci_manager.h"
 #include "virtiofs_emu_ll.h"
+#include "cpu_latency.h"
 
 struct virtiofs_emu_ll {
     struct virtio_fs_ctrl *snap_ctrl;
@@ -166,12 +167,16 @@ void virtiofs_emu_ll_loop(struct virtiofs_emu_ll *emu)
 {
     struct virtio_fs_ctrl *ctrl = emu->snap_ctrl;
     useconds_t interval = emu->polling_interval_usec;
+
+    start_low_latency();
     
     if (emu->nthreads <= 1)
         virtiofs_emu_ll_loop_singlethreaded(ctrl, interval, 0);
     else { // Multithreaded mode
         virtiofs_emu_ll_loop_multithreaded(ctrl, emu->nthreads, interval);
     }
+
+    stop_low_latency();
 }
 
 static int virtiofs_emu_ll_fuse_unknown(void *user_data,
@@ -243,7 +248,7 @@ struct virtiofs_emu_ll *virtiofs_emu_ll_new(struct virtiofs_emu_ll_params *param
         return NULL;
     }
     if (emu_params.pf_id < 0) {
-        fprintf(stderr, "virtiofs_emu_new: pf_id requires a value >=0!");
+        fprintf(stderr, "virtiofs_emu_new: pf_id requires a value >=0! Tip: use list_emulation_managers to find out the physical function id.");
         // TODO add print that tells you how to figure out the pf_id
         return NULL;
     }
@@ -251,6 +256,12 @@ struct virtiofs_emu_ll *virtiofs_emu_ll_new(struct virtiofs_emu_ll_params *param
         fprintf(stderr, "virtiofs_emu_new: vf_id requires a value >=-1!");
         return NULL;
     }
+
+    if ((emu_params.queue_depth & (emu_params.queue_depth - 1))) {
+        fprintf(stderr, "virtiofs_emu_new: queue_depth must be a power of 2!");
+        return NULL;
+    }
+
     struct virtiofs_emu_ll *emu = calloc(sizeof(struct virtiofs_emu_ll), 1);
 
     emu->polling_interval_usec = emu_params.polling_interval_usec;
@@ -270,7 +281,7 @@ struct virtiofs_emu_ll *virtiofs_emu_ll_new(struct virtiofs_emu_ll_params *param
     param.num_queues = 1 + emu_params.nthreads;
     // Must be an order of 2 or you will get err 121
     // queue slots that are left unused significantly decrease performance because of the snap poller
-    param.queue_depth = 64;
+    param.queue_depth = emu_params.queue_depth;
     param.force_in_order = false;
     // See snap_virtio_fs_ctrl.c:811, if enabled this controller is
     // supposed to be recovered from the dead

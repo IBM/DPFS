@@ -38,6 +38,8 @@ int32_t nfs_error_to_fuse_error(nfsstat4 status) {
         return status;
     } else if (status == NFS4ERR_GRACE) {
         return EAGAIN;
+    } else if (status == NFS4ERR_NOFILEHANDLE) {
+        return EBADF;
     } else {
         fprintf(stderr, "Unknown NFS status code in nfs_error_to_fuse_error!\n");
         return ENOSYS;

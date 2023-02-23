@@ -11,7 +11,7 @@
 
 void usage()
 {
-    printf("virtionfs [-p pf_id] [-v vf_id ] [-e emulation_manager_name] [-s server_ip] [-x export_path] \n");
+    printf("virtionfs [-p pf_id] [-v vf_id ] [-e emulation_manager_name] [-s server_ip] [-x export_path] [-d queue_depth] \n");
 }
 
 int main(int argc, char **argv)
@@ -22,9 +22,10 @@ int main(int argc, char **argv)
     char *server = NULL;
     char *export = NULL;
     uint32_t nthreads = 1;
+    uint32_t queue_depth = 64;
 
     int opt;
-    while ((opt = getopt(argc, argv, "p:v:e:s:x:t:")) != -1) {
+    while ((opt = getopt(argc, argv, "p:v:e:s:x:t:d:")) != -1) {
         switch (opt) {
             case 'p':
                 pf = atoi(optarg);
@@ -43,6 +44,9 @@ int main(int argc, char **argv)
                 break;
             case 't':
                 nthreads = strtoul(optarg, NULL, 10);
+                break;
+            case 'd':
+                queue_depth = strtoul(optarg, NULL, 10);
                 break;
             default: /* '?' */
                 usage();
@@ -88,6 +92,7 @@ int main(int argc, char **argv)
 
     emu_params.polling_interval_usec = 0;
     emu_params.nthreads = nthreads;
+    emu_params.queue_depth = queue_depth;
     emu_params.tag = "virtionfs";
 
     virtionfs_main(server, export, false, false, nthreads, &emu_params);

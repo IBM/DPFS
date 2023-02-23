@@ -1,10 +1,10 @@
 #!/bin/bash
 
-echo "Welcome to the dpu-virtio-fs workload runner :)"
+echo "Welcome to the dpu-virtio-fs workload runner! :)"
 echo "Please run this script with numactl to bind all the workloads to the NUMA node on which the device is located"
 
 if [ -z $MNT ]; then
-	echo "You must set the MNT env variable to where you want to run the workloads"
+	echo "You must set the MNT env variable to where you want to run the workloads!"
 	exit 1
 fi
 
@@ -16,6 +16,7 @@ OUT=$SCRIPT_DIR/output/${COMMIT}_${HOST}_${TIMESTAMP}
 
 mkdir -p $OUT
 echo "The output will be stored under $OUT"
+echo "This run.sh will take $(python -c 'print(round((2*7*25+7*8*5*25+3*6*8*5*25)/60/60, 2))') hours."
 
 echo "Running: fio latency benchmarks"
 for RW in "randread" "randwrite"; do

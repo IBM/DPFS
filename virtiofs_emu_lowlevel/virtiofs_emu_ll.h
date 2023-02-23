@@ -39,6 +39,8 @@ struct virtiofs_emu_params {
     // Amount of polling threads 0 for single threaded mode, >0 for multithreaded mode
     // Multithreaded not supported currently!
     uint32_t nthreads;
+    // Must be a power of 2!
+    uint32_t queue_depth;
     char *tag; // Filesystem tag (i.e. the name of the virtiofs device to mount for the host)
 };
 
