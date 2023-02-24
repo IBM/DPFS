@@ -29,10 +29,9 @@ echo "Setting /proc/sys/kernel/perf_event_paranoid to -1 for perf."
 sudo sh -c "echo -1 > /proc/sys/kernel/perf_event_paranoid"
 
 echo "The output will be stored under $OUT"
-echo "This run.sh will take $(python -c 'print(round((2*7*25 + 7*8*5*25 + 3*6*8*5*25 + 600)/60/60, 2))') hours."
+echo "This run.sh will take $(python3 -c 'print(round((2*7*25 + 7*8*5*25 + 3*6*8*5*25 + 600)/60/60, 2))') hours."
 
 echo "START"
-
 mkdir -p $OUT
 
 echo "Running: fio latency benchmarks"
@@ -73,11 +72,11 @@ done
 
 # Single operation latency
 echo "Running: stat (getattr) latency"
-gcc .workloads/lat/lat_stat.c -O3 -o ./workloads/lat/lat_stat
-./workloads/lat/lat_stat $MNT/test 50000 1 > $OUT/lat_stat.out
+gcc ./workloads/lat/lat_stat.c -O3 -o ./workloads/lat/lat_stat
+./workloads/lat/lat_stat $MNT/test 100000 1 > $OUT/lat_stat.out
 echo "Running: statfs latency"
 gcc ./workloads/lat/lat_statfs.c -O3 -o ./workloads/lat/lat_statfs
-./workloads/lat/lat_statfs $MNT 50000 1 > $OUT/lat_statfs.out
+./workloads/lat/lat_statfs $MNT 100000 1 > $OUT/lat_statfs.out
 
 sudo pkill setcpulatency
 echo "Reset CPU/DMA latency to default value"
