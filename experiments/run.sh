@@ -13,6 +13,12 @@ if perf 2>&1 | grep "WARNING: perf not found for kernel"; then
 	exit 1
 fi
 
+DEV=$1
+if [[ $DEV != "NFS" && $DEV !=  "VNFS" && $DEV != "nulldev" ]]; then
+	echo "You must supply this script with one of the following parameters: NFS, VNFS or nulldev"
+	exit 1
+fi
+
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 cd $SCRIPT_DIR
 
@@ -28,13 +34,18 @@ sudo ./setcpulatency 0 &
 echo "Setting /proc/sys/kernel/perf_event_paranoid to -1 for perf."
 sudo sh -c "echo -1 > /proc/sys/kernel/perf_event_paranoid"
 
+TIME=$(python3 -c 'print(round((2*7*40 + 2*3*8*40 + 2*4*8*40 + 2*5*40 + 610*3 + 610*3)/60/60, 2))')
 echo "The output will be stored under $OUT"
-echo "This run.sh will take $(python3 -c 'print(round((2*7*25 + 7*8*5*25 + 3*6*8*5*25 + 600)/60/60, 2))') hours."
+echo "This run.sh will take  hours."
 
 echo "START"
 mkdir -p $OUT
 
-echo "Running: fio latency benchmarks"
+# Latency experiment
+# P=1
+# Variable BS
+# QD=1
+echo "Running: fio latency experiment"
 for RW in "randread" "randwrite"; do
 	for BS in "1" "4k" "8k" "16k" "32k" "64k" "128k"; do
 		for IODEPTH in 1; do
@@ -46,11 +57,15 @@ for RW in "randread" "randwrite"; do
 	done
 done
 
-echo "Running: fio IOPS benchmarks"
-for RW in "randrw"; do
-	for BS in "1" "4k" "8k" "16k" "32k" "64k" "128k"; do
+# IOPS experiment
+# P=1
+# BS = 1B, 4k, 8k
+# QD = 1, 2, 4, 8, 16, 32, 64, 128
+echo "Running: fio IOPS experiment"
+for RW in "randread" "randwrite"; do
+	for BS in "1" "4k" "8k"; do
 		for IODEPTH in 1 2 4 8 16 32 64 128; do
-			for P in 1 2 4 8 16; do
+			for P in 1; do
 				echo fio RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P
 				RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P ./workloads/fio.sh > $OUT/fio_${RW}_${BS}_${IODEPTH}_${P}.out
 			done
@@ -58,10 +73,39 @@ for RW in "randrw"; do
 	done
 done
 
-echo "Running: fio read, write throughput benchmarks"
-for RW in "read" "write"; do
-	for BS in "4k" "8k" "16k" "32k" "64k" "128k"; do
+BS_LIST=()
+# NFS supports up to 1m
+if [[ $DEV == "NFS" ]]; then
+	BS_LIST=("32k" "64k" "128k" "1m")
+elif [[ $DEV == "VNFS" || $DEV == "nulldev" ]]; then
+	BS_LIST=("32k" "64k" "128k")
+fi
+
+# Throughput experiment
+# P=1
+# BS three options (middle one is the fastest)
+# QD = 1, 2, 4, 8, 16, 32, 64, 128
+echo "Running: fio throughput benchmarks"
+for RW in "randread" "randwrite"; do
+	for BS in "${BS_LIST[@]}"; do
 		for IODEPTH in 1 2 4 8 16 32 64 128; do
+			for P in 1; do
+				echo fio RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P
+				RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P ./workloads/fio.sh > $OUT/fio_${RW}_${BS}_${IODEPTH}_${P}.out
+			done
+		done
+	done
+done
+
+
+# Multicore experiment
+# Thread count 1, 2, 4, 8, 16
+# BS fixed (fastest for VNFS)
+# QD fixed (fastest aka 128)
+echo "Running: fio IOPS multicore experiment"
+for RW in "randread" "randwrite"; do
+	for BS in "32k"; do
+		for IODEPTH in 128; do
 			for P in 1 2 4 8 16; do
 				echo fio RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P
 				RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P ./workloads/fio.sh > $OUT/fio_${RW}_${BS}_${IODEPTH}_${P}.out
@@ -81,15 +125,20 @@ gcc ./workloads/lat/lat_statfs.c -O3 -o ./workloads/lat/lat_statfs
 sudo pkill setcpulatency
 echo "Reset CPU/DMA latency to default value"
 
-RUNTIME="300"
+RUNTIME="600"
+REPS=3
 echo "Running: perf CPU cycle analysis for ${RUNTIME}s seconds without a load (baseline)"
-# We are doing -a (system wide profiling) to take the RX path into account that partially doesn't get attributed to the process.
-# add 10 seconds to the runtime to account for the startup
-perf stat -a -x "," --delay 10000 -- sleep 310 2> $OUT/cpu_baseline_perf.out
+for i in $(seq 1 $REPS); do
+	# We are doing -a (system wide profiling) to take the RX path into account that partially doesn't get attributed to the process.
+	# add 10 seconds to the runtime to account for the startup
+	perf stat -a -x "," --delay 10000 --all-kernel -- sleep 610 2> $OUT/cpu_baseline_perf_${i}.out
+done
 
 echo "Running: perf CPU cycle analysis for ${RUNTIME}s seconds with a fio stress load"
-# Our fio by default warms up for 10s, so just runtime=300s
-perf stat -a -x "," --delay 10000 -- env RW=randrw BS=4k IODEPTH=128 P=1 RUNTIME=${RUNTIME}s ./workloads/fio.sh 1> $OUT/cpu_load_fio.out 2> $OUT/cpu_load_perf.out
+for i in $(seq 1 $REPS); do
+	# Our fio by default warms up for 10s, so just runtime=300s
+	perf stat -a -x "," --delay 10000 --all-kernel -- env RW=randrw BS=4k IODEPTH=128 P=1 RUNTIME=${RUNTIME}s ./workloads/fio.sh 1> $OUT/cpu_load_fio_${i}.out 2> $OUT/cpu_load_perf_${i}.out
+done
 
 echo "DONE"
 
