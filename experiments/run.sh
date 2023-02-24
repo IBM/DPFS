@@ -2,9 +2,14 @@
 
 echo "Welcome to the dpu-virtio-fs workload runner! :)"
 echo "Please run this script with numactl to bind all the workloads to the NUMA node on which the device is located"
+echo "Furthermore please make sure that any resource hogs have been removed from the system"
 
 if [ -z $MNT ]; then
 	echo "You must set the MNT env variable to where you want to run the workloads!"
+	exit 1
+fi
+
+if perf 2>&1 | grep "WARNING: perf not found for kernel"; then
 	exit 1
 fi
 
@@ -25,9 +30,6 @@ sudo sh -c "echo -1 > /proc/sys/kernel/perf_event_paranoid"
 
 echo "The output will be stored under $OUT"
 echo "This run.sh will take $(python -c 'print(round((2*7*25 + 7*8*5*25 + 3*6*8*5*25 + 600)/60/60, 2))') hours."
-
-echo "Please confirm that all the above is correct and that the host has been cleared of resource hogs"
-read
 
 echo "START"
 
@@ -71,13 +73,13 @@ done
 
 # Single operation latency
 echo "Running: stat (getattr) latency"
-gcc ./lat/lat_stat.c -O3 -o ./lat/lat_stat
-./lat/lat_stat $MNT/test 50000 1 > $OUT/lat_stat.out
+gcc .workloads/lat/lat_stat.c -O3 -o ./workloads/lat/lat_stat
+./workloads/lat/lat_stat $MNT/test 50000 1 > $OUT/lat_stat.out
 echo "Running: statfs latency"
-gcc ./lat/lat_statfs.c -O3 -o ./lat/lat_statfs
-./lat/lat_statfs $MNT 50000 1 > $OUT/lat_statfs.out
+gcc ./workloads/lat/lat_statfs.c -O3 -o ./workloads/lat/lat_statfs
+./workloads/lat/lat_statfs $MNT 50000 1 > $OUT/lat_statfs.out
 
-pkill setcpulatency
+sudo pkill setcpulatency
 echo "Reset CPU/DMA latency to default value"
 
 RUNTIME="300"
@@ -86,7 +88,9 @@ echo "Running: perf CPU cycle analysis for ${RUNTIME}s seconds without a load (b
 perf stat -a -x "," -- sleep $RUNTIME 2> $OUT/cpu_baseline_perf.out
 
 echo "Running: perf CPU cycle analysis for ${RUNTIME}s seconds with a fio stress load"
-perf stat -a -x "," -- env RW=randrw BS=4k IODEPTH=128 P=1 RUNTIME="${RUNTIME}s" ./workloads/fio.sh 1> $OUT/cpu_load_fio.out 2> $OUT/cpu_load_perf.out
+# We subtract 10s because fio by default warms up for 10s
+PERF_FIO_RUNTIME="$(echo ${RUNTIME}-10 | bc)s"
+perf stat -a -x "," -- env RW=randrw BS=4k IODEPTH=128 P=1 RUNTIME=$PERF_FIO_RUNTIME ./workloads/fio.sh 1> $OUT/cpu_load_fio.out 2> $OUT/cpu_load_perf.out
 
 echo "DONE"
 
