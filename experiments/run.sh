@@ -84,12 +84,12 @@ echo "Reset CPU/DMA latency to default value"
 RUNTIME="300"
 echo "Running: perf CPU cycle analysis for ${RUNTIME}s seconds without a load (baseline)"
 # We are doing -a (system wide profiling) to take the RX path into account that partially doesn't get attributed to the process.
-perf stat -a -x "," -- sleep $RUNTIME 2> $OUT/cpu_baseline_perf.out
+# add 10 seconds to the runtime to account for the startup
+perf stat -a -x "," --delay 10000 -- sleep 310 2> $OUT/cpu_baseline_perf.out
 
 echo "Running: perf CPU cycle analysis for ${RUNTIME}s seconds with a fio stress load"
-# We subtract 10s because fio by default warms up for 10s
-PERF_FIO_RUNTIME="$(echo ${RUNTIME}-10 | bc)s"
-perf stat -a -x "," -- env RW=randrw BS=4k IODEPTH=128 P=1 RUNTIME=$PERF_FIO_RUNTIME ./workloads/fio.sh 1> $OUT/cpu_load_fio.out 2> $OUT/cpu_load_perf.out
+# Our fio by default warms up for 10s, so just runtime=300s
+perf stat -a -x "," --delay 10000 -- env RW=randrw BS=4k IODEPTH=128 P=1 RUNTIME=${RUNTIME}s ./workloads/fio.sh 1> $OUT/cpu_load_fio.out 2> $OUT/cpu_load_perf.out
 
 echo "DONE"
 
