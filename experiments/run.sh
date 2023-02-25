@@ -34,7 +34,11 @@ sudo ./setcpulatency 0 &
 echo "Setting /proc/sys/kernel/perf_event_paranoid to -1 for perf."
 sudo sh -c "echo -1 > /proc/sys/kernel/perf_event_paranoid"
 
-TIME=$(python3 -c 'print(round((2*10*8*70 + 2*5*70 + 610*3 + 610*3)/60/60, 2))')
+TIME=$(python3 -c '
+import datetime
+t = 70 + 2*10*8*70 + 2*5*70 + 610*15
+print(datetime.timedelta(seconds=t))
+')
 echo "The output will be stored under $OUT"
 
 echo "STARTING in 10 seconds! quit the system now to reduce variability!"
@@ -42,7 +46,7 @@ echo "This run.sh will take $TIME hours. Only log back in after that amount of t
 sleep 10
 echo "START"
 
-echo Running random r/w mix multicore fio workload for 60 seconds to warm up the system
+echo Running random r/w mix multicore fio workload for 70 seconds to warm up the system
 RW=randrw BS=4k IODEPTH=128 P=4 ./workloads/fio.sh > /dev/null
 
 mkdir -p $OUT
@@ -82,19 +86,12 @@ for RW in "randread" "randwrite"; do
 	done
 done
 
-# Single operation latency
-echo "Running: stat (getattr) latency"
-gcc ./workloads/lat/lat_stat.c -O3 -o ./workloads/lat/lat_stat
-./workloads/lat/lat_stat $MNT/test 100000 1 > $OUT/lat_stat.out
-echo "Running: statfs latency"
-gcc ./workloads/lat/lat_statfs.c -O3 -o ./workloads/lat/lat_statfs
-./workloads/lat/lat_statfs $MNT 100000 1 > $OUT/lat_statfs.out
-
 sudo pkill setcpulatency
 echo "Reset CPU/DMA latency to default value"
 
 RUNTIME="600"
-REPS=3
+REPS=5
+
 echo "Running: perf CPU cycle analysis for ${RUNTIME}s seconds without a load (baseline)"
 for i in $(seq 1 $REPS); do
 	# We are doing -a (system wide profiling) to take the RX path into account that partially doesn't get attributed to the process.
@@ -102,10 +99,18 @@ for i in $(seq 1 $REPS); do
 	perf stat -a -x "," --delay 10000 --all-kernel -- sleep 610 2> $OUT/cpu_baseline_perf_${i}.out
 done
 
-echo "Running: perf CPU cycle analysis for ${RUNTIME}s seconds with a fio stress load"
+$PERF_T1_METRICS="cpu-clock,cycles,instructions,branches,branch-misses"
+echo "Running: perf CPU cycle analysis T1 for ${RUNTIME}s seconds with a fio stress load. Measuring the following metrics: ${PERF_T1_METRICS}"
 for i in $(seq 1 $REPS); do
 	# Our fio by default warms up for 10s, so just runtime=300s
-	perf stat -a -x "," --delay 10000 --all-kernel -- env RW=randrw BS=4k IODEPTH=128 P=1 RUNTIME=${RUNTIME}s ./workloads/fio.sh 1> $OUT/cpu_load_fio_${i}.out 2> $OUT/cpu_load_perf_${i}.out
+	perf stat -a -x "," --delay 10000 --all-kernel -e $PERF_T1_METRICS -- env RW=randrw BS=4k IODEPTH=128 P=1 RUNTIME=${RUNTIME}s ./workloads/fio.sh 1> $OUT/cpu_load_T1_fio_${i}.out 2> $OUT/cpu_load_T1_perf_${i}.out
+done
+
+$PERF_T2_METRICS="L1-dcache-load-misses,L1-dcache-loads,L1-icache-load-misses,L1-icache-loads,dTLB-loads,dTLB-loads-misses"
+echo "Running: perf CPU cycle analysis T1 for ${RUNTIME}s seconds with a fio stress load. Measuring the following metrics: ${PERF_T2_METRICS}"
+for i in $(seq 1 $REPS); do
+	# Our fio by default warms up for 10s, so just runtime=300s
+	perf stat -a -x "," --delay 10000 --all-kernel -e $PERF_T2_METRICS -- env RW=randrw BS=4k IODEPTH=128 P=1 RUNTIME=${RUNTIME}s ./workloads/fio.sh 1> $OUT/cpu_load_T2_fio_${i}.out 2> $OUT/cpu_load_T2_perf_${i}.out
 done
 
 echo "DONE"
