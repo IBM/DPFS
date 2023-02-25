@@ -42,6 +42,9 @@ echo "This run.sh will take $TIME hours. Only log back in after that amount of t
 sleep 10
 echo "START"
 
+echo Running random r/w mix multicore fio workload for 60 seconds to warm up the system
+RW=randrw BS=4k IODEPTH=128 P=4 ./workloads/fio.sh > /dev/null
+
 mkdir -p $OUT
 
 echo "Running: fio latency, IOPS and throughput singlecore experiments"
