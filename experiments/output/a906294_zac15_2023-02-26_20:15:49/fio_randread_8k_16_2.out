@@ -1,0 +1,18 @@
+randread_8k_16_2: (g=0): rw=randread, bs=(R) 8192B-8192B, (W) 8192B-8192B, (T) 8192B-8192B, ioengine=io_uring, iodepth=16
+...
+fio-3.28
+Starting 2 threads
+
+fio: terminating on signal 15
+
+randread_8k_16_2: (groupid=0, jobs=2): err= 0: pid=11685: Sun Feb 26 20:20:34 2023
+  read: IOPS=52.0k, BW=406MiB/s (426MB/s)(262MiB/646msec)
+  cpu          : usr=4.34%, sys=16.36%, ctx=20613, majf=0, minf=64
+  IO depths    : 1=0.1%, 2=0.1%, 4=0.1%, 8=0.1%, 16=99.9%, 32=0.0%, >=64=0.0%
+     submit    : 0=0.0%, 4=100.0%, 8=0.0%, 16=0.0%, 32=0.0%, 64=0.0%, >=64=0.0%
+     complete  : 0=0.0%, 4=100.0%, 8=0.0%, 16=0.1%, 32=0.0%, 64=0.0%, >=64=0.0%
+     issued rwts: total=33568,0,0,0 short=0,0,0,0 dropped=0,0,0,0
+     latency   : target=0, window=0, percentile=100.00%, depth=16
+
+Run status group 0 (all jobs):
+   READ: bw=406MiB/s (426MB/s), 406MiB/s-406MiB/s (426MB/s-426MB/s), io=262MiB (275MB), run=646-646msec

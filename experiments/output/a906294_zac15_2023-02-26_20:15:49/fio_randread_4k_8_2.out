@@ -1,0 +1,18 @@
+randread_4k_8_2: (g=0): rw=randread, bs=(R) 4096B-4096B, (W) 4096B-4096B, (T) 4096B-4096B, ioengine=io_uring, iodepth=8
+...
+fio-3.28
+Starting 2 threads
+
+fio: terminating on signal 15
+
+randread_4k_8_2: (groupid=0, jobs=2): err= 0: pid=11156: Sun Feb 26 20:18:29 2023
+  read: IOPS=48.6k, BW=190MiB/s (199MB/s)(144MiB/756msec)
+  cpu          : usr=4.37%, sys=17.02%, ctx=23599, majf=0, minf=16
+  IO depths    : 1=0.1%, 2=0.1%, 4=0.1%, 8=100.0%, 16=0.0%, 32=0.0%, >=64=0.0%
+     submit    : 0=0.0%, 4=100.0%, 8=0.0%, 16=0.0%, 32=0.0%, 64=0.0%, >=64=0.0%
+     complete  : 0=0.0%, 4=100.0%, 8=0.1%, 16=0.0%, 32=0.0%, 64=0.0%, >=64=0.0%
+     issued rwts: total=36753,0,0,0 short=0,0,0,0 dropped=0,0,0,0
+     latency   : target=0, window=0, percentile=100.00%, depth=8
+
+Run status group 0 (all jobs):
+   READ: bw=190MiB/s (199MB/s), 190MiB/s-190MiB/s (199MB/s-199MB/s), io=144MiB (151MB), run=756-756msec
