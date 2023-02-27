@@ -30,11 +30,11 @@ done
 # QD fixed (fastest aka 128)
 echo "Running: fio IOPS multicore experiment"
 for RW in "randread" "randwrite"; do
-	for BS in "32k"; do
+	for BS in "4k" "32k"; do
 		for IODEPTH in 128; do
 			for P in 1 2 4 8 16; do
-				echo fio RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P
-				RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P ./workloads/fio.sh > $OUT/fio_${RW}_${BS}_${IODEPTH}_${P}.out
+				echo fio-multifile RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P
+				RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P ./workloads/fio-multifile.sh > $OUT/fio_${RW}_${BS}_${IODEPTH}_${P}.out
 			done
 		done
 	done

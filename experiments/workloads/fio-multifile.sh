@@ -1,5 +1,5 @@
 #!/bin/bash
-FIO_DEFAULTS="--filename ${MNT}/fio-10g --size 10G --ioengine=io_uring --direct=1 --thread=1 --group_reporting --time_based --random_generator=tausworthe64 --norandommap=1"
+FIO_DEFAULTS="--filename_format ${MNT}/fio-5g-\$jobnum --size 5G --direct=1 --ioengine=io_uring --thread=1 --group_reporting --time_based --random_generator=tausworthe64 --norandommap=1"
 
 # Default runtime is 30s
 RUNTIME="${RUNTIME:-60s}"

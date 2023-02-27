@@ -180,6 +180,13 @@ static void create_session_cb(struct rpc_context *rpc, int status, void *data,
     memcpy(&conn->session.attrs, &ok->csr_fore_chan_attrs, sizeof(channel_attrs4));
     // The sequenceid we receive in this ok is the same as we sent, so no need to do anything
     // We set no flags, so no need to do anything
+    //
+    if (conn->session.attrs.ca_maxoperations < NFS4_MAX_OPS) {
+        fprintf(stderr, "WARNING: Your NFS server might be running an older version of the Linux kernel."
+                        "It only supports %u maxoperations per request, we hoped for %u."
+                        "This will negatively impact write performance for large block sizes.\n",
+                        conn->session.attrs.ca_maxoperations, NFS4_MAX_OPS);
+    }
 
     conn->session.nslots = ok->csr_fore_chan_attrs.ca_maxrequests;
     conn->session.slots = calloc(conn->session.nslots, sizeof(struct vnfs_slot));
