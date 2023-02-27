@@ -48,7 +48,7 @@ RW=randrw BS=4k IODEPTH=128 P=4 ./workloads/fio.sh > /dev/null
 mkdir -p $OUT
 
 ./synthetic.sh
-./perf.sh
+./host_cpu_analysis.sh
 
 echo "DONE"
 
