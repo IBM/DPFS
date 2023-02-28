@@ -32,7 +32,7 @@ gcc setcpulatency.c -o setcpulatency
 
 TIME=$(python3 -c '
 import datetime
-t = 70 + 2*10*8*70 + 2*5*70 + 4*5*610
+t = 70 + 2*10*11*70 + 2*10*70 + 2*2*4*70 + 4*5*610
 print(datetime.timedelta(seconds=t))
 ')
 echo "The output will be stored under $OUT"

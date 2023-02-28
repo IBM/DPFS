@@ -61,3 +61,4 @@ done
 
 sudo pkill setcpulatency
 echo "Reset CPU/DMA latency to default value"
+sleep 10
