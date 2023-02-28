@@ -13,9 +13,16 @@ if [[ $DEV == "NFS" ]]; then
 elif [[ $DEV == "VNFS" || $DEV == "nulldev" ]]; then
 	BS_LIST=("1" "4k" "8k" "16k" "32k" "64k" "128k")
 fi
+QD_LIST=()
+# The nulldev sees increases in iops until QD 256
+if [[ $DEV == "nulldev" ]]; then
+	QD_LIST=("1" "2" "4" "8" "16" "32" "64" "128" "256" "512")
+elif [[ $DEV == "NFS" || $DEV == "VNFS" ]]; then
+	QD_LIST=("1" "2" "4" "8" "16" "32" "64")
+fi
 for RW in "randread" "randwrite"; do
 	for BS in "${BS_LIST[@]}"; do
-		for IODEPTH in 1 2 4 8 16 32 64 128; do
+		for IODEPTH in "${QD_LIST[@]}"; do
 			for P in 2; do
 				echo fio RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P
 				RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P ./workloads/fio.sh > $OUT/fio_${RW}_${BS}_${IODEPTH}_${P}.out

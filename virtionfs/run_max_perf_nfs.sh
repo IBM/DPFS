@@ -1,5 +1,4 @@
 #!/bin/bash
-sudo su
 ulimit -l unlimited
 # This will report if something goes wrong.
 export XLIO_TRACELEVEL=DETAILS
