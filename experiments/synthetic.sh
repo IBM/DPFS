@@ -2,9 +2,6 @@
 
 echo "Running synthetic experiments"
 
-echo "Setting CPU/DMA latency to 0. A sudo prompt might now come up."
-sudo ./setcpulatency 0 & 
-
 echo "Running: fio IOPS and throughput experiments"
 BS_LIST=()
 # NFS supports up to 1m
@@ -59,6 +56,4 @@ for RW in "randread" "randwrite"; do
 	done
 done
 
-sudo pkill setcpulatency
-echo "Reset CPU/DMA latency to default value"
 sleep 10
