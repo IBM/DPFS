@@ -15,7 +15,7 @@ QD_LIST=()
 if [[ $DEV == "nulldev" ]]; then
 	QD_LIST=("1" "2" "4" "8" "16" "32" "64" "128" "256" "512")
 elif [[ $DEV == "NFS" || $DEV == "VNFS" ]]; then
-	QD_LIST=("1" "2" "4" "8" "16" "32" "64")
+	QD_LIST=("1" "2" "4" "8" "16" "32" "64" "128")
 fi
 for RW in "randread" "randwrite"; do
 	for BS in "${BS_LIST[@]}"; do
