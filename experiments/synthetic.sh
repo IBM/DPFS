@@ -28,6 +28,8 @@ for RW in "randread" "randwrite"; do
 	done
 done
 
+sudo ./setcpulatency 0 &
+sleep 5
 echo "Running: fio latency experiments"
 for RW in "randread" "randwrite"; do
 	for BS in "${BS_LIST[@]}"; do
@@ -39,6 +41,8 @@ for RW in "randread" "randwrite"; do
 		done
 	done
 done
+sudo pkill setcpulatency
+sleep 5
 
 # Multicore experiment
 # Thread count 1, 2, 4, 8, 16
