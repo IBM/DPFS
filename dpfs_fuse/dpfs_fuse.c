@@ -23,10 +23,12 @@
 #include <string.h>
 #include <unistd.h>
 #include <err.h>
+#include <stdatomic.h>
 #include <sys/statvfs.h>
 #include <sys/types.h>
 #include <sys/uio.h>
 #include <sys/fcntl.h>
+#include <stddef.h>
 #include <linux/fuse.h>
 
 #include "config.h"
@@ -34,6 +36,7 @@
 #include "debug.h"
 #include "dpfs_hal.h"
 #include "dpfs_fuse.h"
+
 
 static void convert_stat(const struct stat *stbuf, struct fuse_attr *attr)
 {

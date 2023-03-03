@@ -9,6 +9,10 @@
 #include <stdio.h>
 #include "dpfs_hal.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 void fuse_ll_debug_print_in_hdr(struct fuse_in_header *in) {
 	char *op_name;
 	switch (in->opcode) {
@@ -165,3 +169,7 @@ void fuse_ll_debug_print_in_hdr(struct fuse_in_header *in) {
 	printf("* nodeid: %lu\n", in->nodeid);
 	printf("* uid, gid, pid: %u, %u, %u\n", in->uid, in->gid, in->pid);
 }
+
+#ifdef __cplusplus
+}
+#endif
