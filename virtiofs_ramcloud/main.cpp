@@ -20,6 +20,7 @@
 #include "TableEnumerator.h"
 
 #include "dpfs_fuse.h"
+#include "dpfs_hal.h"
 
 
 struct RamCloudUserData {
@@ -381,7 +382,7 @@ static int fuse_lookup(struct fuse_session *se, RamCloudUserData *userData,
 {
     // printf("lookup: name = %s\n", in_name);
 
-    new AsyncLookupOp{*userData, fnv1a_hash(in_name), se, out_hdr, out_entry, comp_context};
+    new AsyncLookupOp{*userData, fnv1a_hash(in_name), se, out_hdr, out_entry, completion_context};
 
     return EWOULDBLOCK;
 }
@@ -416,7 +417,7 @@ static int fuse_getattr(struct fuse_session *se, RamCloudUserData *userData,
     } else {
         // printf("getattr key");
 
-        new AsyncGetAttrOp{*userData, in_hdr->nodeid, se, out_hdr, out_attr, comp_context};
+        new AsyncGetAttrOp{*userData, in_hdr->nodeid, se, out_hdr, out_attr, completion_context};
         return EWOULDBLOCK;
     }
 }
@@ -566,7 +567,7 @@ static int fuse_write(struct fuse_session *se, RamCloudUserData *userData,
     }
 
     new AsyncWriteOp{*userData, in_hdr->nodeid, in_iov, iovcnt, se, out_hdr, out_write,
-                     comp_context};
+                     completion_context};
 
     return EWOULDBLOCK;
 }
@@ -578,7 +579,7 @@ static int fuse_read(struct fuse_session *se, RamCloudUserData *userData,
 {
 
     new AsyncReadOp{*userData, in_hdr->nodeid, in_read->offset, in_iov, iovcnt, se, out_hdr,
-                    comp_context};
+                    completion_context};
 
     return EWOULDBLOCK;
 }
@@ -798,7 +799,7 @@ int main(int argc, char **argv)
     ops.mknod = (typeof(ops.mknod)) fuse_mknod; /* not sure if this is needed at all */
     ops.unlink = (typeof(ops.unlink)) fuse_unlink;
 
-    virtiofs_emu_fuse_ll_main(&ops, &emu_params, &user_data, false);
+    dpfs_fuse_main(&ops, &emu_params, &user_data, false);
 
     user_data.stopPoller = true;
     pthread_join(ramcloud_poll_thread, NULL);
