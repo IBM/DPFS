@@ -12,8 +12,6 @@
 #include <linux/fuse.h>
 #include <unistd.h>
 
-#include "virtio_fs_controller.h"
-
 #define DPFS_HAL_FUSE_MAX_OPCODE FUSE_REMOVEMAPPING
 // The opcodes begin at FUSE_LOOKUP = 1, so need one more array index
 #define DPFS_HAL_FUSE_HANDLERS_LEN DPFS_HAL_FUSE_MAX_OPCODE+1

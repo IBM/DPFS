@@ -11,13 +11,10 @@
 #include <pthread.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include <stdatomic.h>
 #include <sys/uio.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
-
-#include "dpfs_hal.h"
 
 // Beginning of libfuse/include/fuse_lowlevel.h selective copy
 
