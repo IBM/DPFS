@@ -46,33 +46,33 @@
 #include "nvme_emu_log.h"
 #include "compiler.h"
 #include "mlnx_snap_pci_manager.h"
-#include "virtiofs_emu_ll.h"
+#include "dpfs_hal.h"
 #include "cpu_latency.h"
 
-struct virtiofs_emu_ll {
+struct dpfs_hal {
     struct virtio_fs_ctrl *snap_ctrl;
-    virtiofs_emu_ll_handler_t handlers[VIRTIOFS_EMU_LL_FUSE_HANDLERS_LEN];
+    dpfs_hal_handler_t handlers[DPFS_HAL_FUSE_HANDLERS_LEN];
     void *user_data;
     useconds_t polling_interval_usec;
     uint32_t nthreads;
 
 #ifdef DEBUG_ENABLED
-    uint32_t handlers_call_cnts[VIRTIOFS_EMU_LL_FUSE_HANDLERS_LEN];
+    uint32_t handlers_call_cnts[DPFS_HAL_FUSE_HANDLERS_LEN];
 #endif
 };
 
 static volatile int keep_running = 1;
-pthread_key_t virtiofs_thread_id_key;
+pthread_key_t dpfs_hal_thread_id_key;
 
 void signal_handler(int dummy)
 {
     keep_running = 0;
 }
 
-static void virtiofs_emu_ll_loop_singlethreaded(struct virtio_fs_ctrl *ctrl, useconds_t interval, int thread_id)
+static void dpfs_hal_loop_singlethreaded(struct virtio_fs_ctrl *ctrl, useconds_t interval, int thread_id)
 {
     // Only one thread, thread_id=0
-    pthread_setspecific(virtiofs_thread_id_key, (void *) 0);
+    pthread_setspecific(dpfs_hal_thread_id_key, (void *) 0);
 
     struct sigaction act;
     memset(&act, 0, sizeof(act));
@@ -120,13 +120,13 @@ struct emu_ll_tdata {
     pthread_t thread;
 };
 
-static void *virtiofs_emu_ll_loop_thread(void *arg)
+static void *dpfs_hal_loop_thread(void *arg)
 {
     struct emu_ll_tdata *tdata = (struct emu_ll_tdata *)arg;
 
     // Store the thread_id in thread local storage so that the FUSE implementation
     // knows what thread number its in when called with a request
-    pthread_setspecific(virtiofs_thread_id_key, (void *) tdata->thread_id);
+    pthread_setspecific(dpfs_hal_thread_id_key, (void *) tdata->thread_id);
 
     // poll as fast as we can! Someone else is doing mmio polling
     while (keep_running || !virtio_fs_ctrl_is_suspended(tdata->ctrl))
@@ -135,7 +135,7 @@ static void *virtiofs_emu_ll_loop_thread(void *arg)
     return NULL;
 }
 
-static void virtiofs_emu_ll_loop_multithreaded(struct virtio_fs_ctrl *ctrl,
+static void dpfs_hal_loop_multithreaded(struct virtio_fs_ctrl *ctrl,
                                int nthreads, useconds_t interval)
 {
     struct emu_ll_tdata tdatas[nthreads];
@@ -144,7 +144,7 @@ static void virtiofs_emu_ll_loop_multithreaded(struct virtio_fs_ctrl *ctrl,
         tdatas[i].thread_id = i;
         tdatas[i].ctrl = ctrl;
         // Only the first thread does mmio polling (sometimes)
-        if (pthread_create(&tdatas[i].thread, NULL, virtiofs_emu_ll_loop_thread, &tdatas[i])) {
+        if (pthread_create(&tdatas[i].thread, NULL, dpfs_hal_loop_thread, &tdatas[i])) {
             warn("Failed to create thread for io %d", i);
             for (int j = i - 1; j >= 0; j--) {
                 pthread_cancel(tdatas[j].thread);
@@ -154,7 +154,7 @@ static void virtiofs_emu_ll_loop_multithreaded(struct virtio_fs_ctrl *ctrl,
     }
 
     // The main thread also does mmio polling and signal handling
-    virtiofs_emu_ll_loop_singlethreaded(ctrl, interval, 0);
+    dpfs_hal_loop_singlethreaded(ctrl, interval, 0);
 
     // The main thread exited, the other threads should exit soon
     // let's wait for them
@@ -163,7 +163,7 @@ static void virtiofs_emu_ll_loop_multithreaded(struct virtio_fs_ctrl *ctrl,
     }
 }
 
-void virtiofs_emu_ll_loop(struct virtiofs_emu_ll *emu)
+void dpfs_hal_loop(struct dpfs_hal *emu)
 {
     struct virtio_fs_ctrl *ctrl = emu->snap_ctrl;
     useconds_t interval = emu->polling_interval_usec;
@@ -171,49 +171,66 @@ void virtiofs_emu_ll_loop(struct virtiofs_emu_ll *emu)
     start_low_latency();
     
     if (emu->nthreads <= 1)
-        virtiofs_emu_ll_loop_singlethreaded(ctrl, interval, 0);
+        dpfs_hal_loop_singlethreaded(ctrl, interval, 0);
     else { // Multithreaded mode
-        virtiofs_emu_ll_loop_multithreaded(ctrl, emu->nthreads, interval);
+        dpfs_hal_loop_multithreaded(ctrl, emu->nthreads, interval);
     }
 
     stop_low_latency();
 }
 
-static int virtiofs_emu_ll_fuse_unknown(void *user_data,
+
+// Currently only supports SNAP
+int dpfs_hal_async_complete(void *completion_context, enum dpfs_hal_completion_status status) {
+    struct snap_fs_dev_io_done_ctx *cb = completion_context;
+    enum snap_fs_dev_op_status snap_status = SNAP_FS_DEV_OP_IO_ERROR;
+    switch (status) {
+        case DPFS_HAL_COMPLETION_SUCCES:
+            snap_status = SNAP_FS_DEV_OP_SUCCESS;
+            break;
+        case DPFS_HAL_COMPLETION_ERROR:
+            snap_status = SNAP_FS_DEV_OP_IO_ERROR;
+            break;
+    }
+    cb->cb(snap_status, cb->user_arg);
+    return 0;
+}
+
+static int dpfs_hal_fuse_unknown(void *user_data,
                             struct iovec *fuse_in_iov, int in_iovcnt,
                             struct iovec *fuse_out_iov, int out_iovcnt,
-                            struct snap_fs_dev_io_done_ctx *cb) {
+                            void *completion_context) {
     struct fuse_in_header *in_hdr = (struct fuse_in_header *) fuse_in_iov[0].iov_base;
     struct fuse_out_header *out_hdr = (struct fuse_out_header *) fuse_out_iov[0].iov_base;
     out_hdr->unique = in_hdr->unique;
     out_hdr->len = sizeof(struct fuse_out_header);
     out_hdr->error = -ENOSYS;
 
-    printf("virtiofs_emu_ll: fuse OP(%u) called, but not implemented\n", in_hdr->opcode);
+    printf("dpfs_hal: fuse OP(%u) called, but not implemented\n", in_hdr->opcode);
 
     return 0;
 }
 
-static int virtiofs_emu_ll_handle_fuse_req(struct virtio_fs_ctrl *ctrl,
+static int dpfs_hal_handle_req(struct virtio_fs_ctrl *ctrl,
                             struct iovec *fuse_in_iov, int in_iovcnt,
                             struct iovec *fuse_out_iov, int out_iovcnt,
                             struct snap_fs_dev_io_done_ctx *done_ctx) {
-    struct virtiofs_emu_ll *emu = ctrl->virtiofs_emu;
+    struct dpfs_hal *emu = ctrl->virtiofs_emu;
 
     if (in_iovcnt < 1 || in_iovcnt < 1) {
-        fprintf(stderr, "virtiofs_emu_ll_handle_fuse_req: iovecs in and out don't both atleast one iovec\n");
+        fprintf(stderr, "dpfs_hal_handle_fuse_req: iovecs in and out don't both atleast one iovec\n");
         return -EINVAL;
     }
 
     struct fuse_in_header *in_hdr = (struct fuse_in_header *) fuse_in_iov[0].iov_base;
 
-    if (in_hdr->opcode < 1 || in_hdr->opcode > VIRTIOFS_EMU_LL_FUSE_MAX_OPCODE) {
+    if (in_hdr->opcode < 1 || in_hdr->opcode > DPFS_HAL_FUSE_MAX_OPCODE) {
         fprintf(stderr, "Invalid FUSE opcode!\n");
         return -EINVAL;
     } else {
-        virtiofs_emu_ll_handler_t h = emu->handlers[in_hdr->opcode];
+        dpfs_hal_handler_t h = emu->handlers[in_hdr->opcode];
         if (h == NULL) {
-            h = virtiofs_emu_ll_fuse_unknown;
+            h = dpfs_hal_fuse_unknown;
         }
         // Actually call the handler that was provided
         int ret = h(emu->user_data, fuse_in_iov, in_iovcnt, fuse_out_iov, out_iovcnt, done_ctx);
@@ -238,7 +255,7 @@ static int virtiofs_emu_ll_handle_fuse_req(struct virtio_fs_ctrl *ctrl,
     }
 }
 
-struct virtiofs_emu_ll *virtiofs_emu_ll_new(struct virtiofs_emu_ll_params *params) {
+struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params) {
     struct virtiofs_emu_params emu_params = params->emu_params;
     if (emu_params.emu_manager == NULL) {
         fprintf(stderr, "virtiofs_emu_new: emu_manager is required!");
@@ -262,7 +279,7 @@ struct virtiofs_emu_ll *virtiofs_emu_ll_new(struct virtiofs_emu_ll_params *param
         return NULL;
     }
 
-    struct virtiofs_emu_ll *emu = calloc(sizeof(struct virtiofs_emu_ll), 1);
+    struct dpfs_hal *emu = calloc(sizeof(struct dpfs_hal), 1);
 
     emu->polling_interval_usec = emu_params.polling_interval_usec;
     emu->user_data = params->user_data;
@@ -287,7 +304,7 @@ struct virtiofs_emu_ll *virtiofs_emu_ll_new(struct virtiofs_emu_ll_params *param
     // supposed to be recovered from the dead
     param.recover = false;
     param.suspended = false;
-    param.virtiofs_emu_handle_req = virtiofs_emu_ll_handle_fuse_req;
+    param.virtiofs_emu_handle_req = dpfs_hal_handle_req;
     param.vf_change_cb = NULL;
     param.vf_change_cb_arg = NULL;
 
@@ -312,8 +329,8 @@ struct virtiofs_emu_ll *virtiofs_emu_ll_new(struct virtiofs_emu_ll_params *param
 
     // Initialize the thread-local key we use to tell each of the Virtio
     // polling threads, which thread id it has
-    if (pthread_key_create(&virtiofs_thread_id_key, NULL)) {
-        fprintf(stderr, "Failed to create thread-local key for virtiofs threadid\n");
+    if (pthread_key_create(&dpfs_hal_thread_id_key, NULL)) {
+        fprintf(stderr, "Failed to create thread-local key for dpfs_hal threadid\n");
         goto clear_pci_list;
     }
 
@@ -329,12 +346,12 @@ out:
     return NULL;
 }
 
-void virtiofs_emu_ll_destroy(struct virtiofs_emu_ll *emu) {
+void dpfs_hal_destroy(struct dpfs_hal *emu) {
     printf("VirtIO-FS destroy controller %s\n", emu->snap_ctrl->sctx->context->device->name);
 
 #ifdef DEBUG_ENABLED
     printf("Opcode call counts:\n");
-    for (uint32_t i = 0; i < VIRTIOFS_EMU_LL_FUSE_MAX_OPCODE; i++) {
+    for (uint32_t i = 0; i < dpfs_hal_FUSE_MAX_OPCODE; i++) {
         if (emu->handlers_call_cnts[i])
             printf("OP %u : %u\n", i, emu->handlers_call_cnts[i]);
     }

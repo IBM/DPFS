@@ -5,8 +5,8 @@
 #
 */
 
-#ifndef VIRTIOFS_EMU_LL_H
-#define VIRTIOFS_EMU_LL_H
+#ifndef DPFS_HAL_H
+#define DPFS_HAL_H
 
 #include <pthread.h>
 #include <linux/fuse.h>
@@ -14,28 +14,28 @@
 
 #include "virtio_fs_controller.h"
 
-#define VIRTIOFS_EMU_LL_FUSE_MAX_OPCODE FUSE_REMOVEMAPPING
+#define DPFS_HAL_FUSE_MAX_OPCODE FUSE_REMOVEMAPPING
 // The opcodes begin at FUSE_LOOKUP = 1, so need one more array index
-#define VIRTIOFS_EMU_LL_FUSE_HANDLERS_LEN VIRTIOFS_EMU_LL_FUSE_MAX_OPCODE+1
-#define VIRTIOFS_EMU_LL_NUM_QUEUES 64
-#define VIRTIOFS_EMU_LL_QUEUE_DEPTH 64
+#define DPFS_HAL_FUSE_HANDLERS_LEN DPFS_HAL_FUSE_MAX_OPCODE+1
+#define DPFS_HAL_NUM_QUEUES 64
+#define DPFS_HAL_QUEUE_DEPTH 64
 // The maximum number of outstanding requests the virtiofs consumer is allowed to have
-#define VIRTIOFS_EMU_LL_MAX_BACKGROUND (VIRTIOFS_EMU_LL_NUM_QUEUES * VIRTIOFS_EMU_LL_QUEUE_DEPTH)
+#define DPFS_HAL_MAX_BACKGROUND (DPFS_HAL_NUM_QUEUES * DPFS_HAL_QUEUE_DEPTH)
 
 // return int EWOULDBLOCK indicates that the done_ctx callback
 // will be used to indicate when the request is fully handled
 // return int 0 indicates that the request is fully handled and
 // can be sent to the host
-typedef int (*virtiofs_emu_ll_handler_t) (void *user_data,
+typedef int (*dpfs_hal_handler_t) (void *user_data,
                             struct iovec *fuse_in_iov, int in_iovcnt,
                             struct iovec *fuse_out_iov, int out_iovcnt,
-                            struct snap_fs_dev_io_done_ctx *cb);
+                            void *completion_context);
 
 struct virtiofs_emu_params {
     useconds_t polling_interval_usec; // Time between every poll
     int pf_id; // Physical function ID
     int vf_id; // Virtual function ID
-    char *emu_manager; // Emulation manager
+    char *emu_manager; // Emulation manager, DPU specific
     // Amount of polling threads 0 for single threaded mode, >0 for multithreaded mode
     // Multithreaded not supported currently!
     uint32_t nthreads;
@@ -44,19 +44,25 @@ struct virtiofs_emu_params {
     char *tag; // Filesystem tag (i.e. the name of the virtiofs device to mount for the host)
 };
 
-struct virtiofs_emu_ll_params {
-    virtiofs_emu_ll_handler_t fuse_handlers[VIRTIOFS_EMU_LL_FUSE_HANDLERS_LEN];
-    void *user_data; // Pointer to user data that gets passed with every virtiofs_emu_ll_handler
+struct dpfs_hal_params {
+    dpfs_hal_handler_t fuse_handlers[DPFS_HAL_FUSE_HANDLERS_LEN];
+    void *user_data; // Pointer to user data that gets passed with every dpfs_hal_handler
     struct virtiofs_emu_params emu_params;
 };
 
-extern pthread_key_t virtiofs_thread_id_key;
+enum dpfs_hal_completion_status {
+    DPFS_HAL_COMPLETION_SUCCES = 0,
+    DPFS_HAL_COMPLETION_ERROR
+};
 
-// Non-user accesible
-struct virtiofs_emu_ll;
+// Not user-accessible
+struct dpfs_hal;
 
-struct virtiofs_emu_ll *virtiofs_emu_ll_new(struct virtiofs_emu_ll_params *params);
-void virtiofs_emu_ll_loop(struct virtiofs_emu_ll *emu);
-void virtiofs_emu_ll_destroy(struct virtiofs_emu_ll *emu);
+extern pthread_key_t dpfs_hal_thread_id_key;
 
-#endif // VIRTIOFS_EMU_LL_H
+struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params);
+void dpfs_hal_loop(struct dpfs_hal *hal);
+void dpfs_hal_destroy(struct dpfs_hal *hal);
+int dpfs_hal_async_complete(void *completion_context, enum dpfs_hal_completion_status);
+
+#endif // DPFS_HAL_H

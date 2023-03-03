@@ -8,7 +8,7 @@
 #ifndef VIRTIONFS_VNFS_CONNECT_H
 #define VIRTIONFS_VNFS_CONNECT_H
 
-#include "virtionfs.h"
+#include "dpfs_nfs.h"
 
 // Will keep trying to connections in the background until vnfs->ntreads is reached
 int vnfs_new_connection(struct virtionfs *vnfs);

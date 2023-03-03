@@ -15,13 +15,13 @@
 #include <nfsc/libnfs-raw-nfs4.h>
 
 #include "config.h"
-#include "virtiofs_emu_ll.h"
+#include "dpfs_fuse.h"
 #include "mpool2.h"
 #ifdef LATENCY_MEASURING_ENABLED
 #include "ftimer.h"
 #endif
 
-void virtionfs_main(char *server, char *export,
+void dpfs_nfs_main(char *server, char *export,
                bool debug, double timeout, uint32_t nthreads,
                struct virtiofs_emu_params *emu_params);
 

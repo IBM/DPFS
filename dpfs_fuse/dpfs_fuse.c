@@ -31,9 +31,9 @@
 
 #include "config.h"
 #include "common.h"
-#include "fuse_ll.h"
 #include "debug.h"
-#include "virtiofs_emu_ll.h"
+#include "dpfs_hal.h"
+#include "dpfs_fuse.h"
 
 static void convert_stat(const struct stat *stbuf, struct fuse_attr *attr)
 {
@@ -312,7 +312,7 @@ size_t fuse_add_direntry_plus(struct iov *read_iov,
 static int fuse_ll_init(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-               struct snap_fs_dev_io_done_ctx *cb) {
+               void *completion_context) {
     if (in_iovcnt != 2 || out_iovcnt != 2) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
@@ -345,7 +345,7 @@ static int fuse_ll_init(struct fuse_ll *f_ll,
     se->conn.proto_minor = inarg->minor;
     se->conn.capable = 0;
     se->conn.want = 0;
-    se->conn.max_background = VIRTIOFS_EMU_LL_MAX_BACKGROUND;
+    se->conn.max_background = DPFS_HAL_MAX_BACKGROUND;
 
     memset(outarg, 0, sizeof(*outarg));
     outarg->major = FUSE_KERNEL_VERSION;
@@ -569,7 +569,7 @@ static int fuse_ll_init(struct fuse_ll *f_ll,
 static int fuse_ll_destroy(struct fuse_ll *f_ll,
                   struct iovec *fuse_in_iov, int in_iovcnt,
                   struct iovec *fuse_out_iov, int out_iovcnt,
-                  struct snap_fs_dev_io_done_ctx *cb) {
+                  void *completion_context) {
     if (in_iovcnt != 1 || out_iovcnt != 1) {
         fprintf(stderr, "fuser_destroy: invalid number of iovecs!\n");
         return -EINVAL;
@@ -583,7 +583,7 @@ static int fuse_ll_destroy(struct fuse_ll *f_ll,
 
     f_ll->se->got_destroy = 1;
     if (f_ll->ops.destroy)
-        return f_ll->ops.destroy(f_ll->se, f_ll->user_data, in_hdr, out_hdr, cb);
+        return f_ll->ops.destroy(f_ll->se, f_ll->user_data, in_hdr, out_hdr, completion_context);
     else
         return 0;
 }
@@ -592,7 +592,7 @@ static int fuse_ll_destroy(struct fuse_ll *f_ll,
 static int fuse_ll_lookup(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                  struct snap_fs_dev_io_done_ctx *cb) {
+                  void *completion_context) {
     if (in_iovcnt != 2 || out_iovcnt != 2) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
@@ -616,7 +616,7 @@ static int fuse_ll_lookup(struct fuse_ll *f_ll,
         return 0;
     }
     if (f_ll->ops.lookup)
-        return f_ll->ops.lookup(f_ll->se, f_ll->user_data, in_hdr, in_name, out_hdr, out_entry, cb);
+        return f_ll->ops.lookup(f_ll->se, f_ll->user_data, in_hdr, in_name, out_hdr, out_entry, completion_context);
     else {
         out_hdr->error = -ENOSYS;
         return 0;
@@ -626,7 +626,7 @@ static int fuse_ll_lookup(struct fuse_ll *f_ll,
 static int fuse_ll_setattr(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                  struct snap_fs_dev_io_done_ctx *cb) {
+                  void *completion_context) {
 
     if (in_iovcnt != 2 || out_iovcnt != 2) {
         fprintf(stderr, "fuser_setattr: invalid number of iovecs!\n");
@@ -675,9 +675,9 @@ static int fuse_ll_setattr(struct fuse_ll *f_ll,
             FUSE_SET_ATTR_MTIME_NOW |
             FUSE_SET_ATTR_CTIME;
 
-        return f_ll->ops.setattr(f_ll->se, f_ll->user_data, in_hdr, &s, in_setattr->valid, fi, out_hdr, out_attr, cb);
+        return f_ll->ops.setattr(f_ll->se, f_ll->user_data, in_hdr, &s, in_setattr->valid, fi, out_hdr, out_attr, completion_context);
     } else if (f_ll->ops.setattr_async) {
-        return f_ll->ops.setattr_async(f_ll->se, f_ll->user_data, in_hdr, in_setattr, out_hdr, out_attr, cb);
+        return f_ll->ops.setattr_async(f_ll->se, f_ll->user_data, in_hdr, in_setattr, out_hdr, out_attr, completion_context);
     } else {
         out_hdr->error = -ENOSYS;
         return 0;
@@ -688,7 +688,7 @@ static int fuse_ll_setattr(struct fuse_ll *f_ll,
 static int fuse_ll_create(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                  struct snap_fs_dev_io_done_ctx *cb) {
+               void *completion_context) {
     if (in_iovcnt != 2 || out_iovcnt != 2) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
@@ -736,13 +736,13 @@ static int fuse_ll_create(struct fuse_ll *f_ll,
         return 0;
     }
 
-    return f_ll->ops.create(f_ll->se, f_ll->user_data, in_hdr, *in_create, name, out_hdr, out_entry, out_open, cb);
+    return f_ll->ops.create(f_ll->se, f_ll->user_data, in_hdr, *in_create, name, out_hdr, out_entry, out_open, completion_context);
 }
 
 static int fuse_ll_flush(struct fuse_ll *f_ll,
                 struct iovec *fuse_in_iov, int in_iovcnt,
                 struct iovec *fuse_out_iov, int out_iovcnt,
-                struct snap_fs_dev_io_done_ctx *cb) {
+                void *completion_context) {
     if (in_iovcnt != 2 || out_iovcnt != 1) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
@@ -777,13 +777,13 @@ static int fuse_ll_flush(struct fuse_ll *f_ll,
     if (f_ll->se->conn.proto_minor >= 7)
         fi.lock_owner = in_flush->lock_owner;
 
-    return f_ll->ops.flush(f_ll->se, f_ll->user_data, in_hdr, fi, out_hdr, cb);
+    return f_ll->ops.flush(f_ll->se, f_ll->user_data, in_hdr, fi, out_hdr, completion_context);
 }
 
 static int fuse_ll_setlk_common(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-               struct snap_fs_dev_io_done_ctx *cb, bool sleep) {
+               void *completion_context, bool sleep) {
     if (in_iovcnt != 2 || out_iovcnt != 1) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
@@ -830,7 +830,7 @@ static int fuse_ll_setlk_common(struct fuse_ll *f_ll,
             op |= LOCK_NB;
 
         if (f_ll->ops.flock) {
-            return f_ll->ops.flock(f_ll->se, f_ll->user_data, in_hdr, fi, op, out_hdr, cb);
+            return f_ll->ops.flock(f_ll->se, f_ll->user_data, in_hdr, fi, op, out_hdr, completion_context);
         } else {
             out_hdr->error = -ENOSYS;
             return 0;
@@ -845,21 +845,21 @@ static int fuse_ll_setlk_common(struct fuse_ll *f_ll,
 static int fuse_ll_setlkw(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                  struct snap_fs_dev_io_done_ctx *cb) {
-    return fuse_ll_setlk_common(f_ll, fuse_in_iov, in_iovcnt, fuse_out_iov, out_iovcnt, cb, true);
+                  void *completion_context) {
+    return fuse_ll_setlk_common(f_ll, fuse_in_iov, in_iovcnt, fuse_out_iov, out_iovcnt, completion_context, true);
 }
 
 static int fuse_ll_setlk(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                  struct snap_fs_dev_io_done_ctx *cb) {
-    return fuse_ll_setlk_common(f_ll, fuse_in_iov, in_iovcnt, fuse_out_iov, out_iovcnt, cb, true);
+                  void *completion_context) {
+    return fuse_ll_setlk_common(f_ll, fuse_in_iov, in_iovcnt, fuse_out_iov, out_iovcnt, completion_context, true);
 }
 
 static int fuse_ll_getattr(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                  struct snap_fs_dev_io_done_ctx *cb) {
+                  void *completion_context) {
     if (in_iovcnt != 2 || out_iovcnt != 2) {
         fprintf(stderr, "fuser_mirror_getattr: invalid number of iovecs!\n");
         return -EINVAL;
@@ -888,13 +888,13 @@ static int fuse_ll_getattr(struct fuse_ll *f_ll,
         return 0;
     }
 
-    return f_ll->ops.getattr(f_ll->se, f_ll->user_data, in_hdr, in_getattr, out_hdr, out_attr, cb);
+    return f_ll->ops.getattr(f_ll->se, f_ll->user_data, in_hdr, in_getattr, out_hdr, out_attr, completion_context);
 }
 
 static int fuse_ll_opendir(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                  struct snap_fs_dev_io_done_ctx *cb) {
+                  void *completion_context) {
     if (in_iovcnt != 2 || out_iovcnt != 2) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
@@ -923,13 +923,13 @@ static int fuse_ll_opendir(struct fuse_ll *f_ll,
         return 0;
     }
 
-    return f_ll->ops.opendir(f_ll->se, f_ll->user_data, in_hdr, in_open, out_hdr, out_open, cb);
+    return f_ll->ops.opendir(f_ll->se, f_ll->user_data, in_hdr, in_open, out_hdr, out_open, completion_context);
 }
 
 static int fuse_ll_releasedir(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                  struct snap_fs_dev_io_done_ctx *cb) {
+                  void *completion_context) {
     if (in_iovcnt != 2 || out_iovcnt != 1) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
@@ -957,13 +957,13 @@ static int fuse_ll_releasedir(struct fuse_ll *f_ll,
         return 0;
     }
 
-    return f_ll->ops.releasedir(f_ll->se, f_ll->user_data, in_hdr, in_release, out_hdr, cb);
+    return f_ll->ops.releasedir(f_ll->se, f_ll->user_data, in_hdr, in_release, out_hdr, completion_context);
 }
 
 static int fuse_ll_readdir_common(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-               struct snap_fs_dev_io_done_ctx *cb,
+               void *completion_context,
                bool plus) {
     if (!(in_iovcnt > 1 || out_iovcnt > 1)) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
@@ -996,27 +996,27 @@ static int fuse_ll_readdir_common(struct fuse_ll *f_ll,
     struct iov read_iov;
     iov_init(&read_iov, &fuse_out_iov[1], out_iovcnt-1);
 
-    return f_ll->ops.readdir(f_ll->se, f_ll->user_data, in_hdr, in_read, plus, out_hdr, read_iov, cb);
+    return f_ll->ops.readdir(f_ll->se, f_ll->user_data, in_hdr, in_read, plus, out_hdr, read_iov, completion_context);
 }
 
 static int fuse_ll_readdir(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                struct snap_fs_dev_io_done_ctx *cb) {
-    return fuse_ll_readdir_common(f_ll, fuse_in_iov, in_iovcnt, fuse_out_iov, out_iovcnt, cb, false);
+                void *completion_context) {
+    return fuse_ll_readdir_common(f_ll, fuse_in_iov, in_iovcnt, fuse_out_iov, out_iovcnt, completion_context, false);
 }
 
 static int fuse_ll_readdirplus(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                  struct snap_fs_dev_io_done_ctx *cb) {
-    return fuse_ll_readdir_common(f_ll, fuse_in_iov, in_iovcnt, fuse_out_iov, out_iovcnt, cb, true);
+                  void *completion_context) {
+    return fuse_ll_readdir_common(f_ll, fuse_in_iov, in_iovcnt, fuse_out_iov, out_iovcnt, completion_context, true);
 }
 
 static int fuse_ll_open(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                  struct snap_fs_dev_io_done_ctx *cb) {
+                  void *completion_context) {
     if (in_iovcnt != 2 || out_iovcnt != 2) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
@@ -1045,13 +1045,13 @@ static int fuse_ll_open(struct fuse_ll *f_ll,
         return 0;
     }
 
-    return f_ll->ops.open(f_ll->se, f_ll->user_data, in_hdr, in_open, out_hdr, out_open, cb);
+    return f_ll->ops.open(f_ll->se, f_ll->user_data, in_hdr, in_open, out_hdr, out_open, completion_context);
 }
 
 static int fuse_ll_release(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                  struct snap_fs_dev_io_done_ctx *cb) {
+                  void *completion_context) {
     if (in_iovcnt != 2 || out_iovcnt != 1) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
@@ -1082,13 +1082,13 @@ static int fuse_ll_release(struct fuse_ll *f_ll,
         return 0;
     }
 
-    return f_ll->ops.release(f_ll->se, f_ll->user_data, in_hdr, in_release, out_hdr, cb);
+    return f_ll->ops.release(f_ll->se, f_ll->user_data, in_hdr, in_release, out_hdr, completion_context);
 }
 
 static int fuse_ll_fsync(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                  struct snap_fs_dev_io_done_ctx *cb) {
+                  void *completion_context) {
     if (in_iovcnt != 2 || out_iovcnt != 1) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
@@ -1117,13 +1117,13 @@ static int fuse_ll_fsync(struct fuse_ll *f_ll,
         return 0;
     }
 
-    return f_ll->ops.fsync(f_ll->se, f_ll->user_data, in_hdr, in_fsync, out_hdr, cb);
+    return f_ll->ops.fsync(f_ll->se, f_ll->user_data, in_hdr, in_fsync, out_hdr, completion_context);
 }
 
 static int fuse_ll_fsyncdir(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                  struct snap_fs_dev_io_done_ctx *cb) {
+                  void *completion_context) {
     if (in_iovcnt != 2 || out_iovcnt != 1) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
@@ -1152,13 +1152,13 @@ static int fuse_ll_fsyncdir(struct fuse_ll *f_ll,
         return 0;
     }
 
-    return f_ll->ops.fsyncdir(f_ll->se, f_ll->user_data, in_hdr, in_fsync, out_hdr, cb);
+    return f_ll->ops.fsyncdir(f_ll->se, f_ll->user_data, in_hdr, in_fsync, out_hdr, completion_context);
 }
 
 static int fuse_ll_rmdir(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                  struct snap_fs_dev_io_done_ctx *cb) {
+                  void *completion_context) {
     if (in_iovcnt != 2 || out_iovcnt != 1) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
@@ -1186,13 +1186,13 @@ static int fuse_ll_rmdir(struct fuse_ll *f_ll,
         return 0;
     }
 
-    return f_ll->ops.rmdir(f_ll->se, f_ll->user_data, in_hdr, in_name, out_hdr, cb);
+    return f_ll->ops.rmdir(f_ll->se, f_ll->user_data, in_hdr, in_name, out_hdr, completion_context);
 }
 
 static int fuse_ll_forget(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                  struct snap_fs_dev_io_done_ctx *cb) {
+                  void *completion_context) {
     if (in_iovcnt != 1 || out_iovcnt != 0) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
@@ -1206,7 +1206,7 @@ static int fuse_ll_forget(struct fuse_ll *f_ll,
 #endif
 
     if (f_ll->ops.forget)
-        return f_ll->ops.forget(f_ll->se, f_ll->user_data, in_hdr, in_forget, cb);
+        return f_ll->ops.forget(f_ll->se, f_ll->user_data, in_hdr, in_forget, completion_context);
     else
         return 0;
 }
@@ -1214,7 +1214,7 @@ static int fuse_ll_forget(struct fuse_ll *f_ll,
 static int fuse_ll_batch_forget(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                  struct snap_fs_dev_io_done_ctx *cb) {
+                  void *completion_context) {
     if (in_iovcnt != 1 || out_iovcnt != 0) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
@@ -1231,7 +1231,7 @@ static int fuse_ll_batch_forget(struct fuse_ll *f_ll,
 #endif
 
     if (f_ll->ops.batch_forget)
-        return f_ll->ops.batch_forget(f_ll->se, f_ll->user_data, in_hdr, in_batch_forget, in_forget, cb);
+        return f_ll->ops.batch_forget(f_ll->se, f_ll->user_data, in_hdr, in_batch_forget, in_forget, completion_context);
     else
         return 0;
 }
@@ -1239,7 +1239,7 @@ static int fuse_ll_batch_forget(struct fuse_ll *f_ll,
 static int fuse_ll_rename(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                  struct snap_fs_dev_io_done_ctx *cb) {
+                  void *completion_context) {
     if (in_iovcnt != 2 || out_iovcnt != 1) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
@@ -1272,13 +1272,13 @@ static int fuse_ll_rename(struct fuse_ll *f_ll,
     }
 
     return f_ll->ops.rename(f_ll->se, f_ll->user_data, in_hdr, name, in_rename->newdir,
-                    new_name, 0, out_hdr, cb);
+                    new_name, 0, out_hdr, completion_context);
 }
 
 static int fuse_ll_rename2(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                  struct snap_fs_dev_io_done_ctx *cb) {
+                  void *completion_context) {
     if (in_iovcnt != 2 || out_iovcnt != 1) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
@@ -1313,13 +1313,13 @@ static int fuse_ll_rename2(struct fuse_ll *f_ll,
 
 
     return f_ll->ops.rename(f_ll->se, f_ll->user_data, in_hdr, name, in_rename2->newdir,
-                    new_name, in_rename2->flags, out_hdr, cb);
+                    new_name, in_rename2->flags, out_hdr, completion_context);
 }
 
 static int fuse_ll_read(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                  struct snap_fs_dev_io_done_ctx *cb) {
+                  void *completion_context) {
     if (in_iovcnt != 2 || out_iovcnt < 2) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
@@ -1363,13 +1363,13 @@ static int fuse_ll_read(struct fuse_ll *f_ll,
     }
 
     return f_ll->ops.read(f_ll->se, f_ll->user_data, in_hdr, in_read, out_hdr,
-            &fuse_out_iov[1], out_iovcnt-1, cb);
+            &fuse_out_iov[1], out_iovcnt-1, completion_context);
 }
 
 static int fuse_ll_write(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-               struct snap_fs_dev_io_done_ctx *cb) {
+               void *completion_context) {
     if (in_iovcnt < 2 || out_iovcnt != 2) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
@@ -1414,13 +1414,13 @@ static int fuse_ll_write(struct fuse_ll *f_ll,
     }
 
     return f_ll->ops.write(f_ll->se, f_ll->user_data, in_hdr, in_write,
-            &fuse_in_iov[2], in_iovcnt-2, out_hdr, out_write, cb);
+            &fuse_in_iov[2], in_iovcnt-2, out_hdr, out_write, completion_context);
 }
 
 static int fuse_ll_mknod(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-           struct snap_fs_dev_io_done_ctx *cb)
+           void *completion_context)
 {
     if (in_iovcnt != 2 || out_iovcnt != 2) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
@@ -1459,13 +1459,13 @@ static int fuse_ll_mknod(struct fuse_ll *f_ll,
     printf("* umask: 0x%X\n", in_mknod->umask);
 #endif
 
-    return f_ll->ops.mknod(f_ll->se, f_ll->user_data, in_hdr, in_mknod, in_name, out_hdr, out_entry, cb);
+    return f_ll->ops.mknod(f_ll->se, f_ll->user_data, in_hdr, in_mknod, in_name, out_hdr, out_entry, completion_context);
 }
 
 static int fuse_ll_mkdir(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-           struct snap_fs_dev_io_done_ctx *cb)
+           void *completion_context)
 {
     if (in_iovcnt != 2 || out_iovcnt != 2) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
@@ -1498,13 +1498,13 @@ static int fuse_ll_mkdir(struct fuse_ll *f_ll,
         return 0;
     }
 
-    return f_ll->ops.mkdir(f_ll->se, f_ll->user_data, in_hdr, in_mkdir, in_name, out_hdr, out_entry, cb);
+    return f_ll->ops.mkdir(f_ll->se, f_ll->user_data, in_hdr, in_mkdir, in_name, out_hdr, out_entry, completion_context);
 }
 
 static int fuse_ll_symlink(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-           struct snap_fs_dev_io_done_ctx *cb)
+           void *completion_context)
 {
     if (in_iovcnt != 2 || out_iovcnt != 2) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
@@ -1538,13 +1538,13 @@ static int fuse_ll_symlink(struct fuse_ll *f_ll,
         return 0;
     }
 
-    return f_ll->ops.symlink(f_ll->se, f_ll->user_data, in_hdr, in_name, in_link_name, out_hdr, out_entry, cb);
+    return f_ll->ops.symlink(f_ll->se, f_ll->user_data, in_hdr, in_name, in_link_name, out_hdr, out_entry, completion_context);
 }
 
 static int fuse_ll_statfs(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-           struct snap_fs_dev_io_done_ctx *cb)
+           void *completion_context)
 {
     if (in_iovcnt != 1 || out_iovcnt != 2) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
@@ -1572,13 +1572,13 @@ static int fuse_ll_statfs(struct fuse_ll *f_ll,
         return 0;
     }
 
-    return f_ll->ops.statfs(f_ll->se, f_ll->user_data, in_hdr, out_hdr, out_statfs, cb);
+    return f_ll->ops.statfs(f_ll->se, f_ll->user_data, in_hdr, out_hdr, out_statfs, completion_context);
 }
 
 static int fuse_ll_unlink(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-           struct snap_fs_dev_io_done_ctx *cb)
+           void *completion_context)
 {
     if (in_iovcnt != 2 || out_iovcnt != 1) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
@@ -1607,13 +1607,13 @@ static int fuse_ll_unlink(struct fuse_ll *f_ll,
         return 0;
     }
 
-    return f_ll->ops.unlink(f_ll->se, f_ll->user_data , in_hdr, in_name, out_hdr, cb);
+    return f_ll->ops.unlink(f_ll->se, f_ll->user_data , in_hdr, in_name, out_hdr, completion_context);
 }
 
 static int fuse_ll_readlink(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-           struct snap_fs_dev_io_done_ctx *cb)
+           void *completion_context)
 {
     // TODO this function is still WIP, printing to see how it works
     fprintf(stderr, "READLINK called with:\n");
@@ -1633,9 +1633,9 @@ static int fuse_ll_readlink(struct fuse_ll *f_ll,
 }
 
 static int fuse_ll_fallocate(struct fuse_ll *f_ll,
-               struct iovec *fuse_in_iov, int in_iovcnt,
-               struct iovec *fuse_out_iov, int out_iovcnt,
-           struct snap_fs_dev_io_done_ctx *cb)
+        struct iovec *fuse_in_iov, int in_iovcnt,
+        struct iovec *fuse_out_iov, int out_iovcnt,
+        void *completion_context)
 {
     if (in_iovcnt != 2 || out_iovcnt != 1) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
@@ -1667,50 +1667,50 @@ static int fuse_ll_fallocate(struct fuse_ll *f_ll,
         return 0;
     }
 
-    return f_ll->ops.fallocate(f_ll->se, f_ll->user_data, in_hdr, in_fallocate, out_hdr, cb);
+    return f_ll->ops.fallocate(f_ll->se, f_ll->user_data, in_hdr, in_fallocate, out_hdr, completion_context);
 }
 
-static void fuse_ll_map_emu(struct virtiofs_emu_ll_params *emu_ll_params) {
-    emu_ll_params->fuse_handlers[FUSE_INIT] = (virtiofs_emu_ll_handler_t) fuse_ll_init;
-    emu_ll_params->fuse_handlers[FUSE_DESTROY] = (virtiofs_emu_ll_handler_t) fuse_ll_destroy;
-    emu_ll_params->fuse_handlers[FUSE_GETATTR] = (virtiofs_emu_ll_handler_t) fuse_ll_getattr;
-    emu_ll_params->fuse_handlers[FUSE_LOOKUP] = (virtiofs_emu_ll_handler_t) fuse_ll_lookup;
-    emu_ll_params->fuse_handlers[FUSE_SETATTR] = (virtiofs_emu_ll_handler_t) fuse_ll_setattr;
-    emu_ll_params->fuse_handlers[FUSE_OPENDIR] = (virtiofs_emu_ll_handler_t) fuse_ll_opendir;
-    emu_ll_params->fuse_handlers[FUSE_RELEASEDIR] = (virtiofs_emu_ll_handler_t) fuse_ll_releasedir;
-    emu_ll_params->fuse_handlers[FUSE_READDIR] = (virtiofs_emu_ll_handler_t) fuse_ll_readdir;
-    emu_ll_params->fuse_handlers[FUSE_READDIRPLUS] = (virtiofs_emu_ll_handler_t) fuse_ll_readdirplus;
-    emu_ll_params->fuse_handlers[FUSE_OPEN] = (virtiofs_emu_ll_handler_t) fuse_ll_open;
-    emu_ll_params->fuse_handlers[FUSE_RELEASE] = (virtiofs_emu_ll_handler_t) fuse_ll_release;
+static void fuse_ll_map(struct dpfs_hal_params *hal_params) {
+    hal_params->fuse_handlers[FUSE_INIT] = (dpfs_hal_handler_t) fuse_ll_init;
+    hal_params->fuse_handlers[FUSE_DESTROY] = (dpfs_hal_handler_t) fuse_ll_destroy;
+    hal_params->fuse_handlers[FUSE_GETATTR] = (dpfs_hal_handler_t) fuse_ll_getattr;
+    hal_params->fuse_handlers[FUSE_LOOKUP] = (dpfs_hal_handler_t) fuse_ll_lookup;
+    hal_params->fuse_handlers[FUSE_SETATTR] = (dpfs_hal_handler_t) fuse_ll_setattr;
+    hal_params->fuse_handlers[FUSE_OPENDIR] = (dpfs_hal_handler_t) fuse_ll_opendir;
+    hal_params->fuse_handlers[FUSE_RELEASEDIR] = (dpfs_hal_handler_t) fuse_ll_releasedir;
+    hal_params->fuse_handlers[FUSE_READDIR] = (dpfs_hal_handler_t) fuse_ll_readdir;
+    hal_params->fuse_handlers[FUSE_READDIRPLUS] = (dpfs_hal_handler_t) fuse_ll_readdirplus;
+    hal_params->fuse_handlers[FUSE_OPEN] = (dpfs_hal_handler_t) fuse_ll_open;
+    hal_params->fuse_handlers[FUSE_RELEASE] = (dpfs_hal_handler_t) fuse_ll_release;
     //// We don't impl FUSE_FLUSH. The only use would be to return write errors on close()
     //// but that's of no use with a remote file system
-    emu_ll_params->fuse_handlers[FUSE_FSYNC] = (virtiofs_emu_ll_handler_t) fuse_ll_fsync;
-    emu_ll_params->fuse_handlers[FUSE_FSYNCDIR] = (virtiofs_emu_ll_handler_t) fuse_ll_fsyncdir;
-    emu_ll_params->fuse_handlers[FUSE_CREATE] = (virtiofs_emu_ll_handler_t) fuse_ll_create;
-    emu_ll_params->fuse_handlers[FUSE_RMDIR] = (virtiofs_emu_ll_handler_t) fuse_ll_rmdir;
-    emu_ll_params->fuse_handlers[FUSE_FORGET] = (virtiofs_emu_ll_handler_t) fuse_ll_forget;
-    emu_ll_params->fuse_handlers[FUSE_BATCH_FORGET] = (virtiofs_emu_ll_handler_t) fuse_ll_batch_forget;
-    emu_ll_params->fuse_handlers[FUSE_RENAME] = (virtiofs_emu_ll_handler_t) fuse_ll_rename;
-    emu_ll_params->fuse_handlers[FUSE_RENAME2] = (virtiofs_emu_ll_handler_t) fuse_ll_rename2;
-    emu_ll_params->fuse_handlers[FUSE_READ] = (virtiofs_emu_ll_handler_t) fuse_ll_read;
-    emu_ll_params->fuse_handlers[FUSE_WRITE] = (virtiofs_emu_ll_handler_t) fuse_ll_write;
-    emu_ll_params->fuse_handlers[FUSE_MKNOD] = (virtiofs_emu_ll_handler_t) fuse_ll_mknod;
-    emu_ll_params->fuse_handlers[FUSE_MKDIR] = (virtiofs_emu_ll_handler_t) fuse_ll_mkdir;
-    emu_ll_params->fuse_handlers[FUSE_SYMLINK] = (virtiofs_emu_ll_handler_t) fuse_ll_symlink;
-    emu_ll_params->fuse_handlers[FUSE_STATFS] = (virtiofs_emu_ll_handler_t) fuse_ll_statfs;
-    emu_ll_params->fuse_handlers[FUSE_UNLINK] = (virtiofs_emu_ll_handler_t) fuse_ll_unlink;
-    emu_ll_params->fuse_handlers[FUSE_READLINK] = (virtiofs_emu_ll_handler_t) fuse_ll_readlink;
-    emu_ll_params->fuse_handlers[FUSE_FLUSH] = (virtiofs_emu_ll_handler_t) fuse_ll_flush;
-    emu_ll_params->fuse_handlers[FUSE_SETLKW] = (virtiofs_emu_ll_handler_t) fuse_ll_setlkw;
-    emu_ll_params->fuse_handlers[FUSE_SETLK] = (virtiofs_emu_ll_handler_t) fuse_ll_setlk;
-    emu_ll_params->fuse_handlers[FUSE_FALLOCATE] = (virtiofs_emu_ll_handler_t) fuse_ll_fallocate;
+    hal_params->fuse_handlers[FUSE_FSYNC] = (dpfs_hal_handler_t) fuse_ll_fsync;
+    hal_params->fuse_handlers[FUSE_FSYNCDIR] = (dpfs_hal_handler_t) fuse_ll_fsyncdir;
+    hal_params->fuse_handlers[FUSE_CREATE] = (dpfs_hal_handler_t) fuse_ll_create;
+    hal_params->fuse_handlers[FUSE_RMDIR] = (dpfs_hal_handler_t) fuse_ll_rmdir;
+    hal_params->fuse_handlers[FUSE_FORGET] = (dpfs_hal_handler_t) fuse_ll_forget;
+    hal_params->fuse_handlers[FUSE_BATCH_FORGET] = (dpfs_hal_handler_t) fuse_ll_batch_forget;
+    hal_params->fuse_handlers[FUSE_RENAME] = (dpfs_hal_handler_t) fuse_ll_rename;
+    hal_params->fuse_handlers[FUSE_RENAME2] = (dpfs_hal_handler_t) fuse_ll_rename2;
+    hal_params->fuse_handlers[FUSE_READ] = (dpfs_hal_handler_t) fuse_ll_read;
+    hal_params->fuse_handlers[FUSE_WRITE] = (dpfs_hal_handler_t) fuse_ll_write;
+    hal_params->fuse_handlers[FUSE_MKNOD] = (dpfs_hal_handler_t) fuse_ll_mknod;
+    hal_params->fuse_handlers[FUSE_MKDIR] = (dpfs_hal_handler_t) fuse_ll_mkdir;
+    hal_params->fuse_handlers[FUSE_SYMLINK] = (dpfs_hal_handler_t) fuse_ll_symlink;
+    hal_params->fuse_handlers[FUSE_STATFS] = (dpfs_hal_handler_t) fuse_ll_statfs;
+    hal_params->fuse_handlers[FUSE_UNLINK] = (dpfs_hal_handler_t) fuse_ll_unlink;
+    hal_params->fuse_handlers[FUSE_READLINK] = (dpfs_hal_handler_t) fuse_ll_readlink;
+    hal_params->fuse_handlers[FUSE_FLUSH] = (dpfs_hal_handler_t) fuse_ll_flush;
+    hal_params->fuse_handlers[FUSE_SETLKW] = (dpfs_hal_handler_t) fuse_ll_setlkw;
+    hal_params->fuse_handlers[FUSE_SETLK] = (dpfs_hal_handler_t) fuse_ll_setlk;
+    hal_params->fuse_handlers[FUSE_FALLOCATE] = (dpfs_hal_handler_t) fuse_ll_fallocate;
 }
 
-int virtiofs_emu_fuse_ll_main(struct fuse_ll_operations *ops, struct virtiofs_emu_params *emu_params,
-                              void *user_data, bool debug)
+int dpfs_fuse_main(struct fuse_ll_operations *ops, struct virtiofs_emu_params *emu_params,
+                   void *user_data, bool debug)
 {
 #ifdef DEBUG_ENABLED
-    printf("virtiofs_emu_fuse_ll is running in DEBUG mode\n");
+    printf("dpfs_fuse is running in DEBUG mode\n");
 #endif
 
     struct fuse_ll *f_ll = calloc(1, sizeof(struct fuse_ll));
@@ -1720,7 +1720,7 @@ int virtiofs_emu_fuse_ll_main(struct fuse_ll_operations *ops, struct virtiofs_em
 
     f_ll->se = calloc(1, sizeof(struct fuse_session));
     if (f_ll->se == NULL) {
-        err(1, "ERROR: Could not allocate memory for struct fuser");
+        err(1, "ERROR: Could not allocate memory for fuse_session");
     }
     f_ll->se->conn.max_write = UINT_MAX;
     f_ll->se->conn.max_readahead = UINT_MAX;
@@ -1728,19 +1728,19 @@ int virtiofs_emu_fuse_ll_main(struct fuse_ll_operations *ops, struct virtiofs_em
     f_ll->se->bufsize = FUSE_MAX_MAX_PAGES * getpagesize() +
         FUSE_BUFFER_HEADER_SIZE;
 
-    struct virtiofs_emu_ll_params emu_ll_params;
-    memset(&emu_ll_params, 0, sizeof(emu_ll_params));
-    memcpy(&emu_ll_params.emu_params, emu_params, sizeof(struct virtiofs_emu_params));
-    emu_ll_params.user_data = f_ll;
-    fuse_ll_map_emu(&emu_ll_params);
+    struct dpfs_hal_params hal_params;
+    memset(&hal_params, 0, sizeof(hal_params));
+    memcpy(&hal_params.emu_params, emu_params, sizeof(struct virtiofs_emu_params));
+    hal_params.user_data = f_ll;
+    fuse_ll_map(&hal_params);
 
-    struct virtiofs_emu_ll *emu = virtiofs_emu_ll_new(&emu_ll_params);
+    struct dpfs_hal *emu = dpfs_hal_new(&hal_params);
     if (emu == NULL) {
-        fprintf(stderr, "Failed to initialize emu_ll, exiting...\n");
+        fprintf(stderr, "Failed to initialize hal, exiting...\n");
         return -1;
     }
-    virtiofs_emu_ll_loop(emu);
-    virtiofs_emu_ll_destroy(emu);
+    dpfs_hal_loop(emu);
+    dpfs_hal_destroy(emu);
     
     return 0;
 }

@@ -7,7 +7,7 @@
 
 #include <linux/fuse.h>
 #include <stdio.h>
-#include "virtiofs_emu_ll.h"
+#include "dpfs_hal.h"
 
 void fuse_ll_debug_print_in_hdr(struct fuse_in_header *in) {
 	char *op_name;
@@ -160,7 +160,7 @@ void fuse_ll_debug_print_in_hdr(struct fuse_in_header *in) {
 	      op_name = "UNKNOWN FUSE operation!";
 	      break;
 	}
-	size_t thread_id = (size_t) pthread_getspecific(virtiofs_thread_id_key);
+	size_t thread_id = (size_t) pthread_getspecific(dpfs_hal_thread_id_key);
 	printf("-- %s:%lu:%lu --\n", op_name, in->unique, thread_id);
 	printf("* nodeid: %lu\n", in->nodeid);
 	printf("* uid, gid, pid: %u, %u, %u\n", in->uid, in->gid, in->pid);

@@ -18,7 +18,6 @@
 #include <nfsc/libnfs-raw-nfs4.h>
 
 #include "inode.h"
-#include "virtiofs_emu_ll.h"
 #include "common.h"
 
 struct inode *inode_new(fattr4_fileid fileid)

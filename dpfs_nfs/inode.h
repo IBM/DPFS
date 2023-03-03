@@ -14,8 +14,7 @@
 #include <nfsc/libnfs-raw-nfs4.h>
 
 #include "config.h"
-#include "fuse_ll.h"
-#include "virtiofs_emu_ll.h"
+#include "dpfs_fuse.h"
 #include "nfs_v4.h"
 
 struct inode {

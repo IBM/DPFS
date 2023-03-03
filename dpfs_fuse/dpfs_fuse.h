@@ -5,8 +5,8 @@
 #
 */
 
-#ifndef VIRTIOFS_EMU_FUSE_LOWLEVEL_FUSE_LL_H
-#define VIRTIOFS_EMU_FUSE_LOWLEVEL_FUSE_LL_H
+#ifndef DPFS_FUSE_H
+#define DPFS_FUSE_H
 
 #include <pthread.h>
 #include <stdint.h>
@@ -17,7 +17,7 @@
 #include <sys/stat.h>
 #include <sys/statvfs.h>
 
-#include "virtiofs_emu_ll.h"
+#include "dpfs_hal.h"
 
 // Beginning of libfuse/include/fuse_lowlevel.h selective copy
 
@@ -150,117 +150,117 @@ struct fuse_ll_operations {
     int (*destroy) (struct fuse_session *, void *user_data,
                     struct fuse_in_header *,
                     struct fuse_out_header *,
-                    struct snap_fs_dev_io_done_ctx *cb);
+                    void *completion_context);
     // Reply with fuse_ll_reply_entry()
     int (*lookup) (struct fuse_session *, void *user_data,
                    struct fuse_in_header *, const char *const in_name,
                    struct fuse_out_header *, struct fuse_entry_out *out_entry,
-                   struct snap_fs_dev_io_done_ctx *cb);
+                   void *completion_context);
     int (*setattr) (struct fuse_session *, void *user_data,
                     struct fuse_in_header *in_hdr, struct stat *s, int valid, struct fuse_file_info *fi,
                     struct fuse_out_header *out_hdr, struct fuse_attr_out *out_attr,
-                    struct snap_fs_dev_io_done_ctx *cb);
+                    void *completion_context);
     int (*setattr_async) (struct fuse_session *, void *user_data,
                           struct fuse_in_header *in_hdr, struct fuse_setattr_in *,
                           struct fuse_out_header *out_hdr, struct fuse_attr_out *,
-                          struct snap_fs_dev_io_done_ctx *cb);
+                          void *completion_context);
     int (*create) (struct fuse_session *, void *user_data,
                    struct fuse_in_header *in_hdr, struct fuse_create_in in_create, const char *const in_name,
                    struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry, struct fuse_open_out *out_open,
-                   struct snap_fs_dev_io_done_ctx *cb);
+                   void *completion_context);
     int (*flush) (struct fuse_session *, void *user_data,
                    struct fuse_in_header *, struct fuse_file_info fi,
                    struct fuse_out_header *,
-                   struct snap_fs_dev_io_done_ctx *cb);
+                   void *completion_context);
     int (*flock) (struct fuse_session *, void *user_data,
                   struct fuse_in_header *, struct fuse_file_info fi, int op,
                   struct fuse_out_header *,
-                  struct snap_fs_dev_io_done_ctx *cb);
+                  void *completion_context);
     // Reply with fuse_ll_reply_attr()
     int (*getattr) (struct fuse_session *, void *user_data,
-                      struct fuse_in_header *, struct fuse_getattr_in *,
-                      struct fuse_out_header *, struct fuse_attr_out *,
-                    struct snap_fs_dev_io_done_ctx *cb);
+                    struct fuse_in_header *, struct fuse_getattr_in *,
+                    struct fuse_out_header *, struct fuse_attr_out *,
+                    void *completion_context);
     // Reply with fuse_ll_reply_open()
     int (*opendir) (struct fuse_session *, void *user_data,
                     struct fuse_in_header *, struct fuse_open_in *,
                     struct fuse_out_header *, struct fuse_open_out *,
-                    struct snap_fs_dev_io_done_ctx *cb);
+                    void *completion_context);
     int (*releasedir) (struct fuse_session *, void *user_data,
                        struct fuse_in_header *, struct fuse_release_in *,
                        struct fuse_out_header *,
-                       struct snap_fs_dev_io_done_ctx *cb);
+                       void *completion_context);
     int (*readdir) (struct fuse_session *, void *user_data,
                     struct fuse_in_header *, struct fuse_read_in *, bool plus,
                     struct fuse_out_header *, struct iov,
-                    struct snap_fs_dev_io_done_ctx *cb);
+                    void *completion_context);
     // Reply with fuse_ll_reply_open()
     int (*open) (struct fuse_session *, void *user_data,
                  struct fuse_in_header *, struct fuse_open_in *,
                  struct fuse_out_header *, struct fuse_open_out *,
-                 struct snap_fs_dev_io_done_ctx *cb);
+                 void *completion_context);
     int (*release) (struct fuse_session *, void *user_data,
                     struct fuse_in_header *, struct fuse_release_in *,
                     struct fuse_out_header *,
-                    struct snap_fs_dev_io_done_ctx *cb);
+                    void *completion_context);
     int (*fsync) (struct fuse_session *, void *user_data,
                   struct fuse_in_header *, struct fuse_fsync_in *,
                   struct fuse_out_header *,
-                  struct snap_fs_dev_io_done_ctx *cb);
+                  void *completion_context);
     int (*fsyncdir) (struct fuse_session *, void *user_data,
                      struct fuse_in_header *, struct fuse_fsync_in *,
                      struct fuse_out_header *,
-                     struct snap_fs_dev_io_done_ctx *cb);
+                     void *completion_context);
     int (*rmdir) (struct fuse_session *, void *user_data,
                   struct fuse_in_header *, const char *const in_name,
                   struct fuse_out_header *,
-                  struct snap_fs_dev_io_done_ctx *cb);
+                  void *completion_context);
     int (*forget) (struct fuse_session *, void *user_data,
                    struct fuse_in_header *, struct fuse_forget_in *in_forget,
-                   struct snap_fs_dev_io_done_ctx *cb);
+                   void *completion_context);
     int (*batch_forget) (struct fuse_session *, void *user_data,
                          struct fuse_in_header *, struct fuse_batch_forget_in *in_batch_forget,
                          struct fuse_forget_one *in_forget_one,
-                   struct snap_fs_dev_io_done_ctx *cb);
+                         void *completion_context);
     int (*rename) (struct fuse_session *, void *user_data,
                    struct fuse_in_header *, const char *const in_name,
                    fuse_ino_t in_new_parentdir, const char *const in_new_name, uint32_t in_flags,
                    struct fuse_out_header *,
-                   struct snap_fs_dev_io_done_ctx *cb);
+                   void *completion_context);
     int (*read) (struct fuse_session *, void *user_data,
                  struct fuse_in_header *, struct fuse_read_in *,
                  struct fuse_out_header *, struct iovec *, int iovcnt,
-                 struct snap_fs_dev_io_done_ctx *cb);
+                 void *completion_context);
     int (*write) (struct fuse_session *, void *user_data,
                   struct fuse_in_header *, struct fuse_write_in *,
                   struct iovec *, int iovcnt,
                   struct fuse_out_header *, struct fuse_write_out *,
-                  struct snap_fs_dev_io_done_ctx *cb);
+                  void *completion_context);
     int (*mknod) (struct fuse_session *, void *user_data,
                   struct fuse_in_header *, struct fuse_mknod_in *, const char *const,
                   struct fuse_out_header *, struct fuse_entry_out *,
-                  struct snap_fs_dev_io_done_ctx *cb);
+                  void *completion_context);
     int (*mkdir) (struct fuse_session *, void *user_data,
                   struct fuse_in_header *, struct fuse_mkdir_in *, const char *const,
                   struct fuse_out_header *, struct fuse_entry_out *,
-                  struct snap_fs_dev_io_done_ctx *cb);
+                  void *completion_context);
     int (*symlink) (struct fuse_session *, void *user_data,
                     struct fuse_in_header *, const char *const in_name,
                     const char *const in_link_name,
                     struct fuse_out_header *, struct fuse_entry_out *,
-                    struct snap_fs_dev_io_done_ctx *cb);
+                    void *completion_context);
     int (*statfs) (struct fuse_session *, void *user_data,
                    struct fuse_in_header *,
                    struct fuse_out_header *, struct fuse_statfs_out *,
-                   struct snap_fs_dev_io_done_ctx *cb);
+                   void *completion_context);
     int (*unlink) (struct fuse_session *, void *user_data,
                    struct fuse_in_header *, const char *const,
                    struct fuse_out_header *,
-                   struct snap_fs_dev_io_done_ctx *cb);
+                   void *completion_context);
     int (*fallocate) (struct fuse_session *, void *user_data,
-                        struct fuse_in_header *, struct fuse_fallocate_in *,
+                      struct fuse_in_header *, struct fuse_fallocate_in *,
                       struct fuse_out_header *,
-                      struct snap_fs_dev_io_done_ctx *cb);
+                      void *completion_context);
 };
 
 struct fuse_ll {
@@ -270,7 +270,7 @@ struct fuse_ll {
     bool debug;
 };
 
-int virtiofs_emu_fuse_ll_main(struct fuse_ll_operations *ops, struct virtiofs_emu_params *emu_params,
-                              void *user_data, bool debug);
+int dpfs_fuse_main(struct fuse_ll_operations *ops, struct virtiofs_emu_params *emu_params,
+        void *user_data, bool debug);
 
-#endif // VIRTIOFS_EMU_FUSE_LOWLEVEL_FUSE_LL_H
+#endif // DPFS_FUSE_H

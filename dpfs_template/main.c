@@ -6,12 +6,12 @@
 */
 
 #include <getopt.h>
-#include "virtiofs_emu_ll.h"
+#include "dpfs_hal.h"
 
 static int fuse_init(void *user_data,
                      struct iovec *fuse_in_iov, int in_iovcnt,
                      struct iovec *fuse_out_iov, int out_iovcnt,
-                     struct snap_fs_dev_io_done_ctx *cb) {
+                     void *completion_context) {
     struct fuse_in_header *in_hdr = (struct fuse_in_header *) fuse_in_iov[0].iov_base;
     struct fuse_out_header *out_hdr = (struct fuse_out_header *) fuse_out_iov[0].iov_base;
     out_hdr->unique = in_hdr->unique;
@@ -26,7 +26,7 @@ static int fuse_init(void *user_data,
 
 void usage()
 {
-    printf("virtiofs_template [-p pf_id] [-v vf_id ] [-e emulation_manager_name]\n");
+    printf("dpfs_template [-p pf_id] [-v vf_id ] [-e emulation_manager_name]\n");
 }
 
 int main(int argc, char **argv)
@@ -61,10 +61,10 @@ int main(int argc, char **argv)
         }
     }
 
-    struct virtiofs_emu_ll_params emu_ll_params;
+    struct dpfs_hal_params hal_params;
     // just for safety
-    memset(&emu_ll_params, 0, sizeof(struct virtiofs_emu_params));
-    struct virtiofs_emu_params *emu_params = &emu_ll_params.emu_params;
+    memset(&hal_params, 0, sizeof(struct dpfs_hal_params));
+    struct virtiofs_emu_params *emu_params = &hal_params.emu_params;
 
     if (pf >= 0)
         emu_params->pf_id = pf;
@@ -95,25 +95,25 @@ int main(int argc, char **argv)
         usage();
         exit(1);
     }
-    printf("virtiofs_template starting up!\n");
+    printf("dpfs_template starting up!\n");
     printf("Connecting to %s:%s\n", server, export);
 
     emu_params->polling_interval_usec = 0;
     emu_params->nthreads = 0;
-    emu_params->tag = "virtiofs_template";
+    emu_params->tag = "dpfs_template";
 
-    emu_ll_params.fuse_handlers[FUSE_INIT] = fuse_init;
+    hal_params.fuse_handlers[FUSE_INIT] = fuse_init;
     // Only implement for nodeid = 0, return garbage
-    emu_ll_params.fuse_handlers[FUSE_GETATTR] = NULL;
-    emu_ll_params.fuse_handlers[FUSE_STATFS] = NULL;
+    hal_params.fuse_handlers[FUSE_GETATTR] = NULL;
+    hal_params.fuse_handlers[FUSE_STATFS] = NULL;
 
-    struct virtiofs_emu_ll *emu = virtiofs_emu_ll_new(&emu_ll_params);
-    if (emu == NULL) {
-        fprintf(stderr, "Failed to initialize emu_ll, exiting...\n");
+    struct dpfs_hal *hal = dpfs_hal_new(&hal_params);
+    if (hal == NULL) {
+        fprintf(stderr, "Failed to initialize dpfs_hal, exiting...\n");
         return -1;
     }
-    virtiofs_emu_ll_loop(emu);
-    virtiofs_emu_ll_destroy(emu);
+    dpfs_hal_loop(hal);
+    dpfs_hal_destroy(hal);
 
     return 0;
 }

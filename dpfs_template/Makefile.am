@@ -5,16 +5,16 @@
 
 if HAVE_SNAP
 
-bin_PROGRAMS = virtiofs_template
+bin_PROGRAMS = dpfs_template
 
-virtiofs_template_LDADD = $(srcdir)/../virtiofs_emu_lowlevel/libvirtiofs_emu_ll.a \
+dpfs_template_LDADD = $(srcdir)/../dpfs_hal/libdpfs_hal.a \
                 $(srcdir)/../../src/libmlx_dev_emu.a $(srcdir)/../../src/libmlx_dev_emu_snap.a \
                 $(IBVERBS_LDFLAGS) $(SNAP_LDFLAGS) $(PYTHON3_LDFLAGS) -lpthread
 
-virtiofs_template_CFLAGS  = $(BASE_CFLAGS) -I$(srcdir)/../../src \
-                -I$(srcdir)/../virtiofs_emu_lowlevel \
+dpfs_template_CFLAGS  = $(BASE_CFLAGS) -I$(srcdir)/../../src \
+                -I$(srcdir)/../dpfs_hal \
                 -I$(srcdir) $(SNAP_CFLAGS) \
                 -I/usr/local/include
-virtiofs_template_SOURCES = main.c
+dpfs_template_SOURCES = main.c
 
 endif

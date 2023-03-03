@@ -1,17 +1,17 @@
 /*
 #
-# Copyright 2020- IBM Inc. All rights reserved
+# Copyright 2022- IBM Inc. All rights reserved
 # SPDX-License-Identifier: LGPL-2.1-or-later
 #
 */
 
 #include <getopt.h>
-#include "virtiofs_emu_ll.h"
-#include "virtionfs.h"
+#include "fuser.h"
+#include "dpfs_fuse.h"
 
 void usage()
 {
-    printf("virtionfs [-p pf_id] [-v vf_id ] [-e emulation_manager_name] [-s server_ip] [-x export_path] [-d queue_depth] \n");
+    printf("dpfs_fuse [-p pf_id] [-v vf_id ] [-e emulation_manager_name] [-d dir_mirror_path]\n");
 }
 
 int main(int argc, char **argv)
@@ -19,13 +19,10 @@ int main(int argc, char **argv)
     int pf = -1;
     int vf = -1;
     char *emu_manager = NULL; // the rdma device name which supports being an emulation manager and virtio_fs emu
-    char *server = NULL;
-    char *export = NULL;
-    uint32_t nthreads = 1;
-    uint32_t queue_depth = 64;
+    char *dir = NULL; // the directory that will be mirrored
 
     int opt;
-    while ((opt = getopt(argc, argv, "p:v:e:s:x:t:d:")) != -1) {
+    while ((opt = getopt(argc, argv, "p:v:e:d:")) != -1) {
         switch (opt) {
             case 'p':
                 pf = atoi(optarg);
@@ -36,17 +33,8 @@ int main(int argc, char **argv)
             case 'e':
                 emu_manager = optarg;
                 break;
-            case 's':
-                server = optarg;
-                break;
-            case 'x':
-                export = optarg;
-                break;
-            case 't':
-                nthreads = strtoul(optarg, NULL, 10);
-                break;
             case 'd':
-                queue_depth = strtoul(optarg, NULL, 10);
+                dir = optarg;
                 break;
             default: /* '?' */
                 usage();
@@ -77,25 +65,25 @@ int main(int argc, char **argv)
         usage();
         exit(1);
     }
-    if (server == NULL) {
-        fprintf(stderr, "You must supply a server IP with -s\n");
+    if (dir == NULL) {
+        fprintf(stderr, "You must supply an emu manager name with -e\n");
         usage();
         exit(1);
     }
-    if (export == NULL) {
-        fprintf(stderr, "You must supply a export path with -p\n");
-        usage();
-        exit(1);
+    char *rp = realpath(dir, NULL);
+    if (rp == NULL) {
+        fprintf(stderr, "Could not parse dir %s, errno=%d\n", dir, errno);
+        exit(errno);
     }
-    printf("virtionfs starting up!\n");
-    printf("Connecting to %s:%s\n", server, export);
+    dir = rp;
+    printf("virtiofuser starting up!\n");
+    printf("Mirroring %s\n", dir);
 
     emu_params.polling_interval_usec = 0;
-    emu_params.nthreads = nthreads;
-    emu_params.queue_depth = queue_depth;
-    emu_params.tag = "virtionfs";
+    emu_params.nthreads = 0;
+    emu_params.tag = "virtiofuser";
 
-    virtionfs_main(server, export, false, false, nthreads, &emu_params);
+    fuser_main(false, dir, false, &emu_params);
 
     return 0;
 }
