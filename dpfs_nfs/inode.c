@@ -13,6 +13,7 @@
 #include <err.h>
 #include <string.h>
 #include <unistd.h>
+#include <errno.h>
 #include <limits.h>
 #include <fcntl.h>
 #include <nfsc/libnfs-raw-nfs4.h>

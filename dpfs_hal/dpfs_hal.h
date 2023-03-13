@@ -9,6 +9,7 @@
 #define DPFS_HAL_H
 
 #include <pthread.h>
+#include <sys/uio.h>
 #include <linux/fuse.h>
 #include <unistd.h>
 

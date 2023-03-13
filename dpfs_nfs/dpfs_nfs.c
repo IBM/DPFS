@@ -15,6 +15,8 @@
 #include <fcntl.h>
 #include <stdatomic.h>
 #include <err.h>
+#include <errno.h>
+#include <stdlib.h>
 
 #include "config.h"
 #include "dpfs_fuse.h"

@@ -6,6 +6,10 @@
 */
 
 #include <getopt.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
 #include "dpfs_hal.h"
 
 static int fuse_init(void *user_data,

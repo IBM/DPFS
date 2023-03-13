@@ -24,7 +24,6 @@
 #include <unistd.h>
 #include <err.h>
 #include <stdatomic.h>
-#include <sys/statvfs.h>
 #include <sys/types.h>
 #include <sys/uio.h>
 #include <sys/fcntl.h>

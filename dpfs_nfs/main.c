@@ -8,6 +8,7 @@
 #include <getopt.h>
 #include "dpfs_fuse.h"
 #include "dpfs_nfs.h"
+#include <stdlib.h>
 
 void usage()
 {
