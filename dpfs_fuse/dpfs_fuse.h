@@ -263,13 +263,6 @@ struct fuse_ll_operations {
                       void *completion_context);
 };
 
-struct fuse_ll {
-    void *user_data;
-    struct fuse_ll_operations ops;
-    struct fuse_session *se;
-    bool debug;
-};
-
 int dpfs_fuse_main(struct fuse_ll_operations *ops, struct virtiofs_emu_params *emu_params,
         void *user_data, bool debug);
 

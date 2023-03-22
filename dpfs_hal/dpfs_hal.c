@@ -39,7 +39,6 @@
 #include <err.h>
 #include <string.h>
 #include <sys/errno.h>
-#include <linux/fuse.h>
 #include <sys/stat.h>
 
 #include "virtio_fs_controller.h"
@@ -51,7 +50,7 @@
 
 struct dpfs_hal {
     struct virtio_fs_ctrl *snap_ctrl;
-    dpfs_hal_handler_t handlers[DPFS_HAL_FUSE_HANDLERS_LEN];
+    dpfs_hal_handler_t request_handler;
     void *user_data;
     useconds_t polling_interval_usec;
     uint32_t nthreads;
@@ -67,6 +66,15 @@ pthread_key_t dpfs_hal_thread_id_key;
 void signal_handler(int dummy)
 {
     keep_running = 0;
+}
+
+
+int dpfs_hal_poll_io(struct dpfs_hal *hal, int thread_id) {
+    return virtio_fs_ctrl_progress_io(hal->snap_ctrl, thread_id);
+}
+
+void dpfs_hal_poll_mmio(struct dpfs_hal *hal) {
+    virtio_fs_ctrl_progress(hal->snap_ctrl);
 }
 
 static void dpfs_hal_loop_singlethreaded(struct virtio_fs_ctrl *ctrl, useconds_t interval, int thread_id)
@@ -181,7 +189,8 @@ void dpfs_hal_loop(struct dpfs_hal *emu)
 
 
 // Currently only supports SNAP
-int dpfs_hal_async_complete(void *completion_context, enum dpfs_hal_completion_status status) {
+int dpfs_hal_async_complete(void *completion_context, enum dpfs_hal_completion_status status)
+{
     struct snap_fs_dev_io_done_ctx *cb = completion_context;
     enum snap_fs_dev_op_status snap_status = SNAP_FS_DEV_OP_IO_ERROR;
     switch (status) {
@@ -196,66 +205,20 @@ int dpfs_hal_async_complete(void *completion_context, enum dpfs_hal_completion_s
     return 0;
 }
 
-static int dpfs_hal_fuse_unknown(void *user_data,
-                            struct iovec *fuse_in_iov, int in_iovcnt,
-                            struct iovec *fuse_out_iov, int out_iovcnt,
-                            void *completion_context) {
-    struct fuse_in_header *in_hdr = (struct fuse_in_header *) fuse_in_iov[0].iov_base;
-    struct fuse_out_header *out_hdr = (struct fuse_out_header *) fuse_out_iov[0].iov_base;
-    out_hdr->unique = in_hdr->unique;
-    out_hdr->len = sizeof(struct fuse_out_header);
-    out_hdr->error = -ENOSYS;
 
-    printf("dpfs_hal: fuse OP(%u) called, but not implemented\n", in_hdr->opcode);
-
-    return 0;
-}
 
 static int dpfs_hal_handle_req(struct virtio_fs_ctrl *ctrl,
-                            struct iovec *fuse_in_iov, int in_iovcnt,
-                            struct iovec *fuse_out_iov, int out_iovcnt,
-                            struct snap_fs_dev_io_done_ctx *done_ctx) {
-    struct dpfs_hal *emu = ctrl->virtiofs_emu;
+                            struct iovec *in_iov, int in_iovcnt,
+                            struct iovec *out_iov, int out_iovcnt,
+                            struct snap_fs_dev_io_done_ctx *done_ctx)
+{
+    struct dpfs_hal *hal = ctrl->virtiofs_emu;
 
-    if (in_iovcnt < 1 || in_iovcnt < 1) {
-        fprintf(stderr, "dpfs_hal_handle_fuse_req: iovecs in and out don't both atleast one iovec\n");
-        return -EINVAL;
-    }
-
-    struct fuse_in_header *in_hdr = (struct fuse_in_header *) fuse_in_iov[0].iov_base;
-
-    if (in_hdr->opcode < 1 || in_hdr->opcode > DPFS_HAL_FUSE_MAX_OPCODE) {
-        fprintf(stderr, "Invalid FUSE opcode!\n");
-        return -EINVAL;
-    } else {
-        dpfs_hal_handler_t h = emu->handlers[in_hdr->opcode];
-        if (h == NULL) {
-            h = dpfs_hal_fuse_unknown;
-        }
-        // Actually call the handler that was provided
-        int ret = h(emu->user_data, fuse_in_iov, in_iovcnt, fuse_out_iov, out_iovcnt, done_ctx);
-#ifdef DEBUG_ENABLED
-        // Only log the number of calls with single threading, not thread safe
-        if (emu->nthreads <= 1) {
-            if (in_hdr->opcode == FUSE_INIT) {
-                memset(&emu->handlers_call_cnts, 0, sizeof(emu->handlers_call_cnts));
-            }
-            emu->handlers_call_cnts[in_hdr->opcode]++;
-        }
-        if (ret == 0 && out_iovcnt > 0 &&
-            fuse_out_iov[0].iov_len >= sizeof(struct fuse_out_header))
-        {
-            struct fuse_out_header *out_hdr = (struct fuse_out_header *) fuse_out_iov[0].iov_base;
-            if (out_hdr->error != 0)
-                fprintf(stderr, "FUSE OP(%d) request ERROR=%d, %s\n", in_hdr->opcode,
-                    out_hdr->error, strerror(-out_hdr->error));
-        }
-#endif
-        return ret;
-    }
+    return hal->request_handler(hal->user_data, in_iov, in_iovcnt, out_iov, out_iovcnt, done_ctx);
 }
 
-struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params) {
+struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params)
+{
     struct virtiofs_emu_params emu_params = params->emu_params;
     if (emu_params.emu_manager == NULL) {
         fprintf(stderr, "virtiofs_emu_new: emu_manager is required!");
@@ -283,7 +246,7 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params) {
 
     emu->polling_interval_usec = emu_params.polling_interval_usec;
     emu->user_data = params->user_data;
-    memcpy(emu->handlers, params->fuse_handlers, sizeof(params->fuse_handlers));
+    emu->request_handler = params->request_handler;
     emu->nthreads = emu_params.nthreads;
 
     struct virtio_fs_ctrl_init_attr param;
@@ -346,17 +309,9 @@ out:
     return NULL;
 }
 
-void dpfs_hal_destroy(struct dpfs_hal *emu) {
+void dpfs_hal_destroy(struct dpfs_hal *emu)
+{
     printf("VirtIO-FS destroy controller %s\n", emu->snap_ctrl->sctx->context->device->name);
-
-#ifdef DEBUG_ENABLED
-    printf("Opcode call counts:\n");
-    for (uint32_t i = 0; i < dpfs_hal_FUSE_MAX_OPCODE; i++) {
-        if (emu->handlers_call_cnts[i])
-            printf("OP %u : %u\n", i, emu->handlers_call_cnts[i]);
-    }
-
-#endif
 
     virtio_fs_ctrl_destroy(emu->snap_ctrl);
     mlnx_snap_pci_manager_clear();

@@ -36,6 +36,23 @@
 #include "dpfs_hal.h"
 #include "dpfs_fuse.h"
 
+struct fuse_ll;
+typedef int (*fuse_handler_t) (struct fuse_ll *,
+                             struct iovec *fuse_in_iov, int in_iovcnt,
+                             struct iovec *fuse_out_iov, int out_iovcnt,
+                             void *completion_context);
+
+#define DPFS_FUSE_MAX_OPCODE FUSE_REMOVEMAPPING
+// The opcodes begin at FUSE_LOOKUP = 1, so need one more array index
+#define DPFS_FUSE_HANDLERS_LEN DPFS_FUSE_MAX_OPCODE+1
+
+struct fuse_ll {
+    void *user_data;
+    struct fuse_ll_operations ops;
+    struct fuse_session *se;
+    fuse_handler_t fuse_handlers[DPFS_FUSE_HANDLERS_LEN];
+    bool debug;
+};
 
 static void convert_stat(const struct stat *stbuf, struct fuse_attr *attr)
 {
@@ -1672,40 +1689,95 @@ static int fuse_ll_fallocate(struct fuse_ll *f_ll,
     return f_ll->ops.fallocate(f_ll->se, f_ll->user_data, in_hdr, in_fallocate, out_hdr, completion_context);
 }
 
-static void fuse_ll_map(struct dpfs_hal_params *hal_params) {
-    hal_params->fuse_handlers[FUSE_INIT] = (dpfs_hal_handler_t) fuse_ll_init;
-    hal_params->fuse_handlers[FUSE_DESTROY] = (dpfs_hal_handler_t) fuse_ll_destroy;
-    hal_params->fuse_handlers[FUSE_GETATTR] = (dpfs_hal_handler_t) fuse_ll_getattr;
-    hal_params->fuse_handlers[FUSE_LOOKUP] = (dpfs_hal_handler_t) fuse_ll_lookup;
-    hal_params->fuse_handlers[FUSE_SETATTR] = (dpfs_hal_handler_t) fuse_ll_setattr;
-    hal_params->fuse_handlers[FUSE_OPENDIR] = (dpfs_hal_handler_t) fuse_ll_opendir;
-    hal_params->fuse_handlers[FUSE_RELEASEDIR] = (dpfs_hal_handler_t) fuse_ll_releasedir;
-    hal_params->fuse_handlers[FUSE_READDIR] = (dpfs_hal_handler_t) fuse_ll_readdir;
-    hal_params->fuse_handlers[FUSE_READDIRPLUS] = (dpfs_hal_handler_t) fuse_ll_readdirplus;
-    hal_params->fuse_handlers[FUSE_OPEN] = (dpfs_hal_handler_t) fuse_ll_open;
-    hal_params->fuse_handlers[FUSE_RELEASE] = (dpfs_hal_handler_t) fuse_ll_release;
+static void fuse_ll_map(struct fuse_ll *fuse_ll) {
+    // NULL maps to fuse_unknown
+    memset(&fuse_ll->fuse_handlers, 0, sizeof(fuse_ll->fuse_handlers));
+
+    fuse_ll->fuse_handlers[FUSE_INIT] = fuse_ll_init;
+    fuse_ll->fuse_handlers[FUSE_DESTROY] = fuse_ll_destroy;
+    fuse_ll->fuse_handlers[FUSE_GETATTR] = fuse_ll_getattr;
+    fuse_ll->fuse_handlers[FUSE_LOOKUP] = fuse_ll_lookup;
+    fuse_ll->fuse_handlers[FUSE_SETATTR] = fuse_ll_setattr;
+    fuse_ll->fuse_handlers[FUSE_OPENDIR] = fuse_ll_opendir;
+    fuse_ll->fuse_handlers[FUSE_RELEASEDIR] = fuse_ll_releasedir;
+    fuse_ll->fuse_handlers[FUSE_READDIR] = fuse_ll_readdir;
+    fuse_ll->fuse_handlers[FUSE_READDIRPLUS] = fuse_ll_readdirplus;
+    fuse_ll->fuse_handlers[FUSE_OPEN] = fuse_ll_open;
+    fuse_ll->fuse_handlers[FUSE_RELEASE] = fuse_ll_release;
     //// We don't impl FUSE_FLUSH. The only use would be to return write errors on close()
     //// but that's of no use with a remote file system
-    hal_params->fuse_handlers[FUSE_FSYNC] = (dpfs_hal_handler_t) fuse_ll_fsync;
-    hal_params->fuse_handlers[FUSE_FSYNCDIR] = (dpfs_hal_handler_t) fuse_ll_fsyncdir;
-    hal_params->fuse_handlers[FUSE_CREATE] = (dpfs_hal_handler_t) fuse_ll_create;
-    hal_params->fuse_handlers[FUSE_RMDIR] = (dpfs_hal_handler_t) fuse_ll_rmdir;
-    hal_params->fuse_handlers[FUSE_FORGET] = (dpfs_hal_handler_t) fuse_ll_forget;
-    hal_params->fuse_handlers[FUSE_BATCH_FORGET] = (dpfs_hal_handler_t) fuse_ll_batch_forget;
-    hal_params->fuse_handlers[FUSE_RENAME] = (dpfs_hal_handler_t) fuse_ll_rename;
-    hal_params->fuse_handlers[FUSE_RENAME2] = (dpfs_hal_handler_t) fuse_ll_rename2;
-    hal_params->fuse_handlers[FUSE_READ] = (dpfs_hal_handler_t) fuse_ll_read;
-    hal_params->fuse_handlers[FUSE_WRITE] = (dpfs_hal_handler_t) fuse_ll_write;
-    hal_params->fuse_handlers[FUSE_MKNOD] = (dpfs_hal_handler_t) fuse_ll_mknod;
-    hal_params->fuse_handlers[FUSE_MKDIR] = (dpfs_hal_handler_t) fuse_ll_mkdir;
-    hal_params->fuse_handlers[FUSE_SYMLINK] = (dpfs_hal_handler_t) fuse_ll_symlink;
-    hal_params->fuse_handlers[FUSE_STATFS] = (dpfs_hal_handler_t) fuse_ll_statfs;
-    hal_params->fuse_handlers[FUSE_UNLINK] = (dpfs_hal_handler_t) fuse_ll_unlink;
-    hal_params->fuse_handlers[FUSE_READLINK] = (dpfs_hal_handler_t) fuse_ll_readlink;
-    hal_params->fuse_handlers[FUSE_FLUSH] = (dpfs_hal_handler_t) fuse_ll_flush;
-    hal_params->fuse_handlers[FUSE_SETLKW] = (dpfs_hal_handler_t) fuse_ll_setlkw;
-    hal_params->fuse_handlers[FUSE_SETLK] = (dpfs_hal_handler_t) fuse_ll_setlk;
-    hal_params->fuse_handlers[FUSE_FALLOCATE] = (dpfs_hal_handler_t) fuse_ll_fallocate;
+    fuse_ll->fuse_handlers[FUSE_FSYNC] = fuse_ll_fsync;
+    fuse_ll->fuse_handlers[FUSE_FSYNCDIR] = fuse_ll_fsyncdir;
+    fuse_ll->fuse_handlers[FUSE_CREATE] = fuse_ll_create;
+    fuse_ll->fuse_handlers[FUSE_RMDIR] = fuse_ll_rmdir;
+    fuse_ll->fuse_handlers[FUSE_FORGET] = fuse_ll_forget;
+    fuse_ll->fuse_handlers[FUSE_BATCH_FORGET] = fuse_ll_batch_forget;
+    fuse_ll->fuse_handlers[FUSE_RENAME] = fuse_ll_rename;
+    fuse_ll->fuse_handlers[FUSE_RENAME2] = fuse_ll_rename2;
+    fuse_ll->fuse_handlers[FUSE_READ] = fuse_ll_read;
+    fuse_ll->fuse_handlers[FUSE_WRITE] = fuse_ll_write;
+    fuse_ll->fuse_handlers[FUSE_MKNOD] = fuse_ll_mknod;
+    fuse_ll->fuse_handlers[FUSE_MKDIR] = fuse_ll_mkdir;
+    fuse_ll->fuse_handlers[FUSE_SYMLINK] = fuse_ll_symlink;
+    fuse_ll->fuse_handlers[FUSE_STATFS] = fuse_ll_statfs;
+    fuse_ll->fuse_handlers[FUSE_UNLINK] = fuse_ll_unlink;
+    fuse_ll->fuse_handlers[FUSE_READLINK] = fuse_ll_readlink;
+    fuse_ll->fuse_handlers[FUSE_FLUSH] = fuse_ll_flush;
+    fuse_ll->fuse_handlers[FUSE_SETLKW] = fuse_ll_setlkw;
+    fuse_ll->fuse_handlers[FUSE_SETLK] = fuse_ll_setlk;
+    fuse_ll->fuse_handlers[FUSE_FALLOCATE] = fuse_ll_fallocate;
+}
+
+static int fuse_unknown(struct fuse_ll *fuse_ll,
+                        struct iovec *fuse_in_iov, int in_iovcnt,
+                        struct iovec *fuse_out_iov, int out_iovcnt,
+                        void *completion_context) {
+    struct fuse_in_header *in_hdr = (struct fuse_in_header *) fuse_in_iov[0].iov_base;
+    struct fuse_out_header *out_hdr = (struct fuse_out_header *) fuse_out_iov[0].iov_base;
+    out_hdr->unique = in_hdr->unique;
+    out_hdr->len = sizeof(struct fuse_out_header);
+    out_hdr->error = -ENOSYS;
+
+    printf("dpfs_fuse: fuse OP(%u) called, but not implemented\n", in_hdr->opcode);
+
+    return 0;
+}
+
+static int fuse_handle_req(void *u,
+                           struct iovec *in_iov, int in_iovcnt,
+                           struct iovec *out_iov, int out_iovcnt,
+                           void *completion_context) {
+    struct fuse_ll *fuse_ll = u;
+
+    if (in_iovcnt < 1 || in_iovcnt < 1) {
+        fprintf(stderr, "%s: iovecs in and out don't both atleast one iovec\n", __func__);
+        return -EINVAL;
+    }
+
+    struct fuse_in_header *in_hdr = (struct fuse_in_header *) in_iov[0].iov_base;
+
+    if (in_hdr->opcode < 1 || in_hdr->opcode > DPFS_FUSE_MAX_OPCODE) {
+        fprintf(stderr, "Invalid FUSE opcode!\n");
+        return -EINVAL;
+    } else {
+        fuse_handler_t h = fuse_ll->fuse_handlers[in_hdr->opcode];
+        if (h == NULL) {
+            h = fuse_unknown;
+        }
+        int ret = h(fuse_ll, in_iov, in_iovcnt, out_iov, out_iovcnt, completion_context);
+        
+#ifdef DEBUG_ENABLED
+        if (ret == 0 && out_iovcnt > 0 &&
+            fuse_out_iov[0].iov_len >= sizeof(struct fuse_out_header))
+        {
+            struct fuse_out_header *out_hdr = (struct fuse_out_header *) fuse_out_iov[0].iov_base;
+            if (out_hdr->error != 0)
+                fprintf(stderr, "FUSE OP(%d) request ERROR=%d, %s\n", in_hdr->opcode,
+                    out_hdr->error, strerror(-out_hdr->error));
+        }
+#endif
+        return ret;
+    }
 }
 
 int dpfs_fuse_main(struct fuse_ll_operations *ops, struct virtiofs_emu_params *emu_params,
@@ -1734,7 +1806,8 @@ int dpfs_fuse_main(struct fuse_ll_operations *ops, struct virtiofs_emu_params *e
     memset(&hal_params, 0, sizeof(hal_params));
     memcpy(&hal_params.emu_params, emu_params, sizeof(struct virtiofs_emu_params));
     hal_params.user_data = f_ll;
-    fuse_ll_map(&hal_params);
+    hal_params.request_handler = fuse_handle_req;
+    fuse_ll_map(f_ll);
 
     struct dpfs_hal *emu = dpfs_hal_new(&hal_params);
     if (emu == NULL) {

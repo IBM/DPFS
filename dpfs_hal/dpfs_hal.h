@@ -10,12 +10,10 @@
 
 #include <pthread.h>
 #include <sys/uio.h>
-#include <linux/fuse.h>
 #include <unistd.h>
+#include <stdint.h>
 
-#define DPFS_HAL_FUSE_MAX_OPCODE FUSE_REMOVEMAPPING
-// The opcodes begin at FUSE_LOOKUP = 1, so need one more array index
-#define DPFS_HAL_FUSE_HANDLERS_LEN DPFS_HAL_FUSE_MAX_OPCODE+1
+
 #define DPFS_HAL_NUM_QUEUES 64
 #define DPFS_HAL_QUEUE_DEPTH 64
 // The maximum number of outstanding requests the virtiofs consumer is allowed to have
@@ -26,9 +24,9 @@
 // return int 0 indicates that the request is fully handled and
 // can be sent to the host
 typedef int (*dpfs_hal_handler_t) (void *user_data,
-                            struct iovec *fuse_in_iov, int in_iovcnt,
-                            struct iovec *fuse_out_iov, int out_iovcnt,
-                            void *completion_context);
+                                   struct iovec *fuse_in_iov, int in_iovcnt,
+                                   struct iovec *fuse_out_iov, int out_iovcnt,
+                                   void *completion_context);
 
 struct virtiofs_emu_params {
     useconds_t polling_interval_usec; // Time between every poll
@@ -44,7 +42,7 @@ struct virtiofs_emu_params {
 };
 
 struct dpfs_hal_params {
-    dpfs_hal_handler_t fuse_handlers[DPFS_HAL_FUSE_HANDLERS_LEN];
+    dpfs_hal_handler_t request_handler;
     void *user_data; // Pointer to user data that gets passed with every dpfs_hal_handler
     struct virtiofs_emu_params emu_params;
 };
@@ -60,7 +58,13 @@ struct dpfs_hal;
 extern pthread_key_t dpfs_hal_thread_id_key;
 
 struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params);
+// DPFS will handle the polling for you, using the supplied interval in the params
 void dpfs_hal_loop(struct dpfs_hal *hal);
+// DPFS backend takes control over the polling, make sure you also call poll_mmio
+// a few times a second to check for device management changes of the virtio-fs device
+int dpfs_hal_poll_io(struct dpfs_hal *hal, int thread_id);
+// Poll on the management IO
+void dpfs_hal_poll_mmio(struct dpfs_hal *hal);
 void dpfs_hal_destroy(struct dpfs_hal *hal);
 int dpfs_hal_async_complete(void *completion_context, enum dpfs_hal_completion_status);
 

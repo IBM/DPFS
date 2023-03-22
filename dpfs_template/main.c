@@ -10,19 +10,21 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <linux/fuse.h>
 #include "dpfs_hal.h"
 
-static int fuse_init(void *user_data,
-                     struct iovec *fuse_in_iov, int in_iovcnt,
-                     struct iovec *fuse_out_iov, int out_iovcnt,
-                     void *completion_context) {
+static int fuse_handler(void *user_data,
+                        struct iovec *fuse_in_iov, int in_iovcnt,
+                        struct iovec *fuse_out_iov, int out_iovcnt,
+                        void *completion_context)
+{
     struct fuse_in_header *in_hdr = (struct fuse_in_header *) fuse_in_iov[0].iov_base;
     struct fuse_out_header *out_hdr = (struct fuse_out_header *) fuse_out_iov[0].iov_base;
     out_hdr->unique = in_hdr->unique;
     out_hdr->len = sizeof(struct fuse_out_header);
     out_hdr->error = -ENOSYS;
 
-    printf("init called, but not implemented\n");
+    printf("FUSE(%u) called, but not implemented\n", in_hdr->opcode);
 
     return 0;
 }
@@ -106,10 +108,7 @@ int main(int argc, char **argv)
     emu_params->nthreads = 0;
     emu_params->tag = "dpfs_template";
 
-    hal_params.fuse_handlers[FUSE_INIT] = fuse_init;
-    // Only implement for nodeid = 0, return garbage
-    hal_params.fuse_handlers[FUSE_GETATTR] = NULL;
-    hal_params.fuse_handlers[FUSE_STATFS] = NULL;
+    hal_params.request_handler = fuse_handler;
 
     struct dpfs_hal *hal = dpfs_hal_new(&hal_params);
     if (hal == NULL) {
