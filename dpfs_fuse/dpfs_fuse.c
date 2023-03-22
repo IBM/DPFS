@@ -35,6 +35,7 @@
 #include "debug.h"
 #include "dpfs_hal.h"
 #include "dpfs_fuse.h"
+#include "../eRPC-arm/src/rpc.h"
 
 struct fuse_ll;
 typedef int (*fuse_handler_t) (struct fuse_ll *,
@@ -1746,7 +1747,8 @@ static int fuse_unknown(struct fuse_ll *fuse_ll,
 static int fuse_handle_req(void *u,
                            struct iovec *in_iov, int in_iovcnt,
                            struct iovec *out_iov, int out_iovcnt,
-                           void *completion_context) {
+                           void *completion_context)
+{
     struct fuse_ll *fuse_ll = u;
 
     if (in_iovcnt < 1 || in_iovcnt < 1) {
@@ -1802,12 +1804,14 @@ int dpfs_fuse_main(struct fuse_ll_operations *ops, struct virtiofs_emu_params *e
     f_ll->se->bufsize = FUSE_MAX_MAX_PAGES * getpagesize() +
         FUSE_BUFFER_HEADER_SIZE;
 
+    fuse_ll_map(f_ll);
+
+#if defined(DPFS_FUSE_HAL)
     struct dpfs_hal_params hal_params;
     memset(&hal_params, 0, sizeof(hal_params));
     memcpy(&hal_params.emu_params, emu_params, sizeof(struct virtiofs_emu_params));
     hal_params.user_data = f_ll;
     hal_params.request_handler = fuse_handle_req;
-    fuse_ll_map(f_ll);
 
     struct dpfs_hal *emu = dpfs_hal_new(&hal_params);
     if (emu == NULL) {
@@ -1816,6 +1820,12 @@ int dpfs_fuse_main(struct fuse_ll_operations *ops, struct virtiofs_emu_params *e
     }
     dpfs_hal_loop(emu);
     dpfs_hal_destroy(emu);
+#elif defined(DPFS_FUSE_ERPC)
+    // init eRPC
+    // allocate some eRPC buffers
+    // plug eRPC into dpfs_fuse
+    // busy while loop { eRPC event loop once }
+#endif
     
     return 0;
 }
