@@ -1806,6 +1806,7 @@ int dpfs_fuse_main(struct fuse_ll_operations *ops, struct virtiofs_emu_params *e
 
     fuse_ll_map(f_ll);
 
+#define DPFS_FUSE_HAL
 #if defined(DPFS_FUSE_HAL)
     struct dpfs_hal_params hal_params;
     memset(&hal_params, 0, sizeof(hal_params));

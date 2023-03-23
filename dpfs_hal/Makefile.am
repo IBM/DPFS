@@ -10,7 +10,8 @@ noinst_LIBRARIES = libdpfs_hal.a
 libdpfs_hal_adir = $(includedir)/
 libdpfs_hal_a_HEADERS = dpfs_hal.h
 
-libdpfs_hal_a_CFLAGS  = $(BASE_CFLAGS) -I$(srcdir)/../../src $(SNAP_CFLAGS)
+libdpfs_hal_a_CFLAGS  = $(BASE_CFLAGS) -I$(srcdir)/../../src $(SNAP_CFLAGS) \
+	-fPIC
 libdpfs_hal_a_SOURCES = dpfs_hal.c cpu_latency.c
 
 endif
