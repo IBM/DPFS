@@ -14,7 +14,7 @@ extern "C" {
 #endif
 
 void fuse_ll_debug_print_in_hdr(struct fuse_in_header *in) {
-	char *op_name;
+	const char *op_name;
 	switch (in->opcode) {
 	case 1:
 	      op_name = "FUSE_LOOKUP";

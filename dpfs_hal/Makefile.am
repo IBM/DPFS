@@ -5,7 +5,7 @@
 
 if HAVE_SNAP
 
-lib_LIBRARIES = libdpfs_hal.a
+noinst_LIBRARIES = libdpfs_hal.a
 
 libdpfs_hal_adir = $(includedir)/
 libdpfs_hal_a_HEADERS = dpfs_hal.h

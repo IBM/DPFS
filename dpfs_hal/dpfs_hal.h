@@ -13,6 +13,9 @@
 #include <unistd.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #define DPFS_HAL_NUM_QUEUES 64
 #define DPFS_HAL_QUEUE_DEPTH 64
@@ -67,5 +70,9 @@ int dpfs_hal_poll_io(struct dpfs_hal *hal, int thread_id);
 void dpfs_hal_poll_mmio(struct dpfs_hal *hal);
 void dpfs_hal_destroy(struct dpfs_hal *hal);
 int dpfs_hal_async_complete(void *completion_context, enum dpfs_hal_completion_status);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // DPFS_HAL_H

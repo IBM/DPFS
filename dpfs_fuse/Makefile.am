@@ -1,13 +1,28 @@
+#
+# Copyright 2022- IBM Inc. All rights reserved
+# SPDX-License-Identifier: LGPL-2.1-or-later
+#
+
 if HAVE_SNAP
 
-noinst_LIBRARIES = libdpfs_fuse.a
+lib_LTLIBRARIES = libdpfs_fuse.la
 
 libdpfs_fuse_adir = $(includedir)/
-libdpfs_fuse_a_HEADERS = dpfs_fuse.h
+include_HEADERS = dpfs_fuse.h
 
-libdpfs_fuse_a_LIBADD = $(srcdir)/../dpfs_hal/libdpfs_hal.a
+libdpfs_fuse_la_LIBADD = $(srcdir)/../dpfs_hal/libdpfs_hal.a \
+												 $(srcdir)/../../src/libmlx_dev_emu.a $(srcdir)/../../src/libmlx_dev_emu_snap.a \
+  											 $(srcdir)/../eRPC-arm/build/liberpc.a
 
-libdpfs_fuse_a_CFLAGS  = $(BASE_CFLAGS) -I$(srcdir)/../../src -I$(srcdir)/../dpfs_hal $(SNAP_CFLAGS)
-libdpfs_fuse_a_SOURCES = dpfs_fuse.c
+libdpfs_fuse_la_LDFLAGS = -lboost_system -lboost_thread --exclude-libs=libmlx_dev_emu.a --exclude-libs=libmlx_dev_emu_snap.a --exclude-libs=liberpc.a -fvisibility=hidden
+
+libdpfs_fuse_la_CPPFLAGS  = $(BASE_CPPFLAGS) \
+	-I$(srcdir)/../../src $(SNAP_CFLAGS) \
+	-I$(srcdir)/../dpfs_hal \
+	-I$(srcdir)/../eRPC-arm/third_party/asio/include \
+	-I$(srcdir)/../eRPC-arm/src \
+	-DERPC_INFINIBAND -Wno-address-of-packed-member # eRPC required flags
+													 
+libdpfs_fuse_la_SOURCES = dpfs_fuse.cpp 
 
 endif

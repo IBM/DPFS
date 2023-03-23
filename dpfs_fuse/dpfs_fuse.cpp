@@ -23,7 +23,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <err.h>
-#include <stdatomic.h>
+//#include <stdatomic.h>
 #include <sys/types.h>
 #include <sys/uio.h>
 #include <sys/fcntl.h>
@@ -35,7 +35,7 @@
 #include "debug.h"
 #include "dpfs_hal.h"
 #include "dpfs_fuse.h"
-#include "../eRPC-arm/src/rpc.h"
+#include "rpc.h"
 
 struct fuse_ll;
 typedef int (*fuse_handler_t) (struct fuse_ll *,
@@ -623,7 +623,7 @@ static int fuse_ll_lookup(struct fuse_ll *f_ll,
     out_hdr->unique = in_hdr->unique;
     out_hdr->len = sizeof(*out_hdr);
     out_hdr->error = 0;
-    const char *const in_name = fuse_in_iov[1].iov_base;
+    const char *const in_name = (const char *const) fuse_in_iov[1].iov_base;
     struct fuse_entry_out *out_entry = (struct fuse_entry_out *) fuse_out_iov[1].iov_base;
 
 #ifdef DEBUG_ENABLED
@@ -1537,7 +1537,7 @@ static int fuse_ll_symlink(struct fuse_ll *f_ll,
     out_hdr->len = sizeof(*out_hdr);
     out_hdr->error = 0;
 
-    const char *in_name = fuse_in_iov[1].iov_base;
+    const char *in_name = (const char *) fuse_in_iov[1].iov_base;
     const char *in_link_name = in_name + strlen(in_name)+1;
     struct fuse_entry_out *out_entry = (struct fuse_entry_out *) fuse_out_iov[1].iov_base;
 
@@ -1749,7 +1749,7 @@ static int fuse_handle_req(void *u,
                            struct iovec *out_iov, int out_iovcnt,
                            void *completion_context)
 {
-    struct fuse_ll *fuse_ll = u;
+    struct fuse_ll *fuse_ll = (struct fuse_ll *) u;
 
     if (in_iovcnt < 1 || in_iovcnt < 1) {
         fprintf(stderr, "%s: iovecs in and out don't both atleast one iovec\n", __func__);
@@ -1789,12 +1789,12 @@ int dpfs_fuse_main(struct fuse_ll_operations *ops, struct virtiofs_emu_params *e
     printf("dpfs_fuse is running in DEBUG mode\n");
 #endif
 
-    struct fuse_ll *f_ll = calloc(1, sizeof(struct fuse_ll));
+    struct fuse_ll *f_ll = (struct fuse_ll *) calloc(1, sizeof(struct fuse_ll));
     f_ll->ops = *ops;
     f_ll->debug = debug;
     f_ll->user_data = user_data;
 
-    f_ll->se = calloc(1, sizeof(struct fuse_session));
+    f_ll->se = (struct fuse_session *) calloc(1, sizeof(struct fuse_session));
     if (f_ll->se == NULL) {
         err(1, "ERROR: Could not allocate memory for fuse_session");
     }

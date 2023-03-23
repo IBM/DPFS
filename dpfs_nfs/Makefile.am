@@ -5,20 +5,18 @@
 
 if HAVE_SNAP
 
-bin_PROGRAMS = virtionfs
+bin_PROGRAMS = dpfs_nfs
 
-virtionfs_LDADD = $(srcdir)/../dpfs_fuse/libdpfs_fuse.a \
-              $(srcdir)/../dpfs_hal/libdpfs_hal.a \
-              $(srcdir)/../../src/libmlx_dev_emu.a $(srcdir)/../../src/libmlx_dev_emu_snap.a \
-              -L/usr/local/lib -lnfs -lck \
-              $(IBVERBS_LDFLAGS) $(SNAP_LDFLAGS) $(PYTHON3_LDFLAGS) -lpthread
+dpfs_nfs_LDADD = $(srcdir)/../dpfs_fuse/libdpfs_fuse.la \
+              	 -L/usr/local/lib -lnfs -lck \
+              	 $(IBVERBS_LDFLAGS) $(SNAP_LDFLAGS) $(PYTHON3_LDFLAGS) -lpthread
 
-virtionfs_CFLAGS  = $(BASE_CFLAGS) -I$(srcdir)/../../src -I$(srcdir)/../dpfs_fuse \
-                -I$(srcdir) \
-                -I$(srcdir)/../dpfs_hal $(SNAP_CFLAGS) \
-                -I/usr/local/include
-virtionfs_SOURCES = main.c \
-                    dpfs_nfs.c vnfs_connect.c \
-                    mpool2.c nfs_v4.c inode.c ftimer.c
+dpfs_nfs_CFLAGS = $(BASE_CFLAGS) -I$(srcdir) \
+                   -I/usr/local/include \
+                   -I$(srcdir)/../dpfs_fuse -I$(srcdir)/../dpfs_hal
+
+dpfs_nfs_SOURCES = main.c \
+                   dpfs_nfs.c vnfs_connect.c \
+                   mpool2.c nfs_v4.c inode.c ftimer.c
 
 endif

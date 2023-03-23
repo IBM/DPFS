@@ -18,7 +18,6 @@
 #include <linux/fuse.h>
 #include "dpfs_hal.h"
 
-
 // Beginning of libfuse/include/fuse_lowlevel.h selective copy
 
 #define FUSE_USE_VERSION 30
@@ -26,6 +25,10 @@
 
 /** The node ID of the root inode */
 #define FUSE_ROOT_ID 1
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /** Inode number type */
 typedef uint64_t fuse_ino_t;
@@ -265,5 +268,9 @@ struct fuse_ll_operations {
 
 int dpfs_fuse_main(struct fuse_ll_operations *ops, struct virtiofs_emu_params *emu_params,
         void *user_data, bool debug);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // DPFS_FUSE_H
