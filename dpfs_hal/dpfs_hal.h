@@ -35,13 +35,13 @@ struct virtiofs_emu_params {
     useconds_t polling_interval_usec; // Time between every poll
     int pf_id; // Physical function ID
     int vf_id; // Virtual function ID
-    char *emu_manager; // Emulation manager, DPU specific
+    const char *emu_manager; // Emulation manager, DPU specific
     // Amount of polling threads 0 for single threaded mode, >0 for multithreaded mode
     // Multithreaded not supported currently!
     uint32_t nthreads;
     // Must be a power of 2!
     uint32_t queue_depth;
-    char *tag; // Filesystem tag (i.e. the name of the virtiofs device to mount for the host)
+    const char *tag; // Filesystem tag (i.e. the name of the virtiofs device to mount for the host)
 };
 
 struct dpfs_hal_params {
