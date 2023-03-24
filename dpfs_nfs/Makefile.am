@@ -8,7 +8,7 @@ if HAVE_SNAP
 bin_PROGRAMS = dpfs_nfs
 
 dpfs_nfs_LDADD = $(srcdir)/../dpfs_fuse/libdpfs_fuse.la \
-              	 -L/usr/local/lib -lnfs -lck -lpthread
+	-L/usr/local/lib -lnfs -lck -lpthread
 
 dpfs_nfs_CFLAGS = $(BASE_CFLAGS) -I$(srcdir) \
                    -I/usr/local/include \

@@ -15,7 +15,9 @@ libdpfs_fuse_la_LIBADD = $(srcdir)/../dpfs_hal/libdpfs_hal.a \
 	$(srcdir)/../eRPC-arm/build/liberpc.a \
 	$(IBVERBS_LDFLAGS) $(SNAP_LDFLAGS) $(PYTHON3_LDFLAGS) 
 
-libdpfs_fuse_la_LDFLAGS = -lboost_system -lboost_thread --exclude-libs=libmlx_dev_emu.a --exclude-libs=libmlx_dev_emu_snap.a --exclude-libs=liberpc.a -fvisibility=hidden
+libdpfs_fuse_la_LDFLAGS = -lboost_system -lboost_thread \
+	--exclude-libs=libmlx_dev_emu.a --exclude-libs=libmlx_dev_emu_snap.a --exclude-libs=liberpc.a -fvisibility=hidden \
+	$(IBVERBS_LDFLAGS) $(SNAP_LDFLAGS) $(PYTHON3_LDFLAGS) 
 
 libdpfs_fuse_la_CPPFLAGS  = $(BASE_CPPFLAGS) \
 	-I$(srcdir)/../../src $(SNAP_CFLAGS) \
