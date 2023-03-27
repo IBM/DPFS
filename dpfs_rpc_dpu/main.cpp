@@ -48,16 +48,25 @@ struct rpc_state {
 void response_func(void *context, void *tag) {
     rpc_state *state = (rpc_state *) context;
     rpc_msg *msg = (rpc_msg *) tag;
-    // Copy the resp to the output buffers
-    size_t msg_len = 0;
-    for (size_t i = 0; i < msg->out_iovcnt; i++) {
-        memcpy(msg->out_iov[i].iov_base, ((char *) msg->resp.buf_) + msg_len, msg->out_iov[i].iov_len);
-        msg_len += msg->out_iov[i].iov_len;
+    uint8_t *req_buf = msg->req.buf_;
+
+    int out_iovcnt = *((int *) msg->req.buf_);
+    req_buf += sizeof(out_iovcnt);
+
+    for (size_t i = 0; i < out_iovcnt; i++) {
+        size_t iov_len = *((size_t *) req_buf);
+        req_buf += sizeof(iov_len);
+
+        memcpy(msg->out_iov[i].iov_base, (void *) req_buf, iov_len);
+        req_buf += iov_len;
     }
+
+    dpfs_hal_async_complete(msg->completion_context, DPFS_HAL_COMPLETION_SUCCES);
+
     state->avail.push_back(msg);
 }
 
-// The remote doesn't send us messages
+// The session management callback that is invoked when sessions are successfully created or destroyed.
 void sm_handler(int, SmEventType, SmErrType, void *) {}
 
 static int fuse_handler(void *user_data,
@@ -68,12 +77,20 @@ static int fuse_handler(void *user_data,
     rpc_state *state = (rpc_state *) user_data;
     // Send it via eRPC to the remote side
     rpc_msg *msg = state->avail.back();
+    uint8_t *req_buf = msg->req.buf_;
     state->avail.pop_back();
 
-    size_t msg_len = 0;
+    *((int *) req_buf) = in_iovcnt;
+    req_buf += sizeof(in_iovcnt);
+
     for (size_t i = 0; i < in_iovcnt; i++) {
-        memcpy(msg->req.buf_, ((char *) in_iov[i].iov_base) + msg_len, in_iov[i].iov_len);
-        msg_len += in_iov[i].iov_len;
+        // Set the iov_len into the request buffer
+        *(size_t *) req_buf = in_iov[i].iov_len;
+        req_buf += sizeof(in_iov[i].iov_len);
+
+        // Fill the request buffer with iov_base data
+        memcpy(req_buf, in_iov[i].iov_base, in_iov[i].iov_len);
+        req_buf += in_iov[i].iov_len;
     }
 
     state->rpc->enqueue_request(state->session_num, 0, &msg->req, &msg->resp, response_func, (void *) state);

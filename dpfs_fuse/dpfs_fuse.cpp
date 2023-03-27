@@ -36,6 +36,7 @@
 #include "dpfs_hal.h"
 #include "dpfs_fuse.h"
 #include "rpc.h"
+using namespace erpc;
 
 struct fuse_ll;
 typedef int (*fuse_handler_t) (struct fuse_ll *,
@@ -1782,6 +1783,11 @@ static int fuse_handle_req(void *u,
     }
 }
 
+
+void erpc_handler(ReqHandle *req_handle, void *context) {
+
+}
+
 int dpfs_fuse_main(struct fuse_ll_operations *ops, struct virtiofs_emu_params *emu_params,
                    void *user_data, bool debug)
 {
@@ -1822,6 +1828,7 @@ int dpfs_fuse_main(struct fuse_ll_operations *ops, struct virtiofs_emu_params *e
     dpfs_hal_loop(emu);
     dpfs_hal_destroy(emu);
 #elif defined(DPFS_FUSE_ERPC)
+
     // init eRPC
     // allocate some eRPC buffers
     // plug eRPC into dpfs_fuse
