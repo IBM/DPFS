@@ -33,10 +33,8 @@
 #include "config.h"
 #include "common.h"
 #include "debug.h"
-#include "dpfs_hal.h"
+#include "dpfs/hal.h"
 #include "dpfs_fuse.h"
-#include "rpc.h"
-using namespace erpc;
 
 struct fuse_ll;
 typedef int (*fuse_handler_t) (struct fuse_ll *,
@@ -1783,12 +1781,7 @@ static int fuse_handle_req(void *u,
     }
 }
 
-
-void erpc_handler(ReqHandle *req_handle, void *context) {
-
-}
-
-int dpfs_fuse_main(struct fuse_ll_operations *ops, struct virtiofs_emu_params *emu_params,
+int dpfs_fuse_main(struct fuse_ll_operations *ops, const char *hal_conf_path,
                    void *user_data, bool debug)
 {
 #ifdef DEBUG_ENABLED
@@ -1812,11 +1805,8 @@ int dpfs_fuse_main(struct fuse_ll_operations *ops, struct virtiofs_emu_params *e
 
     fuse_ll_map(f_ll);
 
-#define DPFS_FUSE_HAL
-#if defined(DPFS_FUSE_HAL)
     struct dpfs_hal_params hal_params;
     memset(&hal_params, 0, sizeof(hal_params));
-    memcpy(&hal_params.emu_params, emu_params, sizeof(struct virtiofs_emu_params));
     hal_params.user_data = f_ll;
     hal_params.request_handler = fuse_handle_req;
 
@@ -1827,13 +1817,6 @@ int dpfs_fuse_main(struct fuse_ll_operations *ops, struct virtiofs_emu_params *e
     }
     dpfs_hal_loop(emu);
     dpfs_hal_destroy(emu);
-#elif defined(DPFS_FUSE_ERPC)
-
-    // init eRPC
-    // allocate some eRPC buffers
-    // plug eRPC into dpfs_fuse
-    // busy while loop { eRPC event loop once }
-#endif
     
     return 0;
 }

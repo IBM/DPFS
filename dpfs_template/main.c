@@ -1,6 +1,6 @@
 /*
 #
-# Copyright 2020- IBM Inc. All rights reserved
+# Copyright 2023- IBM Inc. All rights reserved
 # SPDX-License-Identifier: LGPL-2.1-or-later
 #
 */
@@ -11,7 +11,7 @@
 #include <string.h>
 #include <errno.h>
 #include <linux/fuse.h>
-#include "dpfs_hal.h"
+#include "dpfs/hal.h"
 
 static int fuse_handler(void *user_data,
                         struct iovec *fuse_in_iov, int in_iovcnt,
@@ -32,34 +32,18 @@ static int fuse_handler(void *user_data,
 
 void usage()
 {
-    printf("dpfs_template [-p pf_id] [-v vf_id ] [-e emulation_manager_name]\n");
+    printf("dpfs_template [-c config_path]\n");
 }
 
 int main(int argc, char **argv)
 {
-    int pf = -1;
-    int vf = -1;
-    char *emu_manager = NULL; // the rdma device name which supports being an emulation manager and virtio_fs emu
-    char *server = NULL;
-    char *export = NULL;
+    const char *conf = NULL;
 
     int opt;
-    while ((opt = getopt(argc, argv, "p:v:e:s:x:")) != -1) {
+    while ((opt = getopt(argc, argv, "c:")) != -1) {
         switch (opt) {
-            case 'p':
-                pf = atoi(optarg);
-                break;
-            case 'v':
-                vf = atoi(optarg);
-                break;
-            case 'e':
-                emu_manager = optarg;
-                break;
-            case 's':
-                server = optarg;
-                break;
-            case 'x':
-                export = optarg;
+            case 'c':
+                conf = optarg;
                 break;
             default: /* '?' */
                 usage();
@@ -70,43 +54,14 @@ int main(int argc, char **argv)
     struct dpfs_hal_params hal_params;
     // just for safety
     memset(&hal_params, 0, sizeof(struct dpfs_hal_params));
-    struct virtiofs_emu_params *emu_params = &hal_params.emu_params;
-
-    if (pf >= 0)
-        emu_params->pf_id = pf;
-    else {
-        fprintf(stderr, "You must supply a pf with -p\n");
-        usage();
-        exit(1);
-    }
-    if (vf >= 0)
-        emu_params->vf_id = vf;
-    else
-        emu_params->vf_id = -1;
-    
-    if (emu_manager != NULL) {
-        emu_params->emu_manager = emu_manager;
+    if (conf != NULL) {
+        hal_params.conf_path = conf;
     } else {
-        fprintf(stderr, "You must supply an emu manager name with -e\n");
-        usage();
-        exit(1);
-    }
-    if (server == NULL) {
-        fprintf(stderr, "You must supply a server IP with -s\n");
-        usage();
-        exit(1);
-    }
-    if (export == NULL) {
-        fprintf(stderr, "You must supply a export path with -p\n");
+        fprintf(stderr, "You must supply config file path with -c\n");
         usage();
         exit(1);
     }
     printf("dpfs_template starting up!\n");
-    printf("Connecting to %s:%s\n", server, export);
-
-    emu_params->polling_interval_usec = 0;
-    emu_params->nthreads = 0;
-    emu_params->tag = "dpfs_template";
 
     hal_params.request_handler = fuse_handler;
 

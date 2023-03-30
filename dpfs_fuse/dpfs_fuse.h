@@ -16,7 +16,7 @@
 #include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <linux/fuse.h>
-#include "dpfs_hal.h"
+#include "dpfs/hal.h"
 
 // Beginning of libfuse/include/fuse_lowlevel.h selective copy
 
@@ -266,7 +266,7 @@ struct fuse_ll_operations {
                       void *completion_context);
 };
 
-int dpfs_fuse_main(struct fuse_ll_operations *ops, struct virtiofs_emu_params *emu_params,
+int dpfs_fuse_main(struct fuse_ll_operations *ops, const char *hal_conf_path,
         void *user_data, bool debug);
 
 #ifdef __cplusplus

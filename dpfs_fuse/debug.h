@@ -7,7 +7,7 @@
 
 #include <linux/fuse.h>
 #include <stdio.h>
-#include "dpfs_hal.h"
+#include "dpfs/hal.h"
 
 #ifdef __cplusplus
 extern "C" {

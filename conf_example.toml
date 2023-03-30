@@ -1,0 +1,34 @@
+[snap_hal]
+# Time between every poll
+polling_interval_usec = 0
+# Physical function ID
+pf_id = 0
+# Virtual function ID
+vf_id = -1
+# Emulation manager, DPU specific
+emu_manager = "mlx5_0"
+# Amount of polling threads 0 for single threaded mode, >0 for multithreaded mode
+# Multithreaded not supported currently!
+nthreads = 0
+# Must be a power of 2 and >= 1! The virtio-fs specification requires this
+queue_depth = 64
+# Filesystem tag (i.e. the name of the virtiofs device to mount for the host)
+tag = "dpfs"
+
+[rvfs_hal]
+# Time between every poll
+polling_interval_usec = 0
+
+[nfs]
+# The NFS server that you want to mirror
+server = "10.100.0.1"
+# The NFS server's path that you want to mirror
+export = "/mnt/shared"
+
+# This is for dpfs_rvfs_dpu and the dpfs_hal implementation that uses RVFS
+[rvfs]
+remote_uri = "10.100.0.1:38510"
+dpu_uri = "10.100.0.115:38510"
+# Useful for the DPU and remote side to have the QD synced
+# Must be a power of 2 and >= 1
+queue_depth = 64
