@@ -1575,7 +1575,7 @@ void dpfs_nfs_assign_ops(struct fuse_ll_operations *ops) {
 
 void dpfs_nfs_main(char *server, char *export,
                bool debug, double timeout, uint32_t nthreads,
-               struct virtiofs_emu_params *emu_params) {
+               const char *conf_path) {
     struct virtionfs *vnfs = calloc(1, sizeof(struct virtionfs));
     if (!vnfs) {
         warn("Failed to dpfs_nfs");
@@ -1614,7 +1614,7 @@ void dpfs_nfs_main(char *server, char *export,
     memset(&ops, 0, sizeof(ops));
     dpfs_nfs_assign_ops(&ops);
 
-    dpfs_fuse_main(&ops, emu_params, vnfs, debug);
+    dpfs_fuse_main(&ops, conf_path, vnfs, debug);
 
     inode_table_destroy(vnfs->inodes);
 ret_c:

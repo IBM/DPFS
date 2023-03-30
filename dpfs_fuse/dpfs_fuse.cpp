@@ -1809,6 +1809,7 @@ int dpfs_fuse_main(struct fuse_ll_operations *ops, const char *hal_conf_path,
     memset(&hal_params, 0, sizeof(hal_params));
     hal_params.user_data = f_ll;
     hal_params.request_handler = fuse_handle_req;
+    hal_params.conf_path = hal_conf_path;
 
     struct dpfs_hal *emu = dpfs_hal_new(&hal_params);
     if (emu == NULL) {

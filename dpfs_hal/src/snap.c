@@ -65,13 +65,14 @@ struct dpfs_hal {
 };
 
 static volatile int keep_running = 1;
+
+__attribute__((visibility("default")))
 pthread_key_t dpfs_hal_thread_id_key;
 
 static void signal_handler(int dummy)
 {
     keep_running = 0;
 }
-
 
 __attribute__((visibility("default")))
 int dpfs_hal_poll_io(struct dpfs_hal *hal, int thread_id) {

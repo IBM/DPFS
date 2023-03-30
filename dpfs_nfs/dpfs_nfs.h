@@ -23,7 +23,7 @@
 
 void dpfs_nfs_main(char *server, char *export,
                bool debug, double timeout, uint32_t nthreads,
-               struct virtiofs_emu_params *emu_params);
+               const char *conf_path);
 
 enum vnfs_conn_state {
     VNFS_CONN_STATE_UNINIT = 0,

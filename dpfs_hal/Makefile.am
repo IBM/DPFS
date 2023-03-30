@@ -41,8 +41,10 @@ else DPFS_RVFS
 libdpfs_hal_la_LIBADD = $(srcdir)/../extern/eRPC-arm/build/liberpc.a \
 	-lboost_system -lboost_thread -lnuma $(IBVERBS_LDFLAGS) 
 
+# For the common RVFS definitions
+libdpfs_hal_la_CPPFLAGS = -I$(builddir)/../dpfs_rvfs
 # eRPC required flags for its headers
-libdpfs_hal_la_CPPFLAGS = $(BASE_CPPFLAGS) $(libdpfs_hal_la_CFLAGS) \
+libdpfs_hal_la_CPPFLAGS += $(BASE_CPPFLAGS) $(libdpfs_hal_la_CFLAGS) \
 	-I$(builddir)/../extern/eRPC-arm/third_party/asio/include \
 	-I$(builddir)/../extern/eRPC-arm/src \
 	-DERPC_INFINIBAND -Wno-address-of-packed-member

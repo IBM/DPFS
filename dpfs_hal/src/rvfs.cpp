@@ -13,6 +13,7 @@
 #include <memory>
 #include <linux/fuse.h>
 #include "hal.h"
+#include "rvfs.h"
 #include "rpc.h"
 #include "tomlcpp.hpp"
 
@@ -21,12 +22,12 @@
 
 using namespace erpc;
 
+__attribute__((visibility("default")))
+pthread_key_t dpfs_hal_thread_id_key;
+
 struct rpc_msg {
     // Back reference to dpfs_hal for the async_completion
     dpfs_hal *hal;
-
-    MsgBuffer req;
-    MsgBuffer resp;
 
     // Only filled if the msg is in use, if so it will point to req internally
     ReqHandle *reqh;
@@ -39,8 +40,6 @@ struct rpc_msg {
 
     rpc_msg(dpfs_hal *hal, Rpc<CTransport> &rpc) : hal(hal), iov{{0}}
     {
-        this->req = rpc.alloc_msg_buffer_or_die((2 << 20) + 4096);
-        this->resp = rpc.alloc_msg_buffer_or_die((2 << 20) + 4096);
     }
 };
 
@@ -55,19 +54,19 @@ struct dpfs_hal {
     int session_num;
 };
     
-void req_handler(ReqHandle *req_handle, void *context)
+static void req_handler(ReqHandle *reqh, void *context)
 {
     dpfs_hal *hal = static_cast<dpfs_hal *>(context);
     rpc_msg *msg = hal->avail.back();
     hal->avail.pop_back();
 
-    msg->reqh = req_handle;
+    msg->reqh = reqh;
 
-    uint8_t *req_buf = msg->req.buf_;
-    uint8_t *resp_buf = msg->resp.buf_;
+    uint8_t *req_buf = reqh->get_req_msgbuf()->buf_;
+    uint8_t *resp_buf = reqh->pre_resp_msgbuf_.buf_;
 
     // Load the input io vectors
-    msg->in_iovcnt = *((int *) msg->req.buf_);
+    msg->in_iovcnt = *((int *) req_buf);
     req_buf += sizeof(msg->in_iovcnt);
 
     size_t i = 0;
@@ -147,20 +146,23 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params) {
         delete hal;
         return nullptr;
     }
+    if (pthread_key_create(&dpfs_hal_thread_id_key, NULL)) {
+        std::cerr << "Failed to create thread-local key for dpfs_hal threadid" << std::endl;
+        delete hal;
+        return nullptr;
+    }
+    // Only one thread, thread_id=0
+    pthread_setspecific(dpfs_hal_thread_id_key, (void *) 0);
+
     std::cout << "dpfs_hal using RVFS starting up!" << std::endl;
 
     hal->nexus = std::unique_ptr<Nexus>(new Nexus(remote_uri));
+    hal->nexus->register_req_func(DPFS_RVFS_REQTYPE_FUSE, req_handler);
+    
     hal->rpc = std::unique_ptr<Rpc<CTransport>>(new Rpc<CTransport>(hal->nexus.get(), nullptr, 0, sm_handler));
-    hal->session_num = hal->rpc->create_session(dpu_uri, 0);
 
-    // Run till we are connected
-    while (!hal->rpc->is_connected(hal->session_num)) hal->rpc->run_event_loop_once();
-
-    // Create the message buffers that we will need for our QD
-    for (size_t i = 0; i < qd/VIRTIO_FS_MIN_DESCS; i++) {
-        rpc_msg *msg = new rpc_msg(hal, *hal->rpc.get());
-        hal->avail.push_back(msg);
-    }
+    // Same as in rvfs_dpu
+    hal->rpc->set_pre_resp_msgbuf_size(DPFS_RVFS_MAX_REQRESP_SIZE);
 
     hal->request_handler = params->request_handler;
     hal->user_data = params->user_data;
@@ -219,9 +221,9 @@ int dpfs_hal_async_complete(void *completion_context, enum dpfs_hal_completion_s
     dpfs_hal *hal = msg->hal;
 
     struct fuse_out_header *fuse_out_header = static_cast<struct fuse_out_header *>(msg->iov[msg->in_iovcnt].iov_base);
-    Rpc<CTransport>::resize_msg_buffer(&msg->resp, fuse_out_header->len);
+    Rpc<CTransport>::resize_msg_buffer(&msg->reqh->pre_resp_msgbuf_, fuse_out_header->len);
 
-    hal->rpc->enqueue_response(msg->reqh, &msg->resp);
+    hal->rpc->enqueue_response(msg->reqh, &msg->reqh->pre_resp_msgbuf_);
     hal->avail.push_back(msg);
     return 0;
 }
