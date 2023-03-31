@@ -163,10 +163,9 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params) {
     // Same as in rvfs_dpu
     hal->rpc->set_pre_resp_msgbuf_size(DPFS_RVFS_MAX_REQRESP_SIZE);
 
-    for (int i = 0; i < qd, i++) {
+    for (int i = 0; i < qd; i++) {
         hal->avail.push_back(new rpc_msg(hal));
     }
-
 
     std::cout << "DPFS HAL with RVFS frontend online at " << remote_uri << "!" << std::endl;
 
