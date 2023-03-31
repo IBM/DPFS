@@ -50,7 +50,7 @@ struct rpc_state {
 void response_func(void *context, void *tag)
 {
 #ifdef DEBUG_ENABLED
-    printf("DPFS_RVFS_dpu %s: received eRPC reply for msg %p",
+    printf("DPFS_RVFS_dpu %s: received eRPC reply for msg %p\n",
             __func__, tag);
 #endif
     rpc_state *state = (rpc_state *) context;
@@ -68,7 +68,9 @@ void response_func(void *context, void *tag)
 }
 
 // The session management callback that is invoked when sessions are successfully created or destroyed.
-static void sm_handler(int, SmEventType, SmErrType, void *) {}
+static void sm_handler(int, SmEventType event, SmErrType err, void *) {
+    std::cout << "Event: " << sm_event_type_str(event) << " Error: " << sm_err_type_str(err) << std::endl;
+}
 
 static int fuse_handler(void *user_data,
                         struct iovec *in_iov, int in_iovcnt,
@@ -82,7 +84,7 @@ static int fuse_handler(void *user_data,
     state->avail.pop_back();
 
 #ifdef DEBUG_ENABLED
-    printf("DPFS_RVFS_dpu %s: FUSE request with %d input iovecs and %d output iovecs. Sending in msg %p",
+    printf("DPFS_RVFS_dpu %s: FUSE request with %d input iovecs and %d output iovecs. Sending in msg %p\n",
             __func__, in_iovcnt, out_iovcnt, msg);
 #endif
 

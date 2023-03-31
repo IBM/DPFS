@@ -63,7 +63,7 @@ static void req_handler(ReqHandle *reqh, void *context)
     hal->avail.pop_back();
 
 #ifdef DEBUG_ENABLED
-    printf("DPFS_HAL_RVFS %s: received eRPC in msg %p", __func__, msg);
+    printf("DPFS_HAL_RVFS %s: received eRPC in msg %p\n", __func__, msg);
 #endif
 
     msg->reqh = reqh;
@@ -118,7 +118,7 @@ static void req_handler(ReqHandle *reqh, void *context)
 
 // The session management callback that is invoked when sessions are successfully created or destroyed.
 static void sm_handler(int, SmEventType event, SmErrType err, void *) {
-    std::cout << "Event: " << sm_event_type_str(e) << " Error: " << sm_err_type_str(e) << std::endl;
+    std::cout << "Event: " << sm_event_type_str(event) << " Error: " << sm_err_type_str(err) << std::endl;
 }
 
 __attribute__((visibility("default")))
@@ -218,11 +218,12 @@ void dpfs_hal_destroy(struct dpfs_hal *hal) {
 __attribute__((visibility("default")))
 int dpfs_hal_async_complete(void *completion_context, enum dpfs_hal_completion_status)
 {
-#ifdef DEBUG_ENABLED
-    printf("DPFS_HAL_RVFS %s: replying to msg %p", __func__, msg);
-#endif
     rpc_msg *msg = (rpc_msg *) completion_context;
     dpfs_hal *hal = msg->hal;
+
+#ifdef DEBUG_ENABLED
+    printf("DPFS_HAL_RVFS %s: replying to msg %p\n", __func__, msg);
+#endif
 
     struct fuse_out_header *fuse_out_header = static_cast<struct fuse_out_header *>(msg->iov[msg->in_iovcnt].iov_base);
     Rpc<CTransport>::resize_msg_buffer(&msg->reqh->pre_resp_msgbuf_, fuse_out_header->len);
