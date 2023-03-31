@@ -102,7 +102,7 @@ static int fuse_handler(void *user_data,
     }
 
     state->rpc->resize_msg_buffer(&msg->req, req_buf - msg->req.buf_);
-    state->rpc->enqueue_request(state->session_num, DPFS_RVFS_REQTYPE_FUSE, &msg->req, &msg->resp, response_func, (void *) state);
+    state->rpc->enqueue_request(state->session_num, DPFS_RVFS_REQTYPE_FUSE, &msg->req, &msg->resp, response_func, (void *) msg);
 
     return 0;
 }
@@ -173,7 +173,7 @@ int main(int argc, char **argv)
 
     rpc_state state;
     state.nexus = std::unique_ptr<Nexus>(new Nexus(dpu_uri));
-    state.rpc = std::unique_ptr<Rpc<CTransport>>(new Rpc<CTransport>(state.nexus.get(), nullptr, 0, sm_handler));
+    state.rpc = std::unique_ptr<Rpc<CTransport>>(new Rpc<CTransport>(state.nexus.get(), &state, 0, sm_handler));
     state.session_num = state.rpc->create_session(remote_uri, 0);
 
     // Run till we are connected

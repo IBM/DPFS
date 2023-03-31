@@ -262,37 +262,37 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params)
                         "out what emulation manager name to supply.");
         return NULL;
     }
-    toml_datum_t pf_id = toml_string_in(snap_conf, "pf_id");
+    toml_datum_t pf_id = toml_int_in(snap_conf, "pf_id");
     if (!pf_id.ok || pf_id.u.i < 0) {
         fprintf(stderr, "%s: pf_id requires a value >=0!"
-                "Hint: use list_emulation_managers to find out the physical function id.", __func__);
+                "Hint: use list_emulation_managers to find out the physical function id.\n", __func__);
         return NULL;
     }
-    toml_datum_t vf_id = toml_string_in(snap_conf, "pf_id");
+    toml_datum_t vf_id = toml_int_in(snap_conf, "vf_id");
     if (!vf_id.ok || vf_id.u.i < -1) {
         fprintf(stderr, "%s: vf_id requires a value >=-1!"
-                "Hint: -1 means no virtual function and directly run on the physical function.", __func__);
+                "Hint: -1 means no virtual function and directly run on the physical function.\n", __func__);
         return NULL;
     }
-    toml_datum_t qd = toml_string_in(snap_conf, "queue_depth");
+    toml_datum_t qd = toml_int_in(snap_conf, "queue_depth");
     if (!qd.ok || qd.u.i < 1|| (qd.u.i & (qd.u.i - 1))) {
-        fprintf(stderr, "%s: queue_depth must be a power of 2 and >= 1!", __func__);
+        fprintf(stderr, "%s: queue_depth must be a power of 2 and >= 1\n!", __func__);
         return NULL;
     }
-    toml_datum_t nthreads = toml_string_in(snap_conf, "nthreads");
+    toml_datum_t nthreads = toml_int_in(snap_conf, "nthreads");
     if (!nthreads.ok || nthreads.u.i < 0) {
         fprintf(stderr, "%s: nthreads must be >= 0!", __func__);
         return NULL;
     }
-    toml_datum_t polling_interval = toml_string_in(snap_conf, "polling_interval_usec");
+    toml_datum_t polling_interval = toml_int_in(snap_conf, "polling_interval_usec");
     if (!polling_interval.ok || polling_interval.u.i < 0 ) {
-        fprintf(stderr, "%s: polling_interval_usec must be >= 0!", __func__);
+        fprintf(stderr, "%s: polling_interval_usec must be >= 0\n!", __func__);
         return NULL;
     }
     toml_datum_t tag = toml_string_in(snap_conf, "tag");
     if (!tag.ok) {
         fprintf(stderr, "%s: a virtio-fs file system tag in the form of a string must be supplied!"
-                "This is the name with which the host mounts the file system", __func__);
+                "This is the name with which the host mounts the file system\n", __func__);
         return NULL;
     }
     struct dpfs_hal *emu = calloc(sizeof(struct dpfs_hal), 1);
@@ -350,6 +350,7 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params)
         goto clear_pci_list;
     }
 
+    printf("DPFS HAL with SNAP frontend online!");
     printf("VirtIO-FS device %s on emulation manager %s is ready\n",
                param.tag, emu_manager.u.s);
 

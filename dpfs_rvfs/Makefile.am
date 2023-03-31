@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 #
 
-if DPFS_RVFS
+if HAVE_SNAP
 
 bin_PROGRAMS = dpfs_rvfs_dpu
 

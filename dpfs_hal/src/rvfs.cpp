@@ -38,9 +38,9 @@ struct rpc_msg {
     int in_iovcnt;
     int out_iovcnt;
 
-    rpc_msg(dpfs_hal *hal, Rpc<CTransport> &rpc) : hal(hal), iov{{0}}
-    {
-    }
+    rpc_msg(dpfs_hal *hal) : hal(hal), reqh(nullptr),
+        iov{{0}}, in_iovcnt(0), out_iovcnt(0)
+    {}
 };
 
 struct dpfs_hal {
@@ -51,7 +51,9 @@ struct dpfs_hal {
     std::vector<rpc_msg *> avail;
     std::unique_ptr<Nexus> nexus;
     std::unique_ptr<Rpc<CTransport>> rpc;
-    int session_num;
+
+    dpfs_hal(dpfs_hal_handler_t rh, void *ud) :
+        request_handler(rh), user_data(ud), avail() {}
 };
     
 static void req_handler(ReqHandle *reqh, void *context)
@@ -115,7 +117,7 @@ static void sm_handler(int, SmEventType, SmErrType, void *) {}
 
 __attribute__((visibility("default")))
 struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params) {
-    dpfs_hal *hal = new dpfs_hal();
+    dpfs_hal *hal = new dpfs_hal(params->request_handler, params->user_data);
     auto res = toml::parseFile(params->conf_path);
     if (!res.table) {
         std::cerr << "cannot parse file: " << res.errmsg << std::endl;
@@ -134,12 +136,6 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params) {
         delete hal;
         return nullptr;
     }
-    auto [okc, dpu_uri] = conf->getString("dpu_uri");
-    if (!okc) {
-        std::cerr << "The config must contain a `dpu_uri [hostname/ip:UDP_PORT]" << std::endl;
-        delete hal;
-        return nullptr;
-    }
     auto [okq, qd] = conf->getInt("queue_depth");
     if (!okq || qd < 1 || (qd & (qd - 1))) {
         std::cerr << "The config must contain a `queue_depth` that is >= 1 and a power of 2" << std::endl;
@@ -154,20 +150,19 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params) {
     // Only one thread, thread_id=0
     pthread_setspecific(dpfs_hal_thread_id_key, (void *) 0);
 
-    std::cout << "dpfs_hal using RVFS starting up!" << std::endl;
-
     hal->nexus = std::unique_ptr<Nexus>(new Nexus(remote_uri));
     hal->nexus->register_req_func(DPFS_RVFS_REQTYPE_FUSE, req_handler);
     
-    hal->rpc = std::unique_ptr<Rpc<CTransport>>(new Rpc<CTransport>(hal->nexus.get(), nullptr, 0, sm_handler));
-
+    hal->rpc = std::unique_ptr<Rpc<CTransport>>(new Rpc<CTransport>(hal->nexus.get(), hal, 0, sm_handler));
     // Same as in rvfs_dpu
     hal->rpc->set_pre_resp_msgbuf_size(DPFS_RVFS_MAX_REQRESP_SIZE);
 
-    hal->request_handler = params->request_handler;
-    hal->user_data = params->user_data;
+    for (int i = 0; i < qd, i++) {
+        hal->avail.push_back(new rpc_msg(hal));
+    }
 
-    std::cout << "Connected to " << dpu_uri << std::endl;
+
+    std::cout << "DPFS HAL with RVFS frontend online at " << remote_uri << "!" << std::endl;
 
     return hal;
 }
@@ -189,7 +184,7 @@ void dpfs_hal_loop(struct dpfs_hal *hal) {
     sigaction(SIGPIPE, &act, 0);
     sigaction(SIGTERM, &act, 0);
 
-    while(keep_running && hal->rpc->is_connected(hal->session_num)) {
+    while(keep_running) {
         hal->rpc->run_event_loop_once();
     }
 }
