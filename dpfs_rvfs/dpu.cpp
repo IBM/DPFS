@@ -15,6 +15,7 @@
 #include <vector>
 #include <memory>
 #include <iostream>
+#include "config.h"
 #include "rvfs.h"
 #include "dpfs/hal.h"
 #include "rpc.h"
