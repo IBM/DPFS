@@ -47,7 +47,12 @@ struct rpc_state {
     int session_num;
 };
 
-void response_func(void *context, void *tag) {
+void response_func(void *context, void *tag)
+{
+#ifdef DEBUG_ENABLED
+    printf("DPFS_RVFS_dpu %s: received eRPC reply for msg %p",
+            __func__, tag);
+#endif
     rpc_state *state = (rpc_state *) context;
     rpc_msg *msg = (rpc_msg *) tag;
     uint8_t *resp_buf = msg->resp.buf_;
@@ -75,6 +80,11 @@ static int fuse_handler(void *user_data,
     rpc_msg *msg = state->avail.back();
     uint8_t *req_buf = msg->req.buf_;
     state->avail.pop_back();
+
+#ifdef DEBUG_ENABLED
+    printf("DPFS_RVFS_dpu %s: FUSE request with %d input iovecs and %d output iovecs. Sending in msg %p",
+            __func__, in_iovcnt, out_iovcnt, msg);
+#endif
 
     *((int *) req_buf) = in_iovcnt;
     req_buf += sizeof(in_iovcnt);
@@ -105,7 +115,7 @@ static int fuse_handler(void *user_data,
     msg->out_iov = out_iov;
     msg->out_iovcnt = out_iovcnt;
 
-    return 0;
+    return EWOULDBLOCK;
 }
 
 static volatile int keep_running;
