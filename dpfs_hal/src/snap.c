@@ -58,10 +58,6 @@ struct dpfs_hal {
     void *user_data;
     useconds_t polling_interval_usec;
     uint32_t nthreads;
-
-#ifdef DEBUG_ENABLED
-    uint32_t handlers_call_cnts[DPFS_HAL_FUSE_HANDLERS_LEN];
-#endif
 };
 
 static volatile int keep_running = 1;

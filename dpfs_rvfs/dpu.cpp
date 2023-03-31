@@ -94,8 +94,8 @@ static int fuse_handler(void *user_data,
 
     for (size_t i = 0; i < out_iovcnt; i++) {
         // Set the iov_len into the request buffer
-        *((size_t *) req_buf) = in_iov[i].iov_len;
-        req_buf += sizeof(in_iov[i].iov_len);
+        *((size_t *) req_buf) = out_iov[i].iov_len;
+        req_buf += sizeof(out_iov[i].iov_len);
     }
 
     state->rpc->resize_msg_buffer(&msg->req, req_buf - msg->req.buf_);
