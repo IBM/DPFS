@@ -81,7 +81,7 @@ static int fuse_handler(void *user_data,
 
     for (size_t i = 0; i < in_iovcnt; i++) {
         // Set the iov_len into the request buffer
-        *(size_t *) req_buf = in_iov[i].iov_len;
+        *((size_t *) req_buf) = in_iov[i].iov_len;
         req_buf += sizeof(in_iov[i].iov_len);
 
         // Fill the request buffer with iov_base data
@@ -94,7 +94,7 @@ static int fuse_handler(void *user_data,
 
     for (size_t i = 0; i < out_iovcnt; i++) {
         // Set the iov_len into the request buffer
-        *(size_t *) req_buf = in_iov[i].iov_len;
+        *((size_t *) req_buf) = in_iov[i].iov_len;
         req_buf += sizeof(in_iov[i].iov_len);
     }
 
