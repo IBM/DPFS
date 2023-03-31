@@ -50,14 +50,11 @@ struct rpc_state {
 void response_func(void *context, void *tag) {
     rpc_state *state = (rpc_state *) context;
     rpc_msg *msg = (rpc_msg *) tag;
-    uint8_t *req_buf = msg->req.buf_;
+    uint8_t *resp_buf = msg->resp.buf_;
 
     for (size_t i = 0; i < msg->out_iovcnt; i++) {
-        size_t iov_len = *((size_t *) req_buf);
-        req_buf += sizeof(iov_len);
-
-        memcpy(msg->out_iov[i].iov_base, (void *) req_buf, iov_len);
-        req_buf += iov_len;
+        memcpy(msg->out_iov[i].iov_base, (void *) resp_buf, msg->out_iov[i].iov_len);
+        resp_buf += msg->out_iov[i].iov_len;
     }
 
     dpfs_hal_async_complete(msg->completion_context, DPFS_HAL_COMPLETION_SUCCES);
@@ -103,6 +100,10 @@ static int fuse_handler(void *user_data,
 
     state->rpc->resize_msg_buffer(&msg->req, req_buf - msg->req.buf_);
     state->rpc->enqueue_request(state->session_num, DPFS_RVFS_REQTYPE_FUSE, &msg->req, &msg->resp, response_func, (void *) msg);
+
+    msg->completion_context = completion_context;
+    msg->out_iov = out_iov;
+    msg->out_iovcnt = out_iovcnt;
 
     return 0;
 }
