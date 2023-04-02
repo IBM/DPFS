@@ -157,7 +157,9 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params) {
     // Only one thread, thread_id=0
     pthread_setspecific(dpfs_hal_thread_id_key, (void *) 0);
 
-    hal->nexus = std::unique_ptr<Nexus>(new Nexus(remote_uri));
+    // NUMA node 0
+    // 1 background thread, which is unused but created to enable multithreading in eRPC
+    hal->nexus = std::unique_ptr<Nexus>(new Nexus(remote_uri, 0, 1));
     hal->nexus->register_req_func(DPFS_RVFS_REQTYPE_FUSE, req_handler);
     
     hal->rpc = std::unique_ptr<Rpc<CTransport>>(new Rpc<CTransport>(hal->nexus.get(), hal, 0, sm_handler));
