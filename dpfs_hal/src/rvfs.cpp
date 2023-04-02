@@ -15,6 +15,7 @@
 #include "hal.h"
 #include "rvfs.h"
 #include "rpc.h"
+#include "util/tls_registry.h"
 #include "tomlcpp.hpp"
 
 // Each virtio-fs uses at least 3 descriptors (aka queue entries) for each request
@@ -224,6 +225,10 @@ int dpfs_hal_async_complete(void *completion_context, enum dpfs_hal_completion_s
 #ifdef DEBUG_ENABLED
     printf("DPFS_HAL_RVFS %s: replying to msg %p\n", __func__, msg);
 #endif
+
+    if (!hal->nexus->tls_registry_.is_init()) {
+        hal->nexus->tls_registry_.init();
+    }
 
     struct fuse_out_header *fuse_out_header = static_cast<struct fuse_out_header *>(msg->iov[msg->in_iovcnt].iov_base);
     Rpc<CTransport>::resize_msg_buffer(&msg->reqh->pre_resp_msgbuf_, fuse_out_header->len);
