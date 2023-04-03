@@ -60,10 +60,14 @@ struct dpfs_hal {
 static void req_handler(ReqHandle *reqh, void *context)
 {
     dpfs_hal *hal = static_cast<dpfs_hal *>(context);
-    rpc_msg *msg = hal->avail.back();
-    if (!msg) {
+    // Messages and their buffers are dynamically allocated
+    // The queue_depth of the virtio-fs device is static, so this wont infinitely allocate memory
+    // Just be sure to warm up the system before evaulating performance
+    rpc_msg *msg;
+    if (hal->avail.empty()) {
         msg = new rpc_msg(hal);
     } else {
+        msg = hal->avail.back();
         hal->avail.pop_back();
     }
 

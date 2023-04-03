@@ -82,10 +82,12 @@ static int fuse_handler(void *user_data,
     rpc_state *state = (rpc_state *) user_data;
     // Messages and their buffers are dynamically allocated
     // The queue_depth of the virtio-fs device is static, so this wont infinitely allocate memory
-    rpc_msg *msg = state->avail.back();
-    if (!msg) {
+    // Just be sure to warm up the system before evaulating performance
+    rpc_msg *msg;
+    if (state->avail.empty()) {
         msg = new rpc_msg(*state->rpc.get());
     } else {
+        msg = state->avail.back();
         state->avail.pop_back();
     }
     uint8_t *req_buf = msg->req.buf_;
