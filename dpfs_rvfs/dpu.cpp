@@ -142,7 +142,10 @@ void usage()
     printf("dpfs_rvfs_dpu [-c config_path]\n");
 }
 
-void hal_polling(struct dpfs_hal *hal) {
+void hal_polling(struct dpfs_hal *hal, Nexus *nexus) {
+    // We need to register ourself in eRPC so that we can send requests in the fuse_handler
+    nexus->tls_registry_.init();
+
     uint32_t count = 0;
     while(keep_running) {
         if (count++ % 10000 == 0)
@@ -239,7 +242,7 @@ int main(int argc, char **argv)
         // The eRPC connection was created on the current threads.
         // eRPC doesn't allow us to switch which thread is the "dispatch" thread.
         // So for simplicity we use the current thread as the eRPC polling thread.
-        std::thread hal_thread(hal_polling, hal);
+        std::thread hal_thread(hal_polling, hal, state.nexus.get());
         uint32_t count = 0;
         while(keep_running && state.rpc->is_connected(state.session_num)) {
             state.rpc->run_event_loop_once();
