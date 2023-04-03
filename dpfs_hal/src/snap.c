@@ -276,8 +276,8 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params)
         return NULL;
     }
     toml_datum_t nthreads = toml_int_in(snap_conf, "nthreads");
-    if (!nthreads.ok || nthreads.u.i < 0) {
-        fprintf(stderr, "%s: nthreads must be >= 0!", __func__);
+    if (!nthreads.ok || nthreads.u.i < 1) {
+        fprintf(stderr, "%s: nthreads must be >= 1!", __func__);
         return NULL;
     }
     toml_datum_t polling_interval = toml_int_in(snap_conf, "polling_interval_usec");

@@ -7,9 +7,9 @@ pf_id = 0
 vf_id = -1
 # Emulation manager, DPU specific
 emu_manager = "mlx5_0"
-# Amount of polling threads 0 for single threaded mode, >0 for multithreaded mode
-# Multithreaded not supported currently!
-nthreads = 0
+# Amount of Virtio requests queues, every queue is paired with a single thread for polling. 1 for single threaded mode, >1 for multithreaded mode
+# Multithreaded not supported in snap_hal currently as the virtio-fs driver still only support a single Virtio queue.
+nthreads = 1
 # Must be a power of 2 and >= 1! The virtio-fs specification requires this
 queue_depth = 64
 # Filesystem tag (i.e. the name of the virtiofs device to mount for the host)
