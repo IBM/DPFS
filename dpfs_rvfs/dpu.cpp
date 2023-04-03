@@ -73,16 +73,22 @@ static void sm_handler(int, SmEventType event, SmErrType err, void *) {
     std::cout << "Event: " << sm_event_type_str(event) << " Error: " << sm_err_type_str(err) << std::endl;
 }
 
+// Sends the virtio-fs request via eRPC to the remote server
 static int fuse_handler(void *user_data,
                         struct iovec *in_iov, int in_iovcnt,
                         struct iovec *out_iov, int out_iovcnt,
                         void *completion_context)
 {
     rpc_state *state = (rpc_state *) user_data;
-    // Send it via eRPC to the remote side
+    // Messages and their buffers are dynamically allocated
+    // The queue_depth of the virtio-fs device is static, so this wont infinitely allocate memory
     rpc_msg *msg = state->avail.back();
+    if (!msg) {
+        msg = new rpc_msg(*state->rpc.get());
+    } else {
+        state->avail.pop_back();
+    }
     uint8_t *req_buf = msg->req.buf_;
-    state->avail.pop_back();
 
 #ifdef DEBUG_ENABLED
     printf("DPFS_RVFS_dpu %s: FUSE request with %d input iovecs and %d output iovecs. Sending in msg %p\n",
@@ -176,11 +182,6 @@ int main(int argc, char **argv)
         std::cerr << "The config must contain a `dpu_uri` [hostname/ip:UDP_PORT]" << std::endl;
         return -1;
     }
-    auto [okq, qd] = conf->getInt("queue_depth");
-    if (!okq || qd < 1 || (qd & (qd - 1))) {
-        std::cerr << "The config must contain a `queue_depth` that is >= 1 and a power of 2" << std::endl;
-        return -1;
-    }
 
     std::cout << "dpfs_rvfs_dpu starting up!" << std::endl;
     std::cout << "Connecting to " << remote_uri << ". The virtio-fs device will only be up after the connection is established!" << std::endl;
@@ -192,12 +193,6 @@ int main(int argc, char **argv)
 
     // Run till we are connected
     while (!state.rpc->is_connected(state.session_num)) state.rpc->run_event_loop_once();
-
-    // Create the message buffers that we will need for our QD
-    for (size_t i = 0; i < qd/VIRTIO_FS_MIN_DESCS; i++) {
-        rpc_msg *msg = new rpc_msg(*state.rpc.get());
-        state.avail.push_back(msg);
-    }
 
     struct dpfs_hal_params hal_params;
     // just for safety if a new option gets added
