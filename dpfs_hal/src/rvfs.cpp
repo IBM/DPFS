@@ -61,7 +61,11 @@ static void req_handler(ReqHandle *reqh, void *context)
 {
     dpfs_hal *hal = static_cast<dpfs_hal *>(context);
     rpc_msg *msg = hal->avail.back();
-    hal->avail.pop_back();
+    if (!msg) {
+        msg = new rpc_msg(hal);
+    } else {
+        hal->avail.pop_back();
+    }
 
 #ifdef DEBUG_ENABLED
     printf("DPFS_HAL_RVFS %s: received eRPC in msg %p\n", __func__, msg);
@@ -143,12 +147,6 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params) {
         delete hal;
         return nullptr;
     }
-    auto [okq, qd] = conf->getInt("queue_depth");
-    if (!okq || qd < 1 || (qd & (qd - 1))) {
-        std::cerr << "The config must contain a `queue_depth` that is >= 1 and a power of 2" << std::endl;
-        delete hal;
-        return nullptr;
-    }
     if (pthread_key_create(&dpfs_hal_thread_id_key, NULL)) {
         std::cerr << "Failed to create thread-local key for dpfs_hal threadid" << std::endl;
         delete hal;
@@ -165,10 +163,6 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params) {
     hal->rpc = std::unique_ptr<Rpc<CTransport>>(new Rpc<CTransport>(hal->nexus.get(), hal, 0, sm_handler));
     // Same as in rvfs_dpu
     hal->rpc->set_pre_resp_msgbuf_size(DPFS_RVFS_MAX_REQRESP_SIZE);
-
-    for (int i = 0; i < qd; i++) {
-        hal->avail.push_back(new rpc_msg(hal));
-    }
 
     std::cout << "DPFS HAL with RVFS frontend online at " << remote_uri << "!" << std::endl;
 
