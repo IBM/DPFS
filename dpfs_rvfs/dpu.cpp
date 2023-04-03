@@ -16,6 +16,7 @@
 #include <memory>
 #include <iostream>
 #include <thread>
+#include <boost/lockfree/spsc_queue.hpp>
 #include "config.h"
 #include "rvfs.h"
 #include "dpfs/hal.h"
@@ -43,7 +44,7 @@ struct rpc_msg {
 };
 
 struct rpc_state {
-    std::vector<struct rpc_msg *> avail;
+    boost::lockfree::spsc_queue<struct rpc_msg *, boost::lockfree::capacity<1024>> avail;
     std::unique_ptr<Nexus> nexus;
     std::unique_ptr<Rpc<CTransport>> rpc;
     int session_num;
@@ -66,7 +67,7 @@ void response_func(void *context, void *tag)
 
     dpfs_hal_async_complete(msg->completion_context, DPFS_HAL_COMPLETION_SUCCES);
 
-    state->avail.push_back(msg);
+    state->avail.push(msg);
 }
 
 // The session management callback that is invoked when sessions are successfully created or destroyed.
@@ -85,11 +86,8 @@ static int fuse_handler(void *user_data,
     // The queue_depth of the virtio-fs device is static, so this wont infinitely allocate memory
     // Just be sure to warm up the system before evaulating performance
     rpc_msg *msg;
-    if (state->avail.empty()) {
+    if (!state->avail.pop(msg)) {
         msg = new rpc_msg(*state->rpc.get());
-    } else {
-        msg = state->avail.back();
-        state->avail.pop_back();
     }
     uint8_t *req_buf = msg->req.buf_;
 
@@ -207,7 +205,7 @@ int main(int argc, char **argv)
     std::cout << "dpfs_rvfs_dpu starting up!" << std::endl;
     std::cout << "Connecting to " << remote_uri << ". The virtio-fs device will only be up after the connection is established!" << std::endl;
 
-    rpc_state state;
+    rpc_state state {};
     size_t numa_node = 0;
     // 1 background thread, which is unused but created to enable multithreading in eRPC
     size_t erpc_bg_threads = two_threads;
