@@ -121,7 +121,7 @@ static int fuse_handler(void *user_data,
     }
 
     state->rpc->resize_msg_buffer(&msg->req, req_buf - msg->req.buf_);
-    state->rpc->enqueue_request(state->session_num, DPFS_RVFS_REQTYPE_FUSE, &msg->req, &msg->resp, response_func, (void *) msg);
+    state->rpc->enqueue_request(state->session_num, DPFS_RVFS_REQTYPE_FUSE, &msg->req, &msg->resp, response_func, (void *) msg, 0);
 
     msg->completion_context = completion_context;
     msg->out_iov = out_iov;
