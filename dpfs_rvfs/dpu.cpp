@@ -208,7 +208,10 @@ int main(int argc, char **argv)
     std::cout << "Connecting to " << remote_uri << ". The virtio-fs device will only be up after the connection is established!" << std::endl;
 
     rpc_state state;
-    state.nexus = std::unique_ptr<Nexus>(new Nexus(dpu_uri));
+    size_t numa_node = 0;
+    // 1 background thread, which is unused but created to enable multithreading in eRPC
+    size_t erpc_bg_threads = two_threads;
+    state.nexus = std::unique_ptr<Nexus>(new Nexus(dpu_uri, numa_node, erpc_bg_threads));
     state.rpc = std::unique_ptr<Rpc<CTransport>>(new Rpc<CTransport>(state.nexus.get(), &state, 0, sm_handler));
     state.session_num = state.rpc->create_session(remote_uri, 0);
 
