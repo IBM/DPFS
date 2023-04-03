@@ -15,6 +15,7 @@
 #include <vector>
 #include <memory>
 #include <iostream>
+#include <thread>
 #include "config.h"
 #include "rvfs.h"
 #include "dpfs/hal.h"
@@ -141,6 +142,16 @@ void usage()
     printf("dpfs_rvfs_dpu [-c config_path]\n");
 }
 
+void hal_polling(struct dpfs_hal *hal) {
+    uint32_t count = 0;
+    while(keep_running) {
+        if (count++ % 10000 == 0)
+            dpfs_hal_poll_mmio(hal);
+
+        dpfs_hal_poll_io(hal, 0);
+    }
+}
+
 int main(int argc, char **argv)
 {
     const char *config_path = NULL;
@@ -184,6 +195,11 @@ int main(int argc, char **argv)
         std::cerr << "The config must contain a `dpu_uri` [hostname/ip:UDP_PORT]" << std::endl;
         return -1;
     }
+    auto [okd, two_threads] = conf->getBool("two_threads");
+    if (!okd) {
+        std::cerr << "The config must contain a boolean `two_threads`" << std::endl;
+        return -1;
+    }
 
     std::cout << "dpfs_rvfs_dpu starting up!" << std::endl;
     std::cout << "Connecting to " << remote_uri << ". The virtio-fs device will only be up after the connection is established!" << std::endl;
@@ -219,14 +235,27 @@ int main(int argc, char **argv)
 
     std::cout << "Connected to the remote and virtio-fs device is online" << std::endl;
 
-    uint32_t count = 0;
-    while(keep_running && state.rpc->is_connected(state.session_num)) {
-        if (count++ % 10000 == 0)
-            dpfs_hal_poll_mmio(hal);
+    if (two_threads) {
+        // The eRPC connection was created on the current threads.
+        // eRPC doesn't allow us to switch which thread is the "dispatch" thread.
+        // So for simplicity we use the current thread as the eRPC polling thread.
+        std::thread hal_thread(hal_polling, hal);
+        uint32_t count = 0;
+        while(keep_running && state.rpc->is_connected(state.session_num)) {
+            state.rpc->run_event_loop_once();
+        }
+        hal_thread.join();
+    } else {
+        uint32_t count = 0;
+        while(keep_running && state.rpc->is_connected(state.session_num)) {
+            if (count++ % 10000 == 0)
+                dpfs_hal_poll_mmio(hal);
 
-        dpfs_hal_poll_io(hal, 0);
-        state.rpc->run_event_loop_once();
+            dpfs_hal_poll_io(hal, 0);
+            state.rpc->run_event_loop_once();
+        }
     }
+
     dpfs_hal_destroy(hal);
 
     return 0;
