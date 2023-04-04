@@ -1,102 +1,84 @@
 /*
 #
-# Copyright 2020- IBM Inc. All rights reserved
+# Copyright 2023- IBM Inc. All rights reserved
 # SPDX-License-Identifier: LGPL-2.1-or-later
 #
 */
 
 #include <getopt.h>
+#include <stdlib.h>
+#include <errno.h>
 #include "dpfs_fuse.h"
 #include "dpfs_nfs.h"
-#include <stdlib.h>
+#include "toml.h"
 
 void usage()
 {
-    printf("virtionfs [-p pf_id] [-v vf_id ] [-e emulation_manager_name] [-s server_ip] [-x export_path] [-d queue_depth] \n");
+    printf("virtionfs [-c config_path]\n");
 }
 
 int main(int argc, char **argv)
 {
-    int pf = -1;
-    int vf = -1;
-    char *emu_manager = NULL; // the rdma device name which supports being an emulation manager and virtio_fs emu
-    char *server = NULL;
-    char *export = NULL;
-    uint32_t nthreads = 1;
-    uint32_t queue_depth = 64;
+    char *conf_path = NULL;
 
     int opt;
-    while ((opt = getopt(argc, argv, "p:v:e:s:x:t:d:")) != -1) {
+    while ((opt = getopt(argc, argv, "c:")) != -1) {
         switch (opt) {
-            case 'p':
-                pf = atoi(optarg);
-                break;
-            case 'v':
-                vf = atoi(optarg);
-                break;
-            case 'e':
-                emu_manager = optarg;
-                break;
-            case 's':
-                server = optarg;
-                break;
-            case 'x':
-                export = optarg;
-                break;
-            case 't':
-                nthreads = strtoul(optarg, NULL, 10);
-                break;
-            case 'd':
-                queue_depth = strtoul(optarg, NULL, 10);
+            case 'c':
+                conf_path = optarg;
                 break;
             default: /* '?' */
                 usage();
                 exit(1);
         }
     }
-
-    struct virtiofs_emu_params emu_params;
-    // just for safety
-    memset(&emu_params, 0, sizeof(struct virtiofs_emu_params));
-
-    if (pf >= 0)
-        emu_params.pf_id = pf;
-    else {
-        fprintf(stderr, "You must supply a pf with -p\n");
-        usage();
-        exit(1);
-    }
-    if (vf >= 0)
-        emu_params.vf_id = vf;
-    else
-        emu_params.vf_id = -1;
     
-    if (emu_manager != NULL) {
-        emu_params.emu_manager = emu_manager;
-    } else {
-        fprintf(stderr, "You must supply an emu manager name with -e\n");
+    if (!conf_path) {
+        fprintf(stderr, "A config file is required!");
         usage();
-        exit(1);
+        return -1;
     }
-    if (server == NULL) {
-        fprintf(stderr, "You must supply a server IP with -s\n");
-        usage();
-        exit(1);
-    }
-    if (export == NULL) {
-        fprintf(stderr, "You must supply a export path with -p\n");
-        usage();
-        exit(1);
-    }
-    printf("virtionfs starting up!\n");
-    printf("Connecting to %s:%s\n", server, export);
 
-    emu_params.polling_interval_usec = 0;
-    emu_params.nthreads = nthreads;
-    emu_params.queue_depth = queue_depth;
-    emu_params.tag = "virtionfs";
+    FILE *fp;
+    char errbuf[200];
+    
+    // 1. Read and parse toml file
+    fp = fopen(conf_path, "r");
+    if (!fp) {
+        fprintf(stderr, "%s: cannot open %s - %s", __func__,
+                conf_path, strerror(errno));
+        return -1;
+    }
+    
+    toml_table_t *conf = toml_parse_file(fp, errbuf, sizeof(errbuf));
+    fclose(fp);
+    
+    if (!conf) {
+        fprintf(stderr, "%s: cannot parse - %s", __func__, errbuf);
+        return -1;
+    }
 
-    dpfs_nfs_main(server, export, false, false, nthreads, &emu_params);
+    toml_table_t *nfs_conf = toml_table_in(conf, "nfs");
+    if (!nfs_conf) {
+        fprintf(stderr, "%s: missing [nfs] in config file", __func__);
+        return -1;
+    }
+    
+    toml_datum_t server = toml_string_in(nfs_conf, "server");
+    if (!server.ok) {
+        fprintf(stderr, "You must supply a server with `server` under [nfs]\n");
+        return -1;
+    }
+    toml_datum_t export = toml_string_in(nfs_conf, "export");
+    if (!export.ok) {
+        fprintf(stderr, "You must supply a export with `export` under [nfs]\n");
+        return -1;
+    }
+
+    printf("dpfs_nfs starting up!\n");
+    printf("Connecting to %s:%s\n", server.u.s, export.u.s);
+
+    dpfs_nfs_main(server.u.s, export.u.s, false, false, 1, conf_path);
 
     return 0;
 }

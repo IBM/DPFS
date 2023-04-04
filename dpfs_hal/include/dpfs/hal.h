@@ -13,6 +13,9 @@
 #include <unistd.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #define DPFS_HAL_NUM_QUEUES 64
 #define DPFS_HAL_QUEUE_DEPTH 64
@@ -28,23 +31,10 @@ typedef int (*dpfs_hal_handler_t) (void *user_data,
                                    struct iovec *fuse_out_iov, int out_iovcnt,
                                    void *completion_context);
 
-struct virtiofs_emu_params {
-    useconds_t polling_interval_usec; // Time between every poll
-    int pf_id; // Physical function ID
-    int vf_id; // Virtual function ID
-    char *emu_manager; // Emulation manager, DPU specific
-    // Amount of polling threads 0 for single threaded mode, >0 for multithreaded mode
-    // Multithreaded not supported currently!
-    uint32_t nthreads;
-    // Must be a power of 2!
-    uint32_t queue_depth;
-    char *tag; // Filesystem tag (i.e. the name of the virtiofs device to mount for the host)
-};
-
 struct dpfs_hal_params {
     dpfs_hal_handler_t request_handler;
     void *user_data; // Pointer to user data that gets passed with every dpfs_hal_handler
-    struct virtiofs_emu_params emu_params;
+    const char *conf_path; // See the example toml files in the root of dpfs_hal
 };
 
 enum dpfs_hal_completion_status {
@@ -67,5 +57,9 @@ int dpfs_hal_poll_io(struct dpfs_hal *hal, int thread_id);
 void dpfs_hal_poll_mmio(struct dpfs_hal *hal);
 void dpfs_hal_destroy(struct dpfs_hal *hal);
 int dpfs_hal_async_complete(void *completion_context, enum dpfs_hal_completion_status);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // DPFS_HAL_H

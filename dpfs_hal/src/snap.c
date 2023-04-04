@@ -1,6 +1,6 @@
 /*
  *   Copyright © 2021 NVIDIA CORPORATION & AFFILIATES. ALL RIGHTS RESERVED.
- *   Copyriht 2022- IBM Inc. All rights reserved
+ *   Copyriht 2023- IBM Inc. All rights reserved
  *
  *   Redistribution and use in source and binary forms, with or without
  *   modification, are permitted provided that the following conditions
@@ -29,6 +29,9 @@
  *   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "config.h"
+#if defined(HAVE_SNAP) && !defined(DPFS_RVFS)
+
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <signal.h>
@@ -45,8 +48,9 @@
 #include "nvme_emu_log.h"
 #include "compiler.h"
 #include "mlnx_snap_pci_manager.h"
-#include "dpfs_hal.h"
+#include "hal.h"
 #include "cpu_latency.h"
+#include "toml.h"
 
 struct dpfs_hal {
     struct virtio_fs_ctrl *snap_ctrl;
@@ -54,25 +58,24 @@ struct dpfs_hal {
     void *user_data;
     useconds_t polling_interval_usec;
     uint32_t nthreads;
-
-#ifdef DEBUG_ENABLED
-    uint32_t handlers_call_cnts[DPFS_HAL_FUSE_HANDLERS_LEN];
-#endif
 };
 
 static volatile int keep_running = 1;
+
+__attribute__((visibility("default")))
 pthread_key_t dpfs_hal_thread_id_key;
 
-void signal_handler(int dummy)
+static void signal_handler(int dummy)
 {
     keep_running = 0;
 }
 
-
+__attribute__((visibility("default")))
 int dpfs_hal_poll_io(struct dpfs_hal *hal, int thread_id) {
     return virtio_fs_ctrl_progress_io(hal->snap_ctrl, thread_id);
 }
 
+__attribute__((visibility("default")))
 void dpfs_hal_poll_mmio(struct dpfs_hal *hal) {
     virtio_fs_ctrl_progress(hal->snap_ctrl);
 }
@@ -171,6 +174,7 @@ static void dpfs_hal_loop_multithreaded(struct virtio_fs_ctrl *ctrl,
     }
 }
 
+__attribute__((visibility("default")))
 void dpfs_hal_loop(struct dpfs_hal *emu)
 {
     struct virtio_fs_ctrl *ctrl = emu->snap_ctrl;
@@ -187,8 +191,8 @@ void dpfs_hal_loop(struct dpfs_hal *emu)
     stop_low_latency();
 }
 
-
 // Currently only supports SNAP
+__attribute__((visibility("default")))
 int dpfs_hal_async_complete(void *completion_context, enum dpfs_hal_completion_status status)
 {
     struct snap_fs_dev_io_done_ctx *cb = completion_context;
@@ -217,51 +221,96 @@ static int dpfs_hal_handle_req(struct virtio_fs_ctrl *ctrl,
     return hal->request_handler(hal->user_data, in_iov, in_iovcnt, out_iov, out_iovcnt, done_ctx);
 }
 
+__attribute__((visibility("default")))
 struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params)
 {
-    struct virtiofs_emu_params emu_params = params->emu_params;
-    if (emu_params.emu_manager == NULL) {
-        fprintf(stderr, "virtiofs_emu_new: emu_manager is required!");
-        fprintf(stderr, "Enable virtiofs emulation in the firmware (see docs) and"
-                        "run `sudo spdk_rpc.py list_emulation_managers` to find"
+    FILE *fp;
+    char errbuf[200];
+    
+    // 1. Read and parse toml file
+    fp = fopen(params->conf_path, "r");
+    if (!fp) {
+        fprintf(stderr, "%s: cannot open %s - %s", __func__,
+                params->conf_path, strerror(errno));
+        return NULL;
+    }
+    
+    toml_table_t *conf = toml_parse_file(fp, errbuf, sizeof(errbuf));
+    fclose(fp);
+    
+    if (!conf) {
+        fprintf(stderr, "%s: cannot parse - %s", __func__, errbuf);
+        return NULL;
+    }
+    
+    // 2. Traverse to a table.
+    toml_table_t *snap_conf = toml_table_in(conf, "snap_hal");
+    if (!snap_conf) {
+        fprintf(stderr, "%s: missing [snap_hal] in hal config", __func__);
+        return NULL;
+    }
+    
+    toml_datum_t emu_manager = toml_string_in(snap_conf, "emu_manager");
+    if (!emu_manager.ok) {
+        fprintf(stderr, "%s: emu_manager is required!\n", __func__);
+        fprintf(stderr, "Hint: Enable virtiofs emulation in the firmware (see docs) and"
+                        "run `list_emulation_managers` to find"
                         "out what emulation manager name to supply.");
         return NULL;
     }
-    if (emu_params.pf_id < 0) {
-        fprintf(stderr, "virtiofs_emu_new: pf_id requires a value >=0! Tip: use list_emulation_managers to find out the physical function id.");
-        // TODO add print that tells you how to figure out the pf_id
+    toml_datum_t pf_id = toml_int_in(snap_conf, "pf_id");
+    if (!pf_id.ok || pf_id.u.i < 0) {
+        fprintf(stderr, "%s: pf_id requires a value >=0!"
+                "Hint: use list_emulation_managers to find out the physical function id.\n", __func__);
         return NULL;
     }
-    if (emu_params.vf_id < -1) {
-        fprintf(stderr, "virtiofs_emu_new: vf_id requires a value >=-1!");
+    toml_datum_t vf_id = toml_int_in(snap_conf, "vf_id");
+    if (!vf_id.ok || vf_id.u.i < -1) {
+        fprintf(stderr, "%s: vf_id requires a value >=-1!"
+                "Hint: -1 means no virtual function and directly run on the physical function.\n", __func__);
         return NULL;
     }
-
-    if ((emu_params.queue_depth & (emu_params.queue_depth - 1))) {
-        fprintf(stderr, "virtiofs_emu_new: queue_depth must be a power of 2!");
+    toml_datum_t qd = toml_int_in(snap_conf, "queue_depth");
+    if (!qd.ok || qd.u.i < 1|| (qd.u.i & (qd.u.i - 1))) {
+        fprintf(stderr, "%s: queue_depth must be a power of 2 and >= 1\n!", __func__);
         return NULL;
     }
-
+    toml_datum_t nthreads = toml_int_in(snap_conf, "nthreads");
+    if (!nthreads.ok || nthreads.u.i < 1) {
+        fprintf(stderr, "%s: nthreads must be >= 1!", __func__);
+        return NULL;
+    }
+    toml_datum_t polling_interval = toml_int_in(snap_conf, "polling_interval_usec");
+    if (!polling_interval.ok || polling_interval.u.i < 0 ) {
+        fprintf(stderr, "%s: polling_interval_usec must be >= 0\n!", __func__);
+        return NULL;
+    }
+    toml_datum_t tag = toml_string_in(snap_conf, "tag");
+    if (!tag.ok) {
+        fprintf(stderr, "%s: a virtio-fs file system tag in the form of a string must be supplied!"
+                "This is the name with which the host mounts the file system\n", __func__);
+        return NULL;
+    }
     struct dpfs_hal *emu = calloc(sizeof(struct dpfs_hal), 1);
 
-    emu->polling_interval_usec = emu_params.polling_interval_usec;
+    emu->polling_interval_usec = polling_interval.u.i;
     emu->user_data = params->user_data;
     emu->request_handler = params->request_handler;
-    emu->nthreads = emu_params.nthreads;
+    emu->nthreads = nthreads.u.i;
 
     struct virtio_fs_ctrl_init_attr param;
-    param.emu_manager_name = emu_params.emu_manager;
-    param.nthreads = emu_params.nthreads;
-    param.tag = emu_params.tag;
-    param.pf_id = emu_params.pf_id;
-    param.vf_id = emu_params.vf_id;
+    param.emu_manager_name = emu_manager.u.s;
+    param.nthreads = nthreads.u.i;
+    param.tag = tag.u.s;
+    param.pf_id = pf_id.u.i;
+    param.vf_id = vf_id.u.i;
 
     param.dev_type = "virtiofs_emu";
     // A queue per thread
-    param.num_queues = 1 + emu_params.nthreads;
+    param.num_queues = 1 + nthreads.u.i;
     // Must be an order of 2 or you will get err 121
     // queue slots that are left unused significantly decrease performance because of the snap poller
-    param.queue_depth = emu_params.queue_depth;
+    param.queue_depth = qd.u.i;
     param.force_in_order = false;
     // See snap_virtio_fs_ctrl.c:811, if enabled this controller is
     // supposed to be recovered from the dead
@@ -297,8 +346,9 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params)
         goto clear_pci_list;
     }
 
+    printf("DPFS HAL with SNAP frontend online!");
     printf("VirtIO-FS device %s on emulation manager %s is ready\n",
-               param.tag, emu_params.emu_manager);
+               param.tag, emu_manager.u.s);
 
     return emu;
 
@@ -309,6 +359,7 @@ out:
     return NULL;
 }
 
+__attribute__((visibility("default")))
 void dpfs_hal_destroy(struct dpfs_hal *emu)
 {
     printf("VirtIO-FS destroy controller %s\n", emu->snap_ctrl->sctx->context->device->name);
@@ -318,3 +369,4 @@ void dpfs_hal_destroy(struct dpfs_hal *emu)
     free(emu);
 }
 
+#endif // HAVE_SNAP

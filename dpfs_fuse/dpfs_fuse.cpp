@@ -23,7 +23,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <err.h>
-#include <stdatomic.h>
+//#include <stdatomic.h>
 #include <sys/types.h>
 #include <sys/uio.h>
 #include <sys/fcntl.h>
@@ -33,7 +33,7 @@
 #include "config.h"
 #include "common.h"
 #include "debug.h"
-#include "dpfs_hal.h"
+#include "dpfs/hal.h"
 #include "dpfs_fuse.h"
 
 struct fuse_ll;
@@ -622,7 +622,7 @@ static int fuse_ll_lookup(struct fuse_ll *f_ll,
     out_hdr->unique = in_hdr->unique;
     out_hdr->len = sizeof(*out_hdr);
     out_hdr->error = 0;
-    const char *const in_name = fuse_in_iov[1].iov_base;
+    const char *const in_name = (const char *const) fuse_in_iov[1].iov_base;
     struct fuse_entry_out *out_entry = (struct fuse_entry_out *) fuse_out_iov[1].iov_base;
 
 #ifdef DEBUG_ENABLED
@@ -1536,7 +1536,7 @@ static int fuse_ll_symlink(struct fuse_ll *f_ll,
     out_hdr->len = sizeof(*out_hdr);
     out_hdr->error = 0;
 
-    const char *in_name = fuse_in_iov[1].iov_base;
+    const char *in_name = (const char *) fuse_in_iov[1].iov_base;
     const char *in_link_name = in_name + strlen(in_name)+1;
     struct fuse_entry_out *out_entry = (struct fuse_entry_out *) fuse_out_iov[1].iov_base;
 
@@ -1746,8 +1746,9 @@ static int fuse_unknown(struct fuse_ll *fuse_ll,
 static int fuse_handle_req(void *u,
                            struct iovec *in_iov, int in_iovcnt,
                            struct iovec *out_iov, int out_iovcnt,
-                           void *completion_context) {
-    struct fuse_ll *fuse_ll = u;
+                           void *completion_context)
+{
+    struct fuse_ll *fuse_ll = (struct fuse_ll *) u;
 
     if (in_iovcnt < 1 || in_iovcnt < 1) {
         fprintf(stderr, "%s: iovecs in and out don't both atleast one iovec\n", __func__);
@@ -1768,9 +1769,9 @@ static int fuse_handle_req(void *u,
         
 #ifdef DEBUG_ENABLED
         if (ret == 0 && out_iovcnt > 0 &&
-            fuse_out_iov[0].iov_len >= sizeof(struct fuse_out_header))
+            out_iov[0].iov_len >= sizeof(struct fuse_out_header))
         {
-            struct fuse_out_header *out_hdr = (struct fuse_out_header *) fuse_out_iov[0].iov_base;
+            struct fuse_out_header *out_hdr = (struct fuse_out_header *) out_iov[0].iov_base;
             if (out_hdr->error != 0)
                 fprintf(stderr, "FUSE OP(%d) request ERROR=%d, %s\n", in_hdr->opcode,
                     out_hdr->error, strerror(-out_hdr->error));
@@ -1780,19 +1781,19 @@ static int fuse_handle_req(void *u,
     }
 }
 
-int dpfs_fuse_main(struct fuse_ll_operations *ops, struct virtiofs_emu_params *emu_params,
+int dpfs_fuse_main(struct fuse_ll_operations *ops, const char *hal_conf_path,
                    void *user_data, bool debug)
 {
 #ifdef DEBUG_ENABLED
     printf("dpfs_fuse is running in DEBUG mode\n");
 #endif
 
-    struct fuse_ll *f_ll = calloc(1, sizeof(struct fuse_ll));
+    struct fuse_ll *f_ll = (struct fuse_ll *) calloc(1, sizeof(struct fuse_ll));
     f_ll->ops = *ops;
     f_ll->debug = debug;
     f_ll->user_data = user_data;
 
-    f_ll->se = calloc(1, sizeof(struct fuse_session));
+    f_ll->se = (struct fuse_session *) calloc(1, sizeof(struct fuse_session));
     if (f_ll->se == NULL) {
         err(1, "ERROR: Could not allocate memory for fuse_session");
     }
@@ -1802,12 +1803,13 @@ int dpfs_fuse_main(struct fuse_ll_operations *ops, struct virtiofs_emu_params *e
     f_ll->se->bufsize = FUSE_MAX_MAX_PAGES * getpagesize() +
         FUSE_BUFFER_HEADER_SIZE;
 
+    fuse_ll_map(f_ll);
+
     struct dpfs_hal_params hal_params;
     memset(&hal_params, 0, sizeof(hal_params));
-    memcpy(&hal_params.emu_params, emu_params, sizeof(struct virtiofs_emu_params));
     hal_params.user_data = f_ll;
     hal_params.request_handler = fuse_handle_req;
-    fuse_ll_map(f_ll);
+    hal_params.conf_path = hal_conf_path;
 
     struct dpfs_hal *emu = dpfs_hal_new(&hal_params);
     if (emu == NULL) {
