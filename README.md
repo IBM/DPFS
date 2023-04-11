@@ -1,6 +1,6 @@
-# DPFS - *D*PU-*P*owered *F*ile *S*ystem Virtualization framework
+# DPFS - **D**PU-**P**owered **F**ile **S**ystem Virtualization framework
 The DPFS framework allows Cloud and datacenter operators to provide virtualized file system services to tenants using DPU-offloading.
-With DPFS the complete file system implementation runs on the CPU complex of the DPU. Tenants consume the file system through the virtio-fs device that the DPU exposes over PCIe (multi-tenancy via SR-IOV).
+With DPFS the complete file system implementation runs on the CPU complex of the DPU. Tenants consume the file system through the `virtio-fs` device that the DPU exposes over PCIe (multi-tenancy via SR-IOV).
 The DPFS framework provides several ways of file system deployment:
 * `dpfs_fuse` - The framework exposes a feature complete implementation of the lowlevel libfuse API to support existing userspace file system implementations (not a drop-in replacement but very similar).
 * `dpfs_nfs` - This file system implementation runs on the DPU connects to a remote NFS server, providing its file system to the host.
