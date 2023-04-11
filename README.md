@@ -1,17 +1,29 @@
-# Filesystem Virtualization using DPUs
+# DPFS - *D*PU-*P*owered *F*ile *S*ystem Virtualization framework
+The DPFS framework allows Cloud and datacenter operators to provide virtualized file system services to tenants using DPU-offloading.
+With DPFS the complete file system implementation runs on the CPU complex of the DPU. Tenants consume the file system through the virtio-fs device that the DPU exposes over PCIe (multi-tenancy via SR-IOV).
+The DPFS framework provides several ways of file system deployment:
+* `dpfs_fuse` - The framework exposes a feature complete implementation of the lowlevel libfuse API to support existing userspace file system implementations (not a drop-in replacement but very similar).
+* `dpfs_nfs` - This file system implementation runs on the DPU connects to a remote NFS server, providing its file system to the host.
+* `dpfs_kv` - Connects to a remote RAMCloud cluster via RDMA to provide a flat file system optimized for low latency 4k I/O
+
+## What is a 'DPU'?
 A DPU (Data Processing Unit), for the scope and definition of this project, contains a CPU (running e.g. Linux), NIC and programmable data acceleration engines. It is also commonly referred to as SmartNIC or IPU (Infrastructure Processing Unit).
 
-DPUs are shaping up to be the center of virtualization in the Hyperconverged Infrastructure (HCI).
+DPUs are shaping up to be(come) the center of virtualization in the Cloud. By offloading cloud operator services such as storage, networking and cloud orchestration to the DPU,
+the load on the host CPU is reduced, cloud operators have more control over their services (for upgrades and performance optimizations) and bare metal tenants are easier to support.
+
+## What is `virtio-fs`?
 [Virtio](https://developer.ibm.com/articles/l-virtio) is an abstraction layer for virtualized environments to expose virtual PCIe hardware to guest VMs.
-[Virtio-fs](https://www.kernel.org/doc/html/latest/filesystems/virtiofs.html) is one of these virtual PCIe hardware specifications. It employs the [FUSE](https://www.kernel.org/doc/html/latest/filesystems/fuse.html) protocol (only the communication protocol!) to provide a filesystem to guest VMs.
+[Virtio-fs](https://www.kernel.org/doc/html/latest/filesystems/virtiofs.html) is one of these virtual PCIe hardware specifications.
+It employs the [FUSE](https://www.kernel.org/doc/html/latest/filesystems/fuse.html) protocol (only the communication protocol!) to provide a filesystem to guest VMs.
 There are now DPUs comming out on the market that have support for hardware-accelerated virtio-fs emulation. Thereby having a real hardware device implement the virtual filesystem layer of virtio.
+We are using the Nvidia BlueField-2 which has support for virtio-fs emulation using Nvidia SNAP (Currently only available as a limited technical feature preview).
 
 # Implementation
-![DPU virtio-fs architecture diagram](arch-diagram.png "DPU virtio-fs architecture diagram")
+![DPU virtio-fs architecture diagram](arch.png "DPFS architecture diagram")
 ## Modules
-This project uses a specific DPU library for the virtio-fs emulation layer, but is generalizable to other DPUs.
 ### `dpfs_hal`
-Front-end and hardware abstraction layer for the virtio-fs emulation layer. Only useable if steps in *Usage* are taken.
+Front-end and hardware abstraction layer for the virtio-fs emulation layer of the DPU hardware. Currently only supports Nvidia SNAP with the Nvidia BlueField-2.
 ### `dpfs_fuse`
 Provides a lowlevel FUSE API (close-ish compatible fork of `libfuse/fuse_lowlevel.h`) over the raw buffers that DPUlib provides the user, using `dpfs_hal`. If you are building a DPU file system, use this library.
 ### `dpfs_aio`
