@@ -37,6 +37,7 @@
 #include <signal.h>
 #include <sched.h>
 #include <unistd.h>
+#include <sched.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <err.h>
@@ -84,6 +85,16 @@ static void dpfs_hal_loop_singlethreaded(struct virtio_fs_ctrl *ctrl, useconds_t
 {
     // Only one thread, thread_id=0
     pthread_setspecific(dpfs_hal_thread_id_key, (void *) 0);
+
+    long num_cpus = sysconf(_SC_NPROCESSORS_CONF);
+    cpu_set_t loop_cpu;
+    CPU_ZERO(&loop_cpu);
+    // We poll on the last CPU
+    CPU_SET(num_cpus-1, &loop_cpu);
+    int ret = sched_setaffinity(getpid(), sizeof(loop_cpu), &loop_cpu);
+    if (ret == -1) {
+        warn("Could not set the CPU affinity of the polling thread. DPFS will continue not pinned.");
+    }
 
     struct sigaction act;
     memset(&act, 0, sizeof(act));
