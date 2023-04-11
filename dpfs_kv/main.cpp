@@ -1,6 +1,6 @@
 /*
 #
-# Copyright 2020- IBM Inc. All rights reserved
+# Copyright 2023- IBM Inc. All rights reserved
 # SPDX-License-Identifier: LGPL-2.1-or-later
 #
 */
@@ -20,8 +20,7 @@
 #include "TableEnumerator.h"
 
 #include "dpfs_fuse.h"
-#include "dpfs_hal.h"
-
+#include "dpfs/hal.h"
 
 struct RamCloudUserData {
     RAMCloud::RamCloud *ramcloud;
@@ -48,8 +47,6 @@ uint64_t fnv1a_hash(const char* str, uint64_t hash = FNV_BASIS)
 {
     return *str ? fnv1a_hash(str + 1, (hash ^ *str) * FNV_PRIME) : hash;
 }
-
-
 
 class BufferHolder {
 protected:
@@ -693,33 +690,20 @@ static void *ramcloud_poll(void *arg)
     return NULL;
 }
 
-
 void usage()
 {
-    printf("virtiofs_ramcloud [-p pf_id] [-v vf_id ] [-e emulation_manager_name] [-c RAMCloud coordinator]\n");
+    printf("dpfs_kv [-c config_path]\n");
 }
 
 int main(int argc, char **argv)
 {
-    int pf = -1;
-    int vf = -1;
-    char *emu_manager = NULL; // the rdma device name which supports being an emulation manager and virtio_fs emu
     char *coordinator = NULL;
 
     int opt;
-    while ((opt = getopt(argc, argv, "p:v:e:c:")) != -1) {
+    while ((opt = getopt(argc, argv, "c:")) != -1) {
         switch (opt) {
-            case 'p':
-                pf = atoi(optarg);
-                break;
-            case 'v':
-                vf = atoi(optarg);
-                break;
-            case 'e':
-                emu_manager = optarg;
-                break;
             case 'c':
-                coordinator = optarg;
+                config_path = optarg;
                 break;
             default: /* '?' */
                 usage();
@@ -727,34 +711,23 @@ int main(int argc, char **argv)
         }
     }
 
-    struct virtiofs_emu_params emu_params;
-    memset(&emu_params, 0, sizeof(struct virtiofs_emu_params));
+    auto res = toml::parseFile(conf_path);
+    if (!res.table) {
+        std::cerr << "cannot parse file: " << res.errmsg << std::endl;
+        return -1;
+    }
+    auto conf = res.table->getTable("kv");
+    if (!conf) {
+        std::cerr << "missing [kv]" << std::endl;
+        return -1;
+    }
+    auto [ok, coordinator] = conf->getString("ramcloud_coordinator");
+    if (!ok) {
+        std::cerr << "The config must contain  [kv]:`ramcloud_coordinator`" << std::endl;
+        return -1;
+    }
 
-    if (pf >= 0)
-        emu_params.pf_id = pf;
-    else {
-        fprintf(stderr, "You must supply a pf with -p\n");
-        usage();
-        exit(1);
-    }
-    if (vf >= 0)
-        emu_params.vf_id = vf;
-    else
-        emu_params.vf_id = -1;
-
-    if (emu_manager != NULL) {
-        emu_params.emu_manager = emu_manager;
-    } else {
-        fprintf(stderr, "You must supply an emu manager name with -e\n");
-        usage();
-        exit(1);
-    }
-    if (coordinator == NULL) {
-        fprintf(stderr, "You must supply a coordinator path with -c\n");
-        usage();
-        exit(1);
-    }
-    printf("virtiofs_ramcloud starting up!\n");
+    printf("dpfs_kv starting up!\n");
     printf("Connecting to RAMCloud coordinator %s\n", coordinator);
 
     RAMCloud::RamCloud ramcloud(coordinator);
@@ -772,12 +745,6 @@ int main(int argc, char **argv)
         fprintf(stderr, "Failed to create RAMCloud poll thread, exiting...\n");
         return -1;
     }
-
-    emu_params.polling_interval_usec = 0;
-    emu_params.nthreads = 0;
-    emu_params.tag = new char[sizeof "virtiofs_ramcloud"];
-    emu_params.queue_depth = 64;
-    std::strcpy(emu_params.tag, "virtiofs_ramcloud");
 
     struct fuse_ll_operations ops;
     memset(&ops, 0, sizeof(ops));
@@ -799,12 +766,10 @@ int main(int argc, char **argv)
     ops.mknod = (typeof(ops.mknod)) fuse_mknod; /* not sure if this is needed at all */
     ops.unlink = (typeof(ops.unlink)) fuse_unlink;
 
-    dpfs_fuse_main(&ops, &emu_params, &user_data, false);
+    dpfs_fuse_main(&ops, conf_path, &user_data, false);
 
     user_data.stopPoller = true;
     pthread_join(ramcloud_poll_thread, NULL);
-
-    delete[] emu_params.tag;
 
     return 0;
 }
