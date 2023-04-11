@@ -1,0 +1,29 @@
+randwrite_4k_32_2: (g=0): rw=randwrite, bs=(R) 4096B-4096B, (W) 4096B-4096B, (T) 4096B-4096B, ioengine=io_uring, iodepth=32
+...
+fio-3.28
+Starting 2 threads
+
+randwrite_4k_32_2: (groupid=0, jobs=2): err= 0: pid=9450: Thu Apr  6 22:36:15 2023
+  write: IOPS=51.9k, BW=203MiB/s (212MB/s)(11.9GiB/60002msec); 0 zone resets
+    slat (nsec): min=2118, max=57266, avg=4463.37, stdev=2046.43
+    clat (usec): min=93, max=5174, avg=1228.53, stdev=452.16
+     lat (usec): min=100, max=5177, avg=1233.09, stdev=451.51
+    clat percentiles (usec):
+     |  1.00th=[  163],  5.00th=[  215], 10.00th=[  251], 20.00th=[ 1188],
+     | 30.00th=[ 1254], 40.00th=[ 1303], 50.00th=[ 1336], 60.00th=[ 1369],
+     | 70.00th=[ 1418], 80.00th=[ 1467], 90.00th=[ 1582], 95.00th=[ 1729],
+     | 99.00th=[ 2180], 99.50th=[ 2278], 99.90th=[ 2507], 99.95th=[ 2573],
+     | 99.99th=[ 2737]
+   bw (  KiB/s): min=179488, max=255256, per=100.00%, avg=207544.50, stdev=5280.91, samples=240
+   iops        : min=44872, max=63814, avg=51886.05, stdev=1320.22, samples=240
+  lat (usec)   : 100=0.01%, 250=9.93%, 500=4.78%, 750=0.08%, 1000=0.07%
+  lat (msec)   : 2=83.10%, 4=2.04%, 10=0.01%
+  cpu          : usr=4.81%, sys=15.65%, ctx=1998950, majf=0, minf=0
+  IO depths    : 1=0.0%, 2=0.0%, 4=0.0%, 8=0.0%, 16=0.0%, 32=100.0%, >=64=0.0%
+     submit    : 0=0.0%, 4=100.0%, 8=0.0%, 16=0.0%, 32=0.0%, 64=0.0%, >=64=0.0%
+     complete  : 0=0.0%, 4=100.0%, 8=0.0%, 16=0.0%, 32=0.1%, 64=0.0%, >=64=0.0%
+     issued rwts: total=0,3112612,0,0 short=0,0,0,0 dropped=0,0,0,0
+     latency   : target=0, window=0, percentile=100.00%, depth=32
+
+Run status group 0 (all jobs):
+  WRITE: bw=203MiB/s (212MB/s), 203MiB/s-203MiB/s (212MB/s-212MB/s), io=11.9GiB (12.7GB), run=60002-60002msec
