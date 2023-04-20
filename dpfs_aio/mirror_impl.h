@@ -22,14 +22,8 @@ struct fuser_rw_cb_data {
     struct fuse_out_header *out_hdr;
     union {
         struct {
-            struct fuse_write_in *in_write;
-            struct iovec *in_iov;
             struct fuse_write_out *out_write;
         } write;
-        struct {
-            struct fuse_read_in *in_read;
-            struct iovec *out_iov;
-        } read;
     } rw;
 };
 

@@ -20,6 +20,7 @@
 #include <unistd.h>
 #include <sys/statvfs.h>
 #include <sys/file.h>
+#include <string.h>
 #include "dpfs_fuse.h"
 
 #include "fuser.h"
@@ -704,8 +705,6 @@ int fuser_mirror_read(struct fuse_session *se, void *user_data,
     rw_cb_data->completion_context = completion_context;
     rw_cb_data->in_hdr = in_hdr;
     rw_cb_data->out_hdr = out_hdr;
-    rw_cb_data->rw.read.in_read = in_read;
-    rw_cb_data->rw.read.out_iov = out_iov;
 
     struct iocb iocb[1] = {0};
     iocb->aio_data = (__u64) rw_cb_data;
@@ -736,8 +735,6 @@ int fuser_mirror_write(struct fuse_session *se, void *user_data,
     rw_cb_data->completion_context = completion_context;
     rw_cb_data->in_hdr = in_hdr;
     rw_cb_data->out_hdr = out_hdr;
-    rw_cb_data->rw.write.in_write = in_write;
-    rw_cb_data->rw.write.in_iov = in_iov;
     rw_cb_data->rw.write.out_write = out_write;
 
     struct iocb iocb[1] = {0};

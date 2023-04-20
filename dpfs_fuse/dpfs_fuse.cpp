@@ -29,12 +29,16 @@
 #include <sys/fcntl.h>
 #include <stddef.h>
 #include <linux/fuse.h>
+#include <string.h>
 
 #include "config.h"
 #include "common.h"
 #include "debug.h"
 #include "dpfs/hal.h"
 #include "dpfs_fuse.h"
+
+#define MIN(x, y) x < y ? x : y
+#define MAX(x, y) x > y ? x : y
 
 struct fuse_ll;
 typedef int (*fuse_handler_t) (struct fuse_ll *,

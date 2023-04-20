@@ -13,7 +13,4 @@
 #endif
 #define AT_EMPTY_PATH		0x1000	/* Allow empty relative pathname */
 
-#define MIN(x, y) x < y ? x : y
-#define MAX(x, y) x > y ? x : y
-
 #endif // COMMON_H

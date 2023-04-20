@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <nfsc/libnfs-raw.h>
 #include <nfsc/libnfs-raw-nfs4.h>
+#include <string.h>
 #include "vnfs_connect.h"
 #include "nfs_v4.h"
 #include "inode.h"

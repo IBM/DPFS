@@ -162,26 +162,31 @@ static void maximize_fd_limit() {
 }
 
 static void *fuser_io_poll_thread(struct fuser *f) {
-    while(1){
-    struct io_event e;
-        if(io_getevents(f->aio_ctx, 1, 1, &e, NULL) == 1){
-       break;
-        }   
-    struct fuser_rw_cb_data *cb_data = (struct fuser_rw_cb_data *) e.data;
-    if (e.res == -1) {
-        cb_data->out_hdr->error = -errno;
-        dpfs_hal_async_complete(cb_data->completion_context, DPFS_HAL_COMPLETION_SUCCES);
-    }
+    while(!f->io_poll_thread_stop){
+        struct io_event e;
+        int ret = io_getevents(f->aio_ctx, 1, 1, &e, NULL);
+        if(ret == -1){
+            err(1, "ERROR: libaio polling failed, reads and writes will now be broken");
+            break;
+        } else if (ret == 0) {
+            continue; // No event to process
+        } // else process the event
+        struct fuser_rw_cb_data *cb_data = (struct fuser_rw_cb_data *) e.data;
+        if (e.res == -1) {
+            cb_data->out_hdr->error = -errno;
+            dpfs_hal_async_complete(cb_data->completion_context, DPFS_HAL_COMPLETION_SUCCES);
+        }
 
-    if (cb_data->op == FUSER_RW_CB_WRITE) {
-        cb_data->rw.write.out_write->size = e.res;
-        cb_data->out_hdr->len += sizeof(*cb_data->rw.write.out_write);
-        dpfs_hal_async_complete(cb_data->completion_context, DPFS_HAL_COMPLETION_SUCCES);
-    } else { // READ
-        cb_data->out_hdr->len += e.res;
-        dpfs_hal_async_complete(cb_data->completion_context, DPFS_HAL_COMPLETION_SUCCES);
-    }
-    mpool_free(f->cb_data_pool, cb_data);
+        if (cb_data->op == FUSER_RW_CB_WRITE) {
+            cb_data->rw.write.out_write->size = e.res;
+            cb_data->out_hdr->len += sizeof(*cb_data->rw.write.out_write);
+            dpfs_hal_async_complete(cb_data->completion_context, DPFS_HAL_COMPLETION_SUCCES);
+        } else { // READ
+            cb_data->out_hdr->len += e.res;
+            dpfs_hal_async_complete(cb_data->completion_context, DPFS_HAL_COMPLETION_SUCCES);
+        }
+
+        mpool_free(f->cb_data_pool, cb_data);
     }
     return NULL;
 }
@@ -223,7 +228,7 @@ int fuser_main(bool debug, char *source, bool cached, const char *conf_path) {
     if (ret == -1)
         err(1, "ERROR: Failed to init inode_table f->inodes");
 
-    if (io_setup(10, &f->aio_ctx) != 0)
+    if (io_setup(256, &f->aio_ctx) != 0)
         err(1, "ERROR: Failed to init Linux aio");
 
     struct fuse_ll_operations ops;

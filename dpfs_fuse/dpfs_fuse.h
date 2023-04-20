@@ -16,7 +16,9 @@
 #include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <linux/fuse.h>
+#include <string.h>
 #include "dpfs/hal.h"
+#include "common.h"
 
 // Beginning of libfuse/include/fuse_lowlevel.h selective copy
 
