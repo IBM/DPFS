@@ -162,9 +162,14 @@ static void maximize_fd_limit() {
 }
 
 static void *fuser_io_poll_thread(struct fuser *f) {
+    struct timespec ts = { 
+        .tv_sec = 1,
+        .tv_nsec = 0
+    };
+
     while(!f->io_poll_thread_stop){
         struct io_event e;
-        int ret = io_getevents(f->aio_ctx, 1, 1, &e, NULL);
+        int ret = io_getevents(f->aio_ctx, 1, 1, &e, &ts);
         if(ret == -1){
             err(1, "ERROR: libaio polling failed, reads and writes will now be broken");
             break;
