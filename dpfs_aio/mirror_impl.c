@@ -94,6 +94,8 @@ int fuser_mirror_init(struct fuse_session *se, void *user_data,
         "Thus all operations will go through the name of uid %d and gid %d\n", __func__, getuid(), getgid());
     }
 
+    se->init_done = true;
+
     return 0;
 ret_errno:
     if (ret == -1)
