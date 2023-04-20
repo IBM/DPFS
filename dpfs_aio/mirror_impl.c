@@ -702,6 +702,22 @@ int fuser_mirror_read(struct fuse_session *se, void *user_data,
 {
     struct fuser *f = user_data;
 
+    // We assume that all the iovecs are sized the same
+    size_t iovcnt = in_read->size / out_iov[0].iov_len;
+    size_t iovcnt_remainder = in_read->size % out_iov[0].iov_len;
+    if (iovcnt_remainder != 0) {
+        out_iov[iovcnt].iov_len = iovcnt_remainder;
+        iovcnt++;
+    }
+
+    // If there are not enough iovecs
+    if (iovcnt > out_iovcnt) {
+        // We might have changed the len of the last iov, so reset it
+        out_iov[iovcnt-1].iov_len = out_iov[0].iov_len;
+        out_hdr->error = -EINVAL;
+        return 0;
+    }
+        
     struct fuser_rw_cb_data *rw_cb_data = mpool_alloc(f->cb_data_pool);
     rw_cb_data->op = FUSER_RW_CB_READ;
     rw_cb_data->completion_context = completion_context;
@@ -714,7 +730,7 @@ int fuser_mirror_read(struct fuse_session *se, void *user_data,
     iocb->aio_lio_opcode = IOCB_CMD_PREADV;
     iocb->aio_reqprio = 0;
     iocb->aio_buf = (__u64) out_iov;
-    iocb->aio_nbytes = out_iovcnt;
+    iocb->aio_nbytes = iovcnt;
     iocb->aio_offset = in_read->offset;
     int res = io_submit(f->aio_ctx, 1, (struct iocb **) &iocb);
     if (res == -1) {
