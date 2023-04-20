@@ -16,7 +16,7 @@
 
 #include "config.h"
 #include "dpfs_fuse.h"
-#include "mpool2.h"
+#include "mpool.h"
 #ifdef LATENCY_MEASURING_ENABLED
 #include "ftimer.h"
 #endif
@@ -71,7 +71,7 @@ struct virtionfs {
     uint32_t conn_cntr;
 
     struct inode_table *inodes;
-    struct mpool2 *p;
+    struct mpool *p;
 
     char *server;
     char *export;

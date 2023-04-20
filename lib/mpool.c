@@ -10,30 +10,30 @@
 #include <stdio.h>
 #include <ck_ring.h>
 
-#include "mpool2.h"
+#include "mpool.h"
 
 // Thread-safe
-void *mpool2_alloc(struct mpool2 *p) {
+void *mpool_alloc(struct mpool *p) {
     void *r = NULL;
     ck_ring_dequeue_spsc(&p->ring, p->buffer, &r);
     return r;
 }
 
 // Thread-safe
-void mpool2_free(struct mpool2 *p, void *e) {
+void mpool_free(struct mpool *p, void *e) {
     ck_ring_enqueue_spsc(&p->ring, p->buffer, e);
 }
 
 #define MIN(x, y) x < y ? x : y
 
 // Not thread-safe!
-int mpool2_init(struct mpool2 **p, uint64_t chunk_size, uint64_t chunks) {
+int mpool_init(struct mpool **p, uint64_t chunk_size, uint64_t chunks) {
     if (chunks < 4 || (chunks & (chunks - 1)) == 1) {
-        fprintf(stderr, "mpool2: chunks must be >= 4 and a power of 2\n");
+        fprintf(stderr, "mpool: chunks must be >= 4 and a power of 2\n");
         return -EINVAL;
     }
 
-    *p = calloc(1, sizeof(struct mpool2));
+    *p = calloc(1, sizeof(struct mpool));
     if (!*p)
         return -ENOMEM;
 
@@ -48,12 +48,12 @@ int mpool2_init(struct mpool2 **p, uint64_t chunk_size, uint64_t chunks) {
         void *e = malloc(chunk_size);
         if (!e) {
             for (int j = 0; j < i; j++) {
-                free(mpool2_alloc(*p));
+                free(mpool_alloc(*p));
             }
             free(*p);
             return -ENOMEM;
         }
-        mpool2_free(*p, e);
+        mpool_free(*p, e);
     }
 
     return 0;
@@ -61,7 +61,7 @@ int mpool2_init(struct mpool2 **p, uint64_t chunk_size, uint64_t chunks) {
 
 // Not thread-safe!
 // If not all the chunks have been freed yet, then memory leaks will occur!
-void mpool2_destroy(struct mpool2 *p) {
+void mpool_destroy(struct mpool *p) {
     void *e = NULL;
     while (ck_ring_dequeue_spsc(&p->ring, p->buffer, &e)) {
         free(e);

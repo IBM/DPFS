@@ -13,15 +13,14 @@
 #include <errno.h>
 #include <string.h>
 #include <unistd.h>
+#include <stdlib.h>
 #include <limits.h>
 #include <pthread.h>
 #include <fcntl.h>
 #include <linux/aio_abi.h>
 
 #include "fuser.h"
-#include "virtiofs_emu_ll.h"
 #include "mirror_impl.h"
-#include "common.h"
 #include "aio.h"
 
 struct inode *inode_new(fuse_ino_t ino) {
@@ -171,16 +170,16 @@ static void *fuser_io_poll_thread(struct fuser *f) {
     struct fuser_rw_cb_data *cb_data = (struct fuser_rw_cb_data *) e.data;
     if (e.res == -1) {
         cb_data->out_hdr->error = -errno;
-        cb_data->cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb_data->cb->user_arg);
+        dpfs_hal_async_complete(cb_data->completion_context, DPFS_HAL_COMPLETION_SUCCES);
     }
 
     if (cb_data->op == FUSER_RW_CB_WRITE) {
         cb_data->rw.write.out_write->size = e.res;
         cb_data->out_hdr->len += sizeof(*cb_data->rw.write.out_write);
-        cb_data->cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb_data->cb->user_arg);
+        dpfs_hal_async_complete(cb_data->completion_context, DPFS_HAL_COMPLETION_SUCCES);
     } else { // READ
         cb_data->out_hdr->len += e.res;
-        cb_data->cb->cb(SNAP_FS_DEV_OP_SUCCESS, cb_data->cb->user_arg);
+        dpfs_hal_async_complete(cb_data->completion_context, DPFS_HAL_COMPLETION_SUCCES);
     }
     mpool_free(f->cb_data_pool, cb_data);
     }
@@ -188,7 +187,7 @@ static void *fuser_io_poll_thread(struct fuser *f) {
 }
 
 // todo proper error handling
-int fuser_main(bool debug, char *source, bool cached, struct virtiofs_emu_params *emu_params) {
+int fuser_main(bool debug, char *source, bool cached, const char *conf_path) {
     struct fuser *f = calloc(1, sizeof(struct fuser));
     if (f == NULL)
         err(1, "ERROR: Could not allocate memory for struct fuser");
@@ -230,11 +229,11 @@ int fuser_main(bool debug, char *source, bool cached, struct virtiofs_emu_params
     struct fuse_ll_operations ops;
     fuser_mirror_assign_ops(&ops);
 
-    mpool_init(f->cb_data_pool, 100, sizeof(struct fuser_rw_cb_data), 10);
+    mpool_init(&f->cb_data_pool, sizeof(struct fuser_rw_cb_data), 256);
     pthread_t poll_thread;
     pthread_create(&poll_thread, NULL, (void *(*)(void *))fuser_io_poll_thread, f);
 
-    virtiofs_emu_fuse_ll_main(&ops, emu_params, f, debug);
+    dpfs_fuse_main(&ops, conf_path, f, debug);
 
     f->io_poll_thread_stop = true;
     pthread_join(poll_thread, NULL);

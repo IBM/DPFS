@@ -16,8 +16,7 @@
 #include <linux/fuse.h>
 #include <linux/aio_abi.h>
 
-#include "fuse_ll.h"
-#include "virtiofs_emu_ll.h"
+#include "dpfs_fuse.h"
 #include "mpool.h"
 
 struct inode {
@@ -83,6 +82,6 @@ struct inode *ino_to_inodeptr(struct fuser *, fuse_ino_t);
 int ino_to_fd(struct fuser *, fuse_ino_t);
 
 int fuser_main(bool debug, char *source, bool cached,
-               struct virtiofs_emu_params *emu_params);
+               const char *conf_path);
 
 #endif // FUSER_H

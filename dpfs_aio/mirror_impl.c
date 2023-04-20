@@ -1,12 +1,13 @@
 /*
 #
-# Copyright 2022- IBM Inc. All rights reserved
+# Copyright 2023- IBM Inc. All rights reserved
 # SPDX-License-Identifier: LGPL-2.1-or-later
 #
 */
 
 #define _LARGEFILE64_SOURCE
 #define _GNU_SOURCE
+#include <stdlib.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <errno.h>
@@ -19,20 +20,20 @@
 #include <unistd.h>
 #include <sys/statvfs.h>
 #include <sys/file.h>
+#include "dpfs_fuse.h"
 
-#include "mirror_impl.h"
-#include "fuse_ll.h"
 #include "fuser.h"
-#include "common.h"
+#include "mirror_impl.h"
 #include "aio.h"
 
-static void forget_one(struct fuser *f, fuse_ino_t ino, uint64_t n) {
+static void forget_one(struct fuser *f, fuse_ino_t ino, uint64_t n)
+{
     struct inode *i = ino_to_inodeptr(f, ino);
     pthread_mutex_lock(&i->m);
 
     if (n > i->nlookup) {
         fprintf(stderr, "INTERNAL ERROR: Negative lookup count for inode %ld\n", i->src_ino);
-        abort();
+        exit(-1);
     }
     i->nlookup -= n;
 
@@ -54,10 +55,12 @@ static void forget_one(struct fuser *f, fuse_ino_t ino, uint64_t n) {
         pthread_mutex_unlock(&i->m);
 }
 
-int fuser_mirror_init(struct fuse_session *se, struct fuser *f,
+int fuser_mirror_init(struct fuse_session *se, void *user_data,
     struct fuse_in_header *in_hdr, struct fuse_init_in *in_init,
     struct fuse_conn_info *conn, struct fuse_out_header *out_hdr)
 {
+    struct fuser *f = user_data;
+
     if (conn->capable & FUSE_CAP_EXPORT_SUPPORT)
         conn->want |= FUSE_CAP_EXPORT_SUPPORT;
 
@@ -97,11 +100,13 @@ ret_errno:
     return 0;
 }
 
-int fuser_mirror_getattr(struct fuse_session *se, struct fuser *f,
-                      struct fuse_in_header *in_hdr, struct fuse_getattr_in *in_getattr,
-                      struct fuse_out_header *out_hdr, struct fuse_attr_out *out_attr)
+int fuser_mirror_getattr(struct fuse_session *se, void *user_data,
+    struct fuse_in_header *in_hdr, struct fuse_getattr_in *in_getattr,
+    struct fuse_out_header *out_hdr, struct fuse_attr_out *out_attr,
+    void *completion_context)
 {
     (void) in_getattr;
+    struct fuser *f = user_data;
 
     struct inode *i = ino_to_inodeptr(f, in_hdr->nodeid);
     struct stat s;
@@ -195,10 +200,13 @@ static int do_lookup(struct fuser *f, fuse_ino_t parent, const char *name,
     return 0;
 }
 
-int fuser_mirror_lookup(struct fuse_session *se, struct fuser *f,
+int fuser_mirror_lookup(struct fuse_session *se, void *user_data,
                         struct fuse_in_header *in_hdr, const char *const in_name,
-                        struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry)
+                        struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry,
+                        void *completion_context)
 {
+    struct fuser *f = user_data;
+
     struct fuse_entry_param e;
     int err = do_lookup(f, in_hdr->nodeid, in_name, &e);
     if (err == ENOENT) {
@@ -216,10 +224,13 @@ int fuser_mirror_lookup(struct fuse_session *se, struct fuser *f,
     }
 }
 
-int fuser_mirror_setattr(struct fuse_session *se, struct fuser *f,
+int fuser_mirror_setattr(struct fuse_session *se, void *user_data,
                          struct fuse_in_header *in_hdr, struct stat *s, int valid, struct fuse_file_info *fi,
-                         struct fuse_out_header *out_hdr, struct fuse_attr_out *out_attr)
+                         struct fuse_out_header *out_hdr, struct fuse_attr_out *out_attr,
+                         void *completion_context)
 {
+    struct fuser *f = user_data;
+
     struct inode *i = ino_to_inodeptr(f, in_hdr->nodeid);
     int ifd = i->fd;
     int res;
@@ -296,10 +307,12 @@ out_err:
 }
 
 
-int fuser_mirror_opendir(struct fuse_session *se, struct fuser *f,
+int fuser_mirror_opendir(struct fuse_session *se, void *user_data,
                     struct fuse_in_header *in_hdr, struct fuse_open_in *in_open,
-                    struct fuse_out_header *out_hdr, struct fuse_open_out *out_open)
+                    struct fuse_out_header *out_hdr, struct fuse_open_out *out_open,
+                    void *completion_context)
 {
+    struct fuser *f = user_data;
     struct inode *i = ino_to_inodeptr(f, in_hdr->nodeid);
     if (!i) {
         out_hdr->error = -EINVAL;
@@ -346,9 +359,10 @@ out_errno:
 }
 
 
-int fuser_mirror_releasedir(struct fuse_session *se, struct fuser *f,
+int fuser_mirror_releasedir(struct fuse_session *se, void *user_data,
                     struct fuse_in_header *in_hdr, struct fuse_release_in *in_release,
-                    struct fuse_out_header *out_hdr)
+                    struct fuse_out_header *out_hdr,
+                    void *completion_context)
 {
     struct directory *d = (struct directory *) in_release->fh;
     directory_destroy(d);
@@ -360,10 +374,13 @@ static bool is_dot_or_dotdot(const char *name) {
            (name[1] == '\0' || (name[1] == '.' && name[2] == '\0'));
 }
 
-int fuser_mirror_readdir(struct fuse_session *se, struct fuser *f,
+int fuser_mirror_readdir(struct fuse_session *se, void *user_data,
                        struct fuse_in_header *in_hdr, struct fuse_read_in *in_read, bool plus,
-                       struct fuse_out_header *out_hdr, struct iov read_iov)
+                       struct fuse_out_header *out_hdr, struct iov read_iov,
+                       void *completion_context)
 {
+    struct fuser *f = user_data;
+
     const off_t off = in_read->offset;
     struct directory *d = (struct directory *) in_read->fh;
     struct inode *i = ino_to_inodeptr(f, in_hdr->nodeid);
@@ -451,10 +468,13 @@ error:
     }
 }
 
-int fuser_mirror_open(struct fuse_session *se, struct fuser *f,
+int fuser_mirror_open(struct fuse_session *se, void *user_data,
                       struct fuse_in_header *in_hdr, struct fuse_open_in *in_open,
-                      struct fuse_out_header *out_hdr, struct fuse_open_out *out_open)
+                      struct fuse_out_header *out_hdr, struct fuse_open_out *out_open,
+                      void *completion_context)
 {
+    struct fuser *f = user_data;
+
     struct fuse_file_info fi;
     fi.flags = in_open->flags;
 
@@ -503,10 +523,13 @@ int fuser_mirror_open(struct fuse_session *se, struct fuser *f,
     return fuse_ll_reply_open(se, out_hdr, out_open, &fi);
 }
 
-int fuser_mirror_release(struct fuse_session *se, struct fuser *f,
+int fuser_mirror_release(struct fuse_session *se, void *user_data,
                     struct fuse_in_header *in_hdr, struct fuse_release_in *in_release,
-                    struct fuse_out_header *out_hdr)
+                    struct fuse_out_header *out_hdr,
+                    void *completion_context)
 {
+    struct fuser *f = user_data;
+
     struct inode *i = ino_to_inodeptr(f, in_hdr->nodeid);
     if (!i) {
         out_hdr->error = -EINVAL;
@@ -524,7 +547,8 @@ int fuser_mirror_release(struct fuse_session *se, struct fuser *f,
 
 int fuser_mirror_fsync(struct fuse_session *se, void *user_data,
                        struct fuse_in_header *in_hdr, struct fuse_fsync_in *in_fsync,
-                       struct fuse_out_header *out_hdr)
+                       struct fuse_out_header *out_hdr,
+                       void *completion_context)
 {
     int ret;
     if (in_fsync->fsync_flags & FUSE_FSYNC_FDATASYNC)
@@ -539,7 +563,8 @@ int fuser_mirror_fsync(struct fuse_session *se, void *user_data,
 
 int fuser_mirror_fsyncdir(struct fuse_session *se, void *user_data,
                           struct fuse_in_header *in_hdr, struct fuse_fsync_in *in_fsync,
-                          struct fuse_out_header *out_hdr)
+                          struct fuse_out_header *out_hdr,
+                          void *completion_context)
 {
     struct directory *d = (struct directory *) in_fsync->fh;
     int fd = dirfd(d->dp);
@@ -555,10 +580,13 @@ int fuser_mirror_fsyncdir(struct fuse_session *se, void *user_data,
     return 0;
 }
 
-int fuser_mirror_create(struct fuse_session *se, struct fuser *f,
+int fuser_mirror_create(struct fuse_session *se, void *user_data,
     struct fuse_in_header *in_hdr, struct fuse_create_in in_create, const char *const in_name,
-    struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry, struct fuse_open_out *out_open)
+    struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry, struct fuse_open_out *out_open,
+    void *completion_context)
 {
+    struct fuser *f = user_data;
+
     struct fuse_file_info fi;
     memset(&fi, 0, sizeof(fi));
     fi.flags = in_create.flags; // from fuse_lowlevel.c
@@ -596,10 +624,13 @@ int fuser_mirror_create(struct fuse_session *se, struct fuser *f,
     return fuse_ll_reply_create(se, out_hdr, out_entry, out_open, &e, &fi);
 }
 
-int fuser_mirror_rmdir(struct fuse_session *se, struct fuser *f,
+int fuser_mirror_rmdir(struct fuse_session *se, void *user_data,
                   struct fuse_in_header *in_hdr, const char *const in_name,
-                  struct fuse_out_header *out_hdr)
+                  struct fuse_out_header *out_hdr,
+                  void *completion_context)
 {
+    struct fuser *f = user_data;
+
     struct inode *ip = ino_to_inodeptr(f, in_hdr->nodeid);
     if (!ip) {
         out_hdr->error = -EINVAL;
@@ -615,28 +646,37 @@ int fuser_mirror_rmdir(struct fuse_session *se, struct fuser *f,
 
 
 
-int fuser_mirror_forget(struct fuse_session *se, struct fuser *f,
-                  struct fuse_in_header *in_hdr, struct fuse_forget_in *in_forget)
+int fuser_mirror_forget(struct fuse_session *se, void *user_data,
+                  struct fuse_in_header *in_hdr, struct fuse_forget_in *in_forget,
+                  void *completion_context)
 {
+    struct fuser *f = user_data;
+
     forget_one(f, in_hdr->nodeid, in_forget->nlookup);
     return 0;
 }
 
-int fuser_mirror_batch_forget(struct fuse_session *se, struct fuser *f,
+int fuser_mirror_batch_forget(struct fuse_session *se, void *user_data,
                          struct fuse_in_header *in_hdr, struct fuse_batch_forget_in *in_batch_forget,
-                         struct fuse_forget_one *in_forget_one)
+                         struct fuse_forget_one *in_forget_one,
+                         void *completion_context)
 {
+    struct fuser *f = user_data;
+
     for (int i = 0; i < in_batch_forget->count; i++) {
         forget_one(f, in_forget_one[i].nodeid, in_forget_one[i].nlookup);
     }
     return 0;
 }
 
-int fuser_mirror_rename(struct fuse_session *se, struct fuser *f,
+int fuser_mirror_rename(struct fuse_session *se, void *user_data,
                    struct fuse_in_header *in_hdr, const char *const in_name,
                    fuse_ino_t in_new_parentdir, const char *const in_new_name, uint32_t in_flags,
-                   struct fuse_out_header *out_hdr)
+                   struct fuse_out_header *out_hdr,
+                   void *completion_context)
 {
+    struct fuser *f = user_data;
+
     struct inode *ip = ino_to_inodeptr(f, in_hdr->nodeid);
     struct inode *new_ip = ino_to_inodeptr(f, in_new_parentdir);
 
@@ -652,14 +692,16 @@ int fuser_mirror_rename(struct fuse_session *se, struct fuser *f,
     return 0;
 }
 
-int fuser_mirror_read(struct fuse_session *se, struct fuser *f,
-                 struct fuse_in_header *in_hdr, struct fuse_read_in *in_read,
-                 struct fuse_out_header *out_hdr, struct iov *out_iov,
-                                 struct snap_fs_dev_io_done_ctx *cb)
+int fuser_mirror_read(struct fuse_session *se, void *user_data,
+                struct fuse_in_header *in_hdr, struct fuse_read_in *in_read,
+                struct fuse_out_header *out_hdr, struct iovec *out_iov, int out_iovcnt,
+                void *completion_context)
 {
+    struct fuser *f = user_data;
+
     struct fuser_rw_cb_data *rw_cb_data = mpool_alloc(f->cb_data_pool);
     rw_cb_data->op = FUSER_RW_CB_READ;
-    rw_cb_data->cb = cb;
+    rw_cb_data->completion_context = completion_context;
     rw_cb_data->in_hdr = in_hdr;
     rw_cb_data->out_hdr = out_hdr;
     rw_cb_data->rw.read.in_read = in_read;
@@ -670,8 +712,8 @@ int fuser_mirror_read(struct fuse_session *se, struct fuser *f,
     iocb->aio_fildes = in_read->fh;
     iocb->aio_lio_opcode = IOCB_CMD_PREADV;
     iocb->aio_reqprio = 0;
-    iocb->aio_buf = (__u64) out_iov->iovec;
-    iocb->aio_nbytes = out_iov->iovcnt;
+    iocb->aio_buf = (__u64) out_iov;
+    iocb->aio_nbytes = out_iovcnt;
     iocb->aio_offset = in_read->offset;
     int res = io_submit(f->aio_ctx, 1, (struct iocb **) &iocb);
     if (res == -1) {
@@ -681,14 +723,17 @@ int fuser_mirror_read(struct fuse_session *se, struct fuser *f,
     return EWOULDBLOCK; // We move async
 }
 
-int fuser_mirror_write(struct fuse_session *se, struct fuser *f,
-                  struct fuse_in_header *in_hdr, struct fuse_write_in *in_write, struct iov *in_iov,
-                  struct fuse_out_header *out_hdr, struct fuse_write_out *out_write,
-                                  struct snap_fs_dev_io_done_ctx *cb)
+int fuser_mirror_write(struct fuse_session *se, void *user_data,
+                struct fuse_in_header *in_hdr, struct fuse_write_in *in_write,
+                struct iovec *in_iov, int in_iovcnt,
+                struct fuse_out_header *out_hdr, struct fuse_write_out *out_write,
+                void *completion_context)
 {
+    struct fuser *f = user_data;
+
     struct fuser_rw_cb_data *rw_cb_data = mpool_alloc(f->cb_data_pool);
     rw_cb_data->op = FUSER_RW_CB_WRITE;
-    rw_cb_data->cb = cb;
+    rw_cb_data->completion_context = completion_context;
     rw_cb_data->in_hdr = in_hdr;
     rw_cb_data->out_hdr = out_hdr;
     rw_cb_data->rw.write.in_write = in_write;
@@ -700,8 +745,8 @@ int fuser_mirror_write(struct fuse_session *se, struct fuser *f,
     iocb->aio_fildes = in_write->fh;
     iocb->aio_lio_opcode = IOCB_CMD_PWRITEV;
     iocb->aio_reqprio = 0;
-    iocb->aio_buf = (__u64) in_iov->iovec;
-    iocb->aio_nbytes = in_iov->iovcnt;
+    iocb->aio_buf = (__u64) in_iov;
+    iocb->aio_nbytes = in_iovcnt;
     iocb->aio_offset = in_write->offset;
     int res = io_submit(f->aio_ctx, 1, (struct iocb **) &iocb);
     if (res == -1) {
@@ -742,10 +787,13 @@ out_err:
     return saverr;
 }
 
-int fuser_mirror_mknod(struct fuse_session *se, struct fuser *f,
+int fuser_mirror_mknod(struct fuse_session *se, void *user_data,
                   struct fuse_in_header *in_hdr, struct fuse_mknod_in * in_mknod, const char *const in_name,
-                  struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry)
+                  struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry,
+                  void *completion_context)
 {
+    struct fuser *f = user_data;
+
     struct fuse_entry_param e;
     int res = make_something(f, in_hdr->nodeid, in_name, in_mknod->mode, in_mknod->rdev, NULL, &e);
     if (res) {
@@ -756,10 +804,13 @@ int fuser_mirror_mknod(struct fuse_session *se, struct fuser *f,
     return fuse_ll_reply_entry(se, out_hdr, out_entry, &e);
 }
 
-int fuser_mirror_mkdir(struct fuse_session *se, struct fuser *f,
+int fuser_mirror_mkdir(struct fuse_session *se, void *user_data,
                   struct fuse_in_header *in_hdr, struct fuse_mkdir_in *in_mkdir, const char *const in_name,
-                  struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry)
+                  struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry,
+                  void *completion_context)
 {
+    struct fuser *f = user_data;
+
     struct fuse_entry_param e;
     int res = make_something(f, in_hdr->nodeid, in_name, S_IFDIR | in_mkdir->mode, 0, NULL, &e);
     if (res) {
@@ -770,10 +821,13 @@ int fuser_mirror_mkdir(struct fuse_session *se, struct fuser *f,
     return fuse_ll_reply_entry(se, out_hdr, out_entry, &e);
 }
 
-int fuser_mirror_symlink(struct fuse_session *se, struct fuser *f,
+int fuser_mirror_symlink(struct fuse_session *se, void *user_data,
                     struct fuse_in_header *in_hdr, const char *const in_name, const char *const in_link,
-                      struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry)
+                    struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry,
+                    void *completion_context)
 {
+    struct fuser *f = user_data;
+
     struct fuse_entry_param e;
     int res = make_something(f, in_hdr->nodeid, in_name, S_IFLNK, 0, in_link, &e);
     if (res) {
@@ -784,10 +838,13 @@ int fuser_mirror_symlink(struct fuse_session *se, struct fuser *f,
     return fuse_ll_reply_entry(se, out_hdr, out_entry, &e);
 }
 
-int fuser_mirror_statfs(struct fuse_session *se, struct fuser *f,
+int fuser_mirror_statfs(struct fuse_session *se, void *user_data,
                    struct fuse_in_header *in_hdr,
-                   struct fuse_out_header *out_hdr, struct fuse_statfs_out *out_statfs)
+                   struct fuse_out_header *out_hdr, struct fuse_statfs_out *out_statfs,
+                   void *completion_context)
 {
+    struct fuser *f = user_data;
+
     struct statvfs stbuf;
     int res = fstatvfs(ino_to_fd(f, in_hdr->nodeid), &stbuf);
     if (res == -1) {
@@ -798,10 +855,13 @@ int fuser_mirror_statfs(struct fuse_session *se, struct fuser *f,
     return fuse_ll_reply_statfs(se, out_hdr, out_statfs, &stbuf);
 }
 
-int fuser_mirror_unlink(struct fuse_session *se, struct fuser *f,
+int fuser_mirror_unlink(struct fuse_session *se, void *user_data,
                   struct fuse_in_header *in_hdr, const char *const in_name,
-                  struct fuse_out_header *out_hdr)
+                  struct fuse_out_header *out_hdr,
+                  void *completion_context)
 {
+    struct fuser *f = user_data;
+
     struct inode *ip = ino_to_inodeptr(f, in_hdr->nodeid);
     if (!ip) {
         out_hdr->error = -EINVAL;
@@ -845,11 +905,11 @@ int fuser_mirror_unlink(struct fuse_session *se, struct fuser *f,
     return 0;
 }
 
-int fuser_mirror_flush(struct fuser *f,
-               struct fuse_in_header *in_hdr, struct fuse_out_header *out_hdr,
-               struct fuse_file_info fi)
+int fuser_mirror_flush(struct fuse_session *se, void *user_data,
+               struct fuse_in_header *in_hdr, struct fuse_file_info fi,
+               struct fuse_out_header *out_hdr,
+               void *completion_context)
 {
-    (void) f;
     (void) in_hdr;
 
     int res = close(dup(fi.fh));
@@ -859,11 +919,13 @@ int fuser_mirror_flush(struct fuser *f,
     return 0;
 }
 
-int fuser_mirror_flock(struct fuser *f, struct fuse_in_header *in_hdr,
-                struct fuse_out_header *out_hdr, struct fuse_file_info fi, int op)
+int fuser_mirror_flock(struct fuse_session *se, void *user_data,
+                struct fuse_in_header *in_hdr, struct fuse_file_info fi, int op,
+                struct fuse_out_header *out_hdr,
+                void *completion_context)
 {
-    (void) f;
     (void) in_hdr;
+
     int res = flock(fi.fh, op);
 
     if (res == -1)
@@ -871,9 +933,10 @@ int fuser_mirror_flock(struct fuser *f, struct fuse_in_header *in_hdr,
     return 0;
 }
 
-int fuser_mirror_fallocate(struct fuse_session *se, struct fuser *f,
+int fuser_mirror_fallocate(struct fuse_session *se, void *user_data,
                         struct fuse_in_header *in_hdr, struct fuse_fallocate_in *in_fallocate,
-                      struct fuse_out_header *out_hdr)
+                      struct fuse_out_header *out_hdr,
+                      void *completion_context)
 {
     int res = fallocate64(in_fallocate->fh, in_fallocate->mode, in_fallocate->offset, in_fallocate->length);
 
@@ -884,32 +947,32 @@ int fuser_mirror_fallocate(struct fuse_session *se, struct fuser *f,
 
 void fuser_mirror_assign_ops(struct fuse_ll_operations *ops) {
     memset(ops, 0, sizeof(*ops));
-    ops->init = (typeof(ops->init)) fuser_mirror_init;
+    ops->init = fuser_mirror_init;
     //ops->destroy = fuser_mirror_destroy;
-    ops->getattr = (typeof(ops->getattr)) fuser_mirror_getattr;
-    ops->lookup = (typeof(ops->lookup)) fuser_mirror_lookup;
-    ops->setattr = (typeof(ops->setattr)) fuser_mirror_setattr;
-    ops->opendir = (typeof(ops->opendir)) fuser_mirror_opendir;
-    ops->releasedir = (typeof(ops->releasedir)) fuser_mirror_releasedir;
-    ops->readdir = (typeof(ops->readdir)) fuser_mirror_readdir;
-    ops->open = (typeof(ops->open)) fuser_mirror_open;
-    ops->release = (typeof(ops->release)) fuser_mirror_release;
-    ops->fsync = (typeof(ops->fsync)) fuser_mirror_fsync;
-    ops->fsyncdir = (typeof(ops->fsyncdir)) fuser_mirror_fsyncdir;
-    ops->create = (typeof(ops->create)) fuser_mirror_create;
-    ops->rmdir = (typeof(ops->rmdir)) fuser_mirror_rmdir;
-    ops->forget = (typeof(ops->forget)) fuser_mirror_forget;
-    ops->batch_forget = (typeof(ops->batch_forget)) fuser_mirror_batch_forget;
-    ops->rename = (typeof(ops->rename)) fuser_mirror_rename;
-    ops->read = (typeof(ops->read)) fuser_mirror_read;
-    ops->write = (typeof(ops->write)) fuser_mirror_write;
-    ops->mknod = (typeof(ops->mknod)) fuser_mirror_mknod;
-    ops->mkdir = (typeof(ops->mkdir)) fuser_mirror_mkdir;
-    ops->symlink = (typeof(ops->symlink)) fuser_mirror_symlink;
-    ops->statfs = (typeof(ops->statfs)) fuser_mirror_statfs;
-    ops->unlink = (typeof(ops->unlink)) fuser_mirror_unlink;
-    ops->flock = (typeof(ops->flock)) fuser_mirror_flock;
-    ops->flush = (typeof(ops->flush)) fuser_mirror_flush;
-    ops->fallocate = (typeof(ops->fallocate)) fuser_mirror_fallocate;
+    ops->getattr = fuser_mirror_getattr;
+    ops->lookup = fuser_mirror_lookup;
+    //ops->setattr = fuser_mirror_setattr;
+    //ops->opendir = fuser_mirror_opendir;
+    //ops->releasedir = fuser_mirror_releasedir;
+    //ops->readdir = fuser_mirror_readdir;
+    ops->open = fuser_mirror_open;
+    ops->release = fuser_mirror_release;
+    ops->fsync = fuser_mirror_fsync;
+    //ops->fsyncdir = fuser_mirror_fsyncdir;
+    //ops->create = fuser_mirror_create;
+    //ops->rmdir = fuser_mirror_rmdir;
+    //ops->forget = fuser_mirror_forget;
+    //ops->batch_forget = fuser_mirror_batch_forget;
+    //ops->rename = fuser_mirror_rename;
+    ops->read = fuser_mirror_read;
+    ops->write = fuser_mirror_write;
+    //ops->mknod = fuser_mirror_mknod;
+    //ops->mkdir = fuser_mirror_mkdir;
+    //ops->symlink = fuser_mirror_symlink;
+    //ops->statfs = fuser_mirror_statfs;
+    //ops->unlink = fuser_mirror_unlink;
+    //ops->flock = fuser_mirror_flock;
+    //ops->flush = fuser_mirror_flush;
+    //ops->fallocate = fuser_mirror_fallocate;
 }
 
