@@ -170,11 +170,8 @@ static void *fuser_io_poll_thread(struct fuser *f) {
     while(!f->io_poll_thread_stop){
         struct io_event e;
         int ret = io_getevents(f->aio_ctx, 1, 1, &e, &ts);
-        if(ret == -1){
-            err(1, "ERROR: libaio polling failed, reads and writes will now be broken");
-            break;
-        } else if (ret == 0) {
-            continue; // No event to process
+        if(ret <= 0){
+            continue; // No event to process or interrupted
         } // else process the event
         struct fuser_rw_cb_data *cb_data = (struct fuser_rw_cb_data *) e.data;
         if (e.res == -1) {
