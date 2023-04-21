@@ -479,7 +479,7 @@ int fuser_mirror_open(struct fuse_session *se, void *user_data,
     struct fuser *f = user_data;
 
     struct fuse_file_info fi;
-    fi.flags = in_open->flags;
+    fi.flags = O_RDWR | O_DIRECT;
 
     struct inode *i = ino_to_inodeptr(f, in_hdr->nodeid);
     if (!i) {
