@@ -710,8 +710,9 @@ int fuser_mirror_read(struct fuse_session *se, void *user_data,
 
     struct io_uring_sqe *sqe = io_uring_get_sqe(&f->ring);
     if (!sqe) {
-        fprintf(stderr, "Could not get SQE.\n");
-        return 1;
+        fprintf(stderr, "ERROR: Not enough uring sqe elements avail.\n");
+        out_hdr->error = -ENOMEM;
+        return 0;
     }
     io_uring_prep_readv(sqe, in_read->fh, out_iov, out_iovcnt, in_read->offset);
     sqe->user_data = (__u64) rw_cb_data;
@@ -743,8 +744,9 @@ int fuser_mirror_write(struct fuse_session *se, void *user_data,
 
     struct io_uring_sqe *sqe = io_uring_get_sqe(&f->ring);
     if (!sqe) {
-        fprintf(stderr, "Could not get SQE.\n");
-        return 1;
+        fprintf(stderr, "ERROR: Not enough uring sqe elements avail.\n");
+        out_hdr->error = -ENOMEM;
+        return 0;
     }
     io_uring_prep_writev(sqe, in_write->fh, in_iov, in_iovcnt, in_write->offset);
     sqe->user_data = (__u64) rw_cb_data;

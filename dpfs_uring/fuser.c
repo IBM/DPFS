@@ -176,7 +176,7 @@ static void *fuser_io_poll_thread(struct fuser *f) {
         } // else process the event
         struct fuser_rw_cb_data *cb_data = (struct fuser_rw_cb_data *) cqe->user_data;
         if (cqe->res < 0) {
-            cb_data->out_hdr->error = ret;
+            cb_data->out_hdr->error = cqe->res;
             dpfs_hal_async_complete(cb_data->completion_context, DPFS_HAL_COMPLETION_SUCCES);
         }
 
@@ -189,6 +189,7 @@ static void *fuser_io_poll_thread(struct fuser *f) {
             dpfs_hal_async_complete(cb_data->completion_context, DPFS_HAL_COMPLETION_SUCCES);
         }
 
+        io_uring_cqe_seen(&f->ring, cqe);
         mpool_free(f->cb_data_pool, cb_data);
     }
     return NULL;
