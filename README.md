@@ -55,4 +55,4 @@ There are now DPUs comming out on the market that have support for hardware-acce
 We are using the Nvidia BlueField-2 which has support for virtio-fs emulation using Nvidia SNAP (Currently only available as a limited technical feature preview).
 
 ## :switzerland: Hybrid Cloud / Infrastructure Software group at IBM Research Zurich
-For contact about DPFS and the research we are conducting please reach out to: Peter.Jan.Gootzen @t ibm d0t c0m. If you are a DPU-vendor looking into support file system offloading on your DPU, we would be happy to help with porting DPFS to your hardware.
+For contact about DPFS and the research we are conducting please reach out to: Peter.Jan.Gootzen at ibm d0t c0m. If you are a DPU-vendor looking into support file system offloading on your DPU, we would be happy to help with porting DPFS to your hardware.
