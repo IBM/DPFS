@@ -163,7 +163,12 @@ static void maximize_fd_limit() {
 static void *fuser_io_poll_thread(struct fuser *f) {
     while(!f->io_poll_thread_stop){
         struct io_uring_cqe *cqe;
-        int ret = io_uring_peek_cqe(&f->ring, &cqe);
+        int ret;
+        if (f->cq_polling)
+             ret = io_uring_peek_cqe(&f->ring, &cqe);
+        else
+             ret = io_uring_wait_cqe(&f->ring, &cqe);
+
         if(ret == -EAGAIN){
             continue; // No event to process
         } else if(ret != 0) {
@@ -190,7 +195,8 @@ static void *fuser_io_poll_thread(struct fuser *f) {
 }
 
 // todo proper error handling
-int fuser_main(bool debug, char *source, bool cached, const char *conf_path) {
+int fuser_main(bool debug, char *source, bool cached, const char *conf_path,
+        bool cq_polling, bool sq_polling) {
     struct fuser *f = calloc(1, sizeof(struct fuser));
     if (f == NULL)
         err(1, "ERROR: Could not allocate memory for struct fuser");
@@ -229,8 +235,14 @@ int fuser_main(bool debug, char *source, bool cached, const char *conf_path) {
     struct io_uring_params params;
 
     memset(&params, 0, sizeof(params));
-    params.flags |= IORING_SETUP_SQPOLL;
-    params.sq_thread_idle = 2000;
+    f->cq_polling = cq_polling;
+    if (f->cq_polling) {
+        params.flags |= IORING_SETUP_IOPOLL;
+    }
+    if (sq_polling) {
+        params.flags |= IORING_SETUP_SQPOLL;
+        params.sq_thread_idle = 2000;
+    }
 
     ret = io_uring_queue_init_params(512, &f->ring, &params);
     if (ret) {

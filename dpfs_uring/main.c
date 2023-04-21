@@ -77,12 +77,22 @@ int main(int argc, char **argv)
     }
     toml_datum_t cached = toml_bool_in(local_mirror_conf, "cached");
     if (!cached.ok) {
-        fprintf(stderr, "You must supply `cached` under [local_mirror]\n");
+        fprintf(stderr, "You must supply a bool `cached` under [local_mirror]\n");
+        return -1;
+    }
+    toml_datum_t io_polling = toml_bool_in(local_mirror_conf, "uring_io_polling");
+    if (!io_polling.ok) {
+        fprintf(stderr, "You must supply a bool `uring_io_polling` under [local_mirror]\n");
+        return -1;
+    }
+    toml_datum_t sq_polling = toml_bool_in(local_mirror_conf, "uring_sq_polling");
+    if (!sq_polling.ok) {
+        fprintf(stderr, "You must supply a bool `uring_sq_polling` under [local_mirror]\n");
         return -1;
     }
 
     printf("dpfs_uring starting up!\n");
     printf("Mirroring %s\n", rp);
 
-    fuser_main(false, rp, cached.u.b, conf_path);
+    fuser_main(false, rp, cached.u.b, conf_path, io_polling.u.b, sq_polling.u.b);
 }

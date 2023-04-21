@@ -75,6 +75,7 @@ struct fuser {
 
     volatile bool io_poll_thread_stop;
     struct io_uring ring;
+    bool cq_polling;
     struct mpool *cb_data_pool;
 };
 
@@ -82,6 +83,7 @@ struct inode *ino_to_inodeptr(struct fuser *, fuse_ino_t);
 int ino_to_fd(struct fuser *, fuse_ino_t);
 
 int fuser_main(bool debug, char *source, bool cached,
-               const char *conf_path);
+               const char *conf_path, bool cq_polling,
+               bool sq_polling);
 
 #endif // FUSER_H

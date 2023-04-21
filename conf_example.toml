@@ -40,3 +40,9 @@ ramcloud_coordinator = "PLACEHOLDER"
 [local_mirror]
 dir = "/mnt/shared"
 cached = false
+# Enables userspace polling on the completion queue
+# This causes high CPU usage!
+uring_cq_polling = true
+# Enables kernel polling on the submission queue
+# This causes high CPU usage!
+uring_sq_polling = true
