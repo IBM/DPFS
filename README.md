@@ -9,8 +9,8 @@ With DPFS the complete file system implementation runs on the CPU complex of the
 ![DPU virtio-fs architecture diagram](arch.png "DPFS architecture diagram")
 ## Modules
 ### `dpfs_hal`
-Front-end and hardware abstraction layer for the virtio-fs emulation layer of the DPU hardware. Currently only supports Nvidia SNAP with the Nvidia BlueField-2.
-Nvidia SNAP is a closed source project
+Front-end and hardware abstraction layer for the virtio-fs emulation layer of the DPU hardware. Currently only the Nvidia BlueField-2, support for other vendors is in the works. We have worked together with other DPU vendors to make sure our framework architecture/API is compatible with future virtio-fs support for other DPUs.
+The Nvidia SNAP library is closed source and does require some patching to fully expose the functionality needed for a DPU-powered file system implementation. We cannot publicly release these patches, but if you have access to Nvidia SNAP you can reach out to us for the patches.
 ### `dpfs_fuse`
 Provides a lowlevel FUSE API (close-ish compatible fork of `libfuse/fuse_lowlevel.h`) over the raw buffers that DPUlib provides the user, using `dpfs_hal`. If you are building a DPU file system, use this library.
 ### `dpfs_aio`
@@ -28,7 +28,7 @@ Standalone program to find out which RDMA devices have emulation capabilities
 
 # Usage
 The Nvidia SNAP library that is needed to run on BlueField-2 (only DPU currently supported) is closed source and does require a patch to enable asynchronous request completion.
-Using `virtio-fs` in SNAP is currently only possible with a special limited technical feature preview firmware. You can reach out to us on how to integrate DPFS and SNAP.
+Using `virtio-fs` in SNAP is currently only possible with a prototype firmware and some alterations to the SNAP library. You can reach out to us on how to integrate DPFS and SNAP.
 
 With the above in mind, the rough steps needed to run DPFS on the BlueField-2:
 * Patch SNAP to support asynchronous completion of virtio-fs requests (needs to be concurrency-safe)
