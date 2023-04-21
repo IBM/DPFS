@@ -81,7 +81,7 @@ int main(int argc, char **argv)
         return -1;
     }
 
-    printf("virtiofuser starting up!\n");
+    printf("dpfs_aio starting up!\n");
     printf("Mirroring %s\n", rp);
 
     fuser_main(false, rp, cached.u.b, conf_path);

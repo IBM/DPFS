@@ -377,8 +377,6 @@ static int fuse_lookup(struct fuse_session *se, RamCloudUserData *userData,
                        struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry,
                        void *completion_context)
 {
-    // printf("lookup: name = %s\n", in_name);
-
     new AsyncLookupOp{*userData, fnv1a_hash(in_name), se, out_hdr, out_entry, completion_context};
 
     return EWOULDBLOCK;
@@ -391,11 +389,8 @@ static int fuse_getattr(struct fuse_session *se, RamCloudUserData *userData,
 {
     struct stat st;
 
-    // printf("getattr\n");
-
     /* root directory */
     if (in_hdr->nodeid == 1) {
-        // printf("getattr root");
         st.st_dev = 0;         /* ID of device containing file */
         st.st_ino = 1;         /* Inode number */
         st.st_mode = S_IFDIR;  /* File type and mode */
@@ -412,8 +407,6 @@ static int fuse_getattr(struct fuse_session *se, RamCloudUserData *userData,
         // st.st_ctim;  /* Time of last status change */
         return fuse_ll_reply_attr(se, out_hdr, out_attr, &st, 1);
     } else {
-        // printf("getattr key");
-
         new AsyncGetAttrOp{*userData, in_hdr->nodeid, se, out_hdr, out_attr, completion_context};
         return EWOULDBLOCK;
     }
@@ -436,8 +429,6 @@ static int fuse_statfs(struct fuse_session *se, RamCloudUserData *userData,
     stbuf.f_fsid = 1;     /* Filesystem ID */
     stbuf.f_flag = 0;     /* Mount flags */
     stbuf.f_namemax = MAX_FILE_NAME;  /* Maximum filename length */
-
-    // printf("statfs\n");
 
     return fuse_ll_reply_statfs(se, out_hdr, out_statfs, &stbuf);
 }
@@ -500,8 +491,6 @@ static int fuse_mknod(struct fuse_session *se, RamCloudUserData *userData,
                       struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry,
                       void *completion_context)
 {
-    // printf("mknod\n");
-
     if (in_hdr->nodeid != 1) {
         /* we don't support directories so anything other than root nodeid should not happen!? */
         fprintf(stderr, "[ERROR] mknod: invalid inode id\n");
@@ -557,6 +546,7 @@ static int fuse_write(struct fuse_session *se, RamCloudUserData *userData,
                       struct fuse_out_header *out_hdr, struct fuse_write_out *out_write,
                       void *completion_context)
 {
+    // The ramcloud backend only allows for complete file writes
     if (in_write->offset != 0) {
         fprintf(stderr, "[ERROR] write: offset != 0\n");
         out_hdr->error = -EINVAL;

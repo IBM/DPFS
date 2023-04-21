@@ -1,6 +1,6 @@
 /*
 #
-# Copyright 2022- IBM Inc. All rights reserved
+# Copyright 2023- IBM Inc. All rights reserved
 # SPDX-License-Identifier: LGPL-2.1-or-later
 #
 */
@@ -26,8 +26,6 @@ struct fuser_rw_cb_data {
         } write;
     } rw;
 };
-
-
 
 void fuser_mirror_assign_ops(struct fuse_ll_operations *);
 
