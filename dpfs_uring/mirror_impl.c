@@ -715,8 +715,8 @@ int fuser_mirror_read(struct fuse_session *se, void *user_data,
         return 0;
     }
     io_uring_prep_readv(sqe, in_read->fh, out_iov, out_iovcnt, in_read->offset);
-    sqe->user_data = (__u64) rw_cb_data;
-    sqe->flags = IOSQE_ASYNC;
+    io_uring_sqe_set_data(sqe, rw_cb_data);
+    // IOSQE_ASYNC doesn't work on file systems
 
     int res = io_uring_submit(&f->ring);
     if (res < 0) {
@@ -749,8 +749,8 @@ int fuser_mirror_write(struct fuse_session *se, void *user_data,
         return 0;
     }
     io_uring_prep_writev(sqe, in_write->fh, in_iov, in_iovcnt, in_write->offset);
-    sqe->user_data = (__u64) rw_cb_data;
-    sqe->flags = IOSQE_ASYNC;
+    io_uring_sqe_set_data(sqe, rw_cb_data);
+    // IOSQE_ASYNC doesn't work on file systems
 
     int res = io_uring_submit(&f->ring);
     if (res < 0) {

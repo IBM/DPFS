@@ -169,12 +169,15 @@ static void *fuser_io_poll_thread(struct fuser *f) {
         else
              ret = io_uring_wait_cqe(&f->ring, &cqe);
 
-        if(ret == -EAGAIN){
+        if(ret == -EAGAIN || ret == -EINTR){
             continue; // No event to process
         } else if(ret != 0) {
-            // Error
+            fprintf(stderr, "ERROR: uring cqe peek/wait ret = %d\n", ret);
+            fprintf(stderr, "ERROR: stopping uring cqe polling\n");
+            return NULL;
         } // else process the event
-        struct fuser_rw_cb_data *cb_data = (struct fuser_rw_cb_data *) cqe->user_data;
+
+        struct fuser_rw_cb_data *cb_data = io_uring_cqe_get_data(cqe);
         if (cqe->res < 0) {
             cb_data->out_hdr->error = cqe->res;
             dpfs_hal_async_complete(cb_data->completion_context, DPFS_HAL_COMPLETION_SUCCES);
@@ -238,7 +241,7 @@ int fuser_main(bool debug, char *source, bool cached, const char *conf_path,
     memset(&params, 0, sizeof(params));
     f->cq_polling = cq_polling;
     if (f->cq_polling) {
-        params.flags |= IORING_SETUP_IOPOLL;
+        //params.flags |= IORING_SETUP_IOPOLL;
     }
     if (sq_polling) {
         params.flags |= IORING_SETUP_SQPOLL;
