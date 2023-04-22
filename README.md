@@ -3,6 +3,10 @@ The DPFS framework allows Cloud and datacenter operators to provide virtualized 
 With DPFS the complete file system implementation runs on the CPU complex of the DPU. Tenants consume the file system through the `virtio-fs` device that the DPU exposes over PCIe (multi-tenancy via SR-IOV).
 DPFS provides a hardware abstraction layer, FUSE API implementation and several file system implementations.
 
+## Research Publications
+* Our paper has been accepted at [ACM SYSTOR '23](https://www.systor.org/2023/), preprint comming soon!
+* We have presented this work at the OpenFabrics Alliance Workshop '23 ([slidedeck](https://www.openfabrics.org/wp-content/uploads/2023-workshop/2023-workshop-presentations/day-3/303_PGootzen.pdf), [presentation recording](https://youtu.be/2cTxELxCG_g))
+
 
 # Design and implementation
 ![DPU virtio-fs architecture diagram](arch.png "DPFS architecture diagram")
