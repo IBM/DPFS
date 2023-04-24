@@ -132,6 +132,8 @@ static void fuser_mirror_getattr_cb(struct fuser_cb_data *cb_data, struct io_uri
         cb_data->out_hdr->error = cqe->res;
     }
     fuse_ll_reply_attrx(cb_data->se, cb_data->out_hdr, cb_data->getattr.out_attr, &cb_data->getattr.s, cb_data->f->timeout);
+
+    dpfs_hal_async_complete(cb_data->completion_context, DPFS_HAL_COMPLETION_SUCCES);
 }
 
 int fuser_mirror_getattr(struct fuse_session *se, void *user_data,
