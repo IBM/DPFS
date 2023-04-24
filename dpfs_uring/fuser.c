@@ -181,13 +181,17 @@ static void maximize_fd_limit() {
 }
 
 static void *fuser_io_poll_thread(struct fuser *f) {
+    struct __kernel_timespec ts = {
+        .tv_sec = 1,
+        .tv_nsec = 0,
+    };
     while(!f->io_poll_thread_stop){
         struct io_uring_cqe *cqe;
         int ret;
         if (f->cq_polling)
              ret = io_uring_peek_cqe(&f->ring, &cqe);
         else
-             ret = io_uring_wait_cqe(&f->ring, &cqe);
+             ret = io_uring_wait_cqe_timeout(&f->ring, &cqe, &ts);
 
         if(ret == -EAGAIN || ret == -EINTR){
             continue; // No event to process
