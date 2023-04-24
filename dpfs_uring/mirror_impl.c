@@ -164,6 +164,7 @@ int fuser_mirror_getattr(struct fuse_session *se, void *user_data,
         return 0;
     }
     io_uring_prep_statx(sqe, fd, "", AT_EMPTY_PATH | AT_SYMLINK_NOFOLLOW, STATX_BASIC_STATS, &cb_data->getattr.s);
+    io_uring_sqe_set_data(sqe, cb_data);
 
     int res = io_uring_submit(&f->ring);
     if (res < 0) {
@@ -623,6 +624,7 @@ static int do_fsync(struct fuse_session *se, void *user_data,
     if (fuse_flags & FUSE_FSYNC_FDATASYNC)
         flags |=  IORING_FSYNC_DATASYNC;
     io_uring_prep_fsync(sqe, fd, flags);
+    io_uring_sqe_set_data(sqe, cb_data);
 
     int res = io_uring_submit(&f->ring);
     if (res < 0) {
