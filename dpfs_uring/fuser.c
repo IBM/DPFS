@@ -41,6 +41,26 @@ void inode_destroy(struct inode *i) {
     free(i);
 }
 
+void inode_table_clear(struct inode_table *t) {
+    // Everything should be cleared already
+    for (size_t i = 0; i < t->size; i++) {
+        struct inode *next = t->array[i];
+        while (next) {
+            struct inode *i = next;
+            next = i->next;
+            fprintf(stderr, "ERROR: a inode was not released by the host before destroying the file system");
+
+            if (i->fd != -1) {
+                fprintf(stderr, ", fd was not closed");
+                close(i->fd);
+            }
+            fprintf(stderr, "\n");
+            free(i);
+        }
+        t->array[i] = NULL;
+    }
+}
+
 int inode_table_init(struct inode_table **ret_t) {
     struct inode_table *t = calloc(1, sizeof(struct inode_table));
     if (t == NULL) {
@@ -177,20 +197,9 @@ static void *fuser_io_poll_thread(struct fuser *f) {
             return NULL;
         } // else process the event
 
-        struct fuser_rw_cb_data *cb_data = io_uring_cqe_get_data(cqe);
-        if (cqe->res < 0) {
-            cb_data->out_hdr->error = cqe->res;
-            dpfs_hal_async_complete(cb_data->completion_context, DPFS_HAL_COMPLETION_SUCCES);
-        }
+        struct fuser_cb_data *cb_data = io_uring_cqe_get_data(cqe);
 
-        if (cb_data->op == FUSER_RW_CB_WRITE) {
-            cb_data->rw.write.out_write->size = cqe->res;
-            cb_data->out_hdr->len += sizeof(*cb_data->rw.write.out_write);
-            dpfs_hal_async_complete(cb_data->completion_context, DPFS_HAL_COMPLETION_SUCCES);
-        } else { // READ
-            cb_data->out_hdr->len += cqe->res;
-            dpfs_hal_async_complete(cb_data->completion_context, DPFS_HAL_COMPLETION_SUCCES);
-        }
+        cb_data->cb(cb_data, cqe);
 
         io_uring_cqe_seen(&f->ring, cqe);
         mpool_free(f->cb_data_pool, cb_data);
@@ -199,7 +208,7 @@ static void *fuser_io_poll_thread(struct fuser *f) {
 }
 
 // todo proper error handling
-int fuser_main(bool debug, char *source, bool cached, const char *conf_path,
+int fuser_main(bool debug, char *source, double metadata_timeout, const char *conf_path,
         bool cq_polling, bool sq_polling) {
     struct fuser *f = calloc(1, sizeof(struct fuser));
     if (f == NULL)
@@ -207,7 +216,7 @@ int fuser_main(bool debug, char *source, bool cached, const char *conf_path,
 
     f->debug = debug;
     f->source = strdup(source);
-    f->timeout = cached ? 84600.0 : 0; // 24 hours
+    f->timeout = metadata_timeout;
 
     struct stat s;
     int ret = lstat(f->source, &s);
@@ -257,16 +266,17 @@ int fuser_main(bool debug, char *source, bool cached, const char *conf_path,
     struct fuse_ll_operations ops;
     fuser_mirror_assign_ops(&ops);
 
-    mpool_init(&f->cb_data_pool, sizeof(struct fuser_rw_cb_data), 256);
+    mpool_init(&f->cb_data_pool, sizeof(struct fuser_cb_data), 256);
     pthread_t poll_thread;
     pthread_create(&poll_thread, NULL, (void *(*)(void *))fuser_io_poll_thread, f);
 
     dpfs_fuse_main(&ops, conf_path, f, debug);
 
     f->io_poll_thread_stop = true;
+    // TODO drain the queue first
+    io_uring_queue_exit(&f->ring);
     pthread_join(poll_thread, NULL);
     
-    io_uring_queue_exit(&f->ring);
     mpool_destroy(f->cb_data_pool);
     // destroy inode table
     free(f);

@@ -38,11 +38,13 @@ two_threads = true
 ramcloud_coordinator = "PLACEHOLDER"
 
 [local_mirror]
-dir = "/mnt/shared"
-cached = false
+dir = "/mnt/nfs_flex01"
+# If 0, then metadata cache is fully disabled
+# Value is in seconds, integers and doubles are accepted
+metadata_timeout = 84600.0
 # Enables userspace polling on the completion queue
 # This causes high CPU usage!
-uring_cq_polling = true
+uring_cq_polling = false
 # Enables kernel polling on the submission queue
 # This causes high CPU usage!
-uring_sq_polling = true
+uring_sq_polling = false

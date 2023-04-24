@@ -27,6 +27,18 @@
 #include "mirror_impl.h"
 #include "aio.h"
 
+static void fuser_mirror_generic_cb(struct fuser_cb_data *cb_data, struct io_uring_cqe *cqe)
+{
+    if (cqe->res < 0) {
+        cb_data->out_hdr->error = cqe->res;
+        dpfs_hal_async_complete(cb_data->completion_context, DPFS_HAL_COMPLETION_SUCCES);
+        return;
+    }
+
+    dpfs_hal_async_complete(cb_data->completion_context, DPFS_HAL_COMPLETION_SUCCES);
+}
+
+
 static void forget_one(struct fuser *f, fuse_ino_t ino, uint64_t n)
 {
     struct inode *i = ino_to_inodeptr(f, ino);
@@ -103,6 +115,72 @@ ret_errno:
     return 0;
 }
 
+int fuser_mirror_destroy (struct fuse_session *se, void *user_data,
+        struct fuse_in_header *in_hdr,
+        struct fuse_out_header *out_hdr,
+        void *completion_context)
+{
+    struct fuser *f = user_data;
+    inode_table_clear(f->inodes);
+
+    return 0;
+}
+
+#ifdef IORING_METADATA_SUPPORTED
+
+static void fuser_mirror_getattr_cb(struct fuser_cb_data *cb_data, struct io_uring_cqe *cqe)
+{
+    if (cqe->res < 0) {
+        cb_data->out_hdr->error = cqe->res;
+    }
+    fuse_ll_reply_attrx(cb_data->se, cb_data->out_hdr, cb_data->getattr.out_attr, &cb_data->getattr.s, cb_data->f->timeout);
+
+    dpfs_hal_async_complete(cb_data->completion_context, DPFS_HAL_COMPLETION_SUCCES);
+}
+
+int fuser_mirror_getattr(struct fuse_session *se, void *user_data,
+    struct fuse_in_header *in_hdr, struct fuse_getattr_in *in_getattr,
+    struct fuse_out_header *out_hdr, struct fuse_attr_out *out_attr,
+    void *completion_context)
+{
+    (void) in_getattr;
+    struct fuser *f = user_data;
+
+    int fd;
+    if (in_getattr->getattr_flags & FUSE_GETATTR_FH) {
+        fd = in_getattr->fh;
+    } else {
+        struct inode *i = ino_to_inodeptr(f, in_hdr->nodeid);
+        fd = i->fd;
+    }
+    struct fuser_cb_data *cb_data = mpool_alloc(f->cb_data_pool);
+    cb_data->cb = fuser_mirror_getattr_cb;
+    cb_data->f = f;
+    cb_data->se = se;
+    cb_data->out_hdr = out_hdr;
+    cb_data->getattr.out_attr = out_attr;
+    cb_data->completion_context = completion_context;
+
+    struct io_uring_sqe *sqe = io_uring_get_sqe(&f->ring);
+    if (!sqe) {
+        fprintf(stderr, "ERROR: Not enough uring sqe elements avail.\n");
+        out_hdr->error = -ENOMEM;
+        return 0;
+    }
+    io_uring_prep_statx(sqe, fd, "", AT_EMPTY_PATH | AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT, STATX_BASIC_STATS, &cb_data->getattr.s);
+    io_uring_sqe_set_data(sqe, cb_data);
+
+    int res = io_uring_submit(&f->ring);
+    if (res < 0) {
+        out_hdr->error = res;
+        return 0;
+    }
+
+    return EWOULDBLOCK; // We move async
+}
+
+#else
+
 int fuser_mirror_getattr(struct fuse_session *se, void *user_data,
     struct fuse_in_header *in_hdr, struct fuse_getattr_in *in_getattr,
     struct fuse_out_header *out_hdr, struct fuse_attr_out *out_attr,
@@ -122,6 +200,8 @@ int fuser_mirror_getattr(struct fuse_session *se, void *user_data,
     
     return fuse_ll_reply_attr(se, out_hdr, out_attr, &s, f->timeout);
 }
+
+#endif
 
 static int do_lookup(struct fuser *f, fuse_ino_t parent, const char *name,
                      struct fuse_entry_param *e) {
@@ -548,39 +628,58 @@ int fuser_mirror_release(struct fuse_session *se, void *user_data,
     return 0;
 }
 
-int fuser_mirror_fsync(struct fuse_session *se, void *user_data,
-                       struct fuse_in_header *in_hdr, struct fuse_fsync_in *in_fsync,
-                       struct fuse_out_header *out_hdr,
-                       void *completion_context)
+static int do_fsync(struct fuse_session *se, void *user_data,
+        struct fuse_in_header *in_hdr, int fd, unsigned fuse_flags,
+        struct fuse_out_header *out_hdr,
+        void *completion_context)
 {
-    int ret;
-    if (in_fsync->fsync_flags & FUSE_FSYNC_FDATASYNC)
-        ret = fdatasync(in_fsync->fh);
-    else
-        ret = fsync(in_fsync->fh);
+    struct fuser *f = user_data;
+        
+    struct fuser_cb_data *cb_data = mpool_alloc(f->cb_data_pool);
+    cb_data->cb = fuser_mirror_generic_cb;
+    cb_data->completion_context = completion_context;
+    cb_data->in_hdr = in_hdr;
+    cb_data->out_hdr = out_hdr;
 
-    if (ret == -1)
-        out_hdr->error = -errno;
-    return 0;
+    struct io_uring_sqe *sqe = io_uring_get_sqe(&f->ring);
+    if (!sqe) {
+        fprintf(stderr, "ERROR: Not enough uring sqe elements avail.\n");
+        out_hdr->error = -ENOMEM;
+        return 0;
+    }
+    unsigned flags = 0;
+    // Currently these flags have the same values, compiler will figure it out for us
+    if (fuse_flags & FUSE_FSYNC_FDATASYNC)
+        flags |=  IORING_FSYNC_DATASYNC;
+    io_uring_prep_fsync(sqe, fd, flags);
+    io_uring_sqe_set_data(sqe, cb_data);
+
+    int res = io_uring_submit(&f->ring);
+    if (res < 0) {
+        out_hdr->error = res;
+        return 0;
+    }
+
+    return EWOULDBLOCK; // We move async
+}
+
+int fuser_mirror_fsync(struct fuse_session *se, void *user_data,
+        struct fuse_in_header *in_hdr, struct fuse_fsync_in *in_fsync,
+        struct fuse_out_header *out_hdr,
+        void *completion_context)
+{
+    return do_fsync(se, user_data, in_hdr, in_fsync->fh, in_fsync->fsync_flags, out_hdr, completion_context);
 }
 
 int fuser_mirror_fsyncdir(struct fuse_session *se, void *user_data,
-                          struct fuse_in_header *in_hdr, struct fuse_fsync_in *in_fsync,
-                          struct fuse_out_header *out_hdr,
-                          void *completion_context)
+        struct fuse_in_header *in_hdr, struct fuse_fsync_in *in_fsync,
+        struct fuse_out_header *out_hdr,
+        void *completion_context)
 {
     struct directory *d = (struct directory *) in_fsync->fh;
     int fd = dirfd(d->dp);
 
-    int ret;
-    if (in_fsync->fsync_flags & FUSE_FSYNC_FDATASYNC)
-        ret = fdatasync(fd);
-    else
-        ret = fsync(fd);
-
-    if (ret == -1)
-        out_hdr->error = -errno;
-    return 0;
+    return do_fsync(se, user_data, in_hdr, fd, in_fsync->fsync_flags, out_hdr, completion_context);
 }
 
 int fuser_mirror_create(struct fuse_session *se, void *user_data,
@@ -695,18 +794,30 @@ int fuser_mirror_rename(struct fuse_session *se, void *user_data,
     return 0;
 }
 
+void fuser_mirror_read_cb(struct fuser_cb_data *cb_data, struct io_uring_cqe *cqe)
+{
+    if (cqe->res < 0) {
+        cb_data->out_hdr->error = cqe->res;
+        dpfs_hal_async_complete(cb_data->completion_context, DPFS_HAL_COMPLETION_SUCCES);
+        return;
+    }
+
+    cb_data->out_hdr->len += cqe->res;
+    dpfs_hal_async_complete(cb_data->completion_context, DPFS_HAL_COMPLETION_SUCCES);
+}
+
 int fuser_mirror_read(struct fuse_session *se, void *user_data,
-                struct fuse_in_header *in_hdr, struct fuse_read_in *in_read,
-                struct fuse_out_header *out_hdr, struct iovec *out_iov, int out_iovcnt,
-                void *completion_context)
+        struct fuse_in_header *in_hdr, struct fuse_read_in *in_read,
+        struct fuse_out_header *out_hdr, struct iovec *out_iov, int out_iovcnt,
+        void *completion_context)
 {
     struct fuser *f = user_data;
         
-    struct fuser_rw_cb_data *rw_cb_data = mpool_alloc(f->cb_data_pool);
-    rw_cb_data->op = FUSER_RW_CB_READ;
-    rw_cb_data->completion_context = completion_context;
-    rw_cb_data->in_hdr = in_hdr;
-    rw_cb_data->out_hdr = out_hdr;
+    struct fuser_cb_data *cb_data = mpool_alloc(f->cb_data_pool);
+    cb_data->cb = fuser_mirror_read_cb;
+    cb_data->completion_context = completion_context;
+    cb_data->in_hdr = in_hdr;
+    cb_data->out_hdr = out_hdr;
 
     struct io_uring_sqe *sqe = io_uring_get_sqe(&f->ring);
     if (!sqe) {
@@ -715,7 +826,7 @@ int fuser_mirror_read(struct fuse_session *se, void *user_data,
         return 0;
     }
     io_uring_prep_readv(sqe, in_read->fh, out_iov, out_iovcnt, in_read->offset);
-    io_uring_sqe_set_data(sqe, rw_cb_data);
+    io_uring_sqe_set_data(sqe, cb_data);
     // IOSQE_ASYNC doesn't work on file systems
 
     int res = io_uring_submit(&f->ring);
@@ -727,20 +838,33 @@ int fuser_mirror_read(struct fuse_session *se, void *user_data,
     return EWOULDBLOCK; // We move async
 }
 
+void fuser_mirror_write_cb(struct fuser_cb_data *cb_data, struct io_uring_cqe *cqe)
+{
+    if (cqe->res < 0) {
+        cb_data->out_hdr->error = cqe->res;
+        dpfs_hal_async_complete(cb_data->completion_context, DPFS_HAL_COMPLETION_SUCCES);
+        return;
+    }
+
+    cb_data->write.out_write->size = cqe->res;
+    cb_data->out_hdr->len += sizeof(*cb_data->write.out_write);
+    dpfs_hal_async_complete(cb_data->completion_context, DPFS_HAL_COMPLETION_SUCCES);
+}
+
 int fuser_mirror_write(struct fuse_session *se, void *user_data,
-                struct fuse_in_header *in_hdr, struct fuse_write_in *in_write,
-                struct iovec *in_iov, int in_iovcnt,
-                struct fuse_out_header *out_hdr, struct fuse_write_out *out_write,
-                void *completion_context)
+        struct fuse_in_header *in_hdr, struct fuse_write_in *in_write,
+        struct iovec *in_iov, int in_iovcnt,
+        struct fuse_out_header *out_hdr, struct fuse_write_out *out_write,
+        void *completion_context)
 {
     struct fuser *f = user_data;
         
-    struct fuser_rw_cb_data *rw_cb_data = mpool_alloc(f->cb_data_pool);
-    rw_cb_data->op = FUSER_RW_CB_WRITE;
+    struct fuser_cb_data *rw_cb_data = mpool_alloc(f->cb_data_pool);
+    rw_cb_data->cb = fuser_mirror_write_cb;
     rw_cb_data->completion_context = completion_context;
     rw_cb_data->in_hdr = in_hdr;
     rw_cb_data->out_hdr = out_hdr;
-    rw_cb_data->rw.write.out_write = out_write;
+    rw_cb_data->write.out_write = out_write;
 
     struct io_uring_sqe *sqe = io_uring_get_sqe(&f->ring);
     if (!sqe) {
@@ -953,31 +1077,31 @@ int fuser_mirror_fallocate(struct fuse_session *se, void *user_data,
 void fuser_mirror_assign_ops(struct fuse_ll_operations *ops) {
     memset(ops, 0, sizeof(*ops));
     ops->init = fuser_mirror_init;
-    //ops->destroy = fuser_mirror_destroy;
+    ops->destroy = fuser_mirror_destroy;
     ops->getattr = fuser_mirror_getattr;
     ops->lookup = fuser_mirror_lookup;
-    //ops->setattr = fuser_mirror_setattr;
-    //ops->opendir = fuser_mirror_opendir;
-    //ops->releasedir = fuser_mirror_releasedir;
-    //ops->readdir = fuser_mirror_readdir;
+    ops->setattr = fuser_mirror_setattr;
+    ops->opendir = fuser_mirror_opendir;
+    ops->releasedir = fuser_mirror_releasedir;
+    ops->readdir = fuser_mirror_readdir;
     ops->open = fuser_mirror_open;
     ops->release = fuser_mirror_release;
     ops->fsync = fuser_mirror_fsync;
-    //ops->fsyncdir = fuser_mirror_fsyncdir;
-    //ops->create = fuser_mirror_create;
-    //ops->rmdir = fuser_mirror_rmdir;
-    //ops->forget = fuser_mirror_forget;
-    //ops->batch_forget = fuser_mirror_batch_forget;
-    //ops->rename = fuser_mirror_rename;
+    ops->fsyncdir = fuser_mirror_fsyncdir;
+    ops->create = fuser_mirror_create;
+    ops->rmdir = fuser_mirror_rmdir;
+    ops->forget = fuser_mirror_forget;
+    ops->batch_forget = fuser_mirror_batch_forget;
+    ops->rename = fuser_mirror_rename;
     ops->read = fuser_mirror_read;
     ops->write = fuser_mirror_write;
-    //ops->mknod = fuser_mirror_mknod;
-    //ops->mkdir = fuser_mirror_mkdir;
-    //ops->symlink = fuser_mirror_symlink;
-    //ops->statfs = fuser_mirror_statfs;
-    //ops->unlink = fuser_mirror_unlink;
-    //ops->flock = fuser_mirror_flock;
-    //ops->flush = fuser_mirror_flush;
-    //ops->fallocate = fuser_mirror_fallocate;
+    ops->mknod = fuser_mirror_mknod;
+    ops->mkdir = fuser_mirror_mkdir;
+    ops->symlink = fuser_mirror_symlink;
+    ops->statfs = fuser_mirror_statfs;
+    ops->unlink = fuser_mirror_unlink;
+    ops->flock = fuser_mirror_flock;
+    ops->flush = fuser_mirror_flush;
+    ops->fallocate = fuser_mirror_fallocate;
 }
 

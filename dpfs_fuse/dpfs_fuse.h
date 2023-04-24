@@ -16,6 +16,7 @@
 #include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <linux/fuse.h>
+#include <linux/stat.h>
 #include <string.h>
 #include "dpfs/hal.h"
 #include "common.h"
@@ -134,7 +135,8 @@ size_t iov_write_buf(struct iov*, void *, size_t);
 unsigned int calc_timeout_nsec(double);
 unsigned long calc_timeout_sec(double);
 
-int fuse_ll_reply_attr(struct fuse_session *se, struct fuse_out_header *, struct fuse_attr_out *, struct stat *, double attr_timeout);
+int fuse_ll_reply_attr(struct fuse_session *, struct fuse_out_header *, struct fuse_attr_out *, struct stat *, double attr_timeout);
+int fuse_ll_reply_attrx(struct fuse_session *, struct fuse_out_header *, struct fuse_attr_out *, struct statx *, double attr_timeout);
 int fuse_ll_reply_entry(struct fuse_session *se, struct fuse_out_header *, struct fuse_entry_out *, struct fuse_entry_param *);
 int fuse_ll_reply_open(struct fuse_session *se, struct fuse_out_header *out_hdr, struct fuse_open_out *out_open, struct fuse_file_info *fi);
 int fuse_ll_reply_create(struct fuse_session *se, struct fuse_out_header *out_hdr,
