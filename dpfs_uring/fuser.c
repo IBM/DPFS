@@ -41,6 +41,26 @@ void inode_destroy(struct inode *i) {
     free(i);
 }
 
+void inode_table_clear(struct inode_table *t) {
+    // Everything should be cleared already
+    for (size_t i = 0; i < t->size; i++) {
+        struct inode *next = t->array[i];
+        while (next) {
+            struct inode *i = next;
+            next = i->next;
+            fprintf(stderr, "ERROR: a inode was not released by the host before destroying the file system");
+
+            if (i->fd != -1) {
+                fprintf(stderr, ", fd was not closed");
+                close(i->fd);
+            }
+            fprintf(stderr, "\n");
+            free(i);
+        }
+        t->array[i] = NULL;
+    }
+}
+
 int inode_table_init(struct inode_table **ret_t) {
     struct inode_table *t = calloc(1, sizeof(struct inode_table));
     if (t == NULL) {

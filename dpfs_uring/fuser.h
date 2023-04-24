@@ -54,6 +54,7 @@ struct inode *inode_table_getsert(struct inode_table *, fuse_ino_t);
 void inode_table_insert(struct inode_table *, struct inode *);
 struct inode *inode_table_remove(struct inode_table *, fuse_ino_t);
 bool inode_table_erase(struct inode_table *, fuse_ino_t);
+void inode_table_clear(struct inode_table *t);
 
 struct directory {
     DIR *dp;

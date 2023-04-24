@@ -103,6 +103,17 @@ ret_errno:
     return 0;
 }
 
+int fuser_mirror_destroy (struct fuse_session *se, void *user_data,
+        struct fuse_in_header *in_hdr,
+        struct fuse_out_header *out_hdr,
+        void *completion_context)
+{
+    struct fuser *f = user_data;
+    inode_table_clear(f->inodes);
+
+    return 0;
+}
+
 int fuser_mirror_getattr(struct fuse_session *se, void *user_data,
     struct fuse_in_header *in_hdr, struct fuse_getattr_in *in_getattr,
     struct fuse_out_header *out_hdr, struct fuse_attr_out *out_attr,
@@ -953,31 +964,31 @@ int fuser_mirror_fallocate(struct fuse_session *se, void *user_data,
 void fuser_mirror_assign_ops(struct fuse_ll_operations *ops) {
     memset(ops, 0, sizeof(*ops));
     ops->init = fuser_mirror_init;
-    //ops->destroy = fuser_mirror_destroy;
+    ops->destroy = fuser_mirror_destroy;
     ops->getattr = fuser_mirror_getattr;
     ops->lookup = fuser_mirror_lookup;
-    //ops->setattr = fuser_mirror_setattr;
-    //ops->opendir = fuser_mirror_opendir;
-    //ops->releasedir = fuser_mirror_releasedir;
-    //ops->readdir = fuser_mirror_readdir;
+    ops->setattr = fuser_mirror_setattr;
+    ops->opendir = fuser_mirror_opendir;
+    ops->releasedir = fuser_mirror_releasedir;
+    ops->readdir = fuser_mirror_readdir;
     ops->open = fuser_mirror_open;
     ops->release = fuser_mirror_release;
     ops->fsync = fuser_mirror_fsync;
-    //ops->fsyncdir = fuser_mirror_fsyncdir;
-    //ops->create = fuser_mirror_create;
-    //ops->rmdir = fuser_mirror_rmdir;
-    //ops->forget = fuser_mirror_forget;
-    //ops->batch_forget = fuser_mirror_batch_forget;
-    //ops->rename = fuser_mirror_rename;
+    ops->fsyncdir = fuser_mirror_fsyncdir;
+    ops->create = fuser_mirror_create;
+    ops->rmdir = fuser_mirror_rmdir;
+    ops->forget = fuser_mirror_forget;
+    ops->batch_forget = fuser_mirror_batch_forget;
+    ops->rename = fuser_mirror_rename;
     ops->read = fuser_mirror_read;
     ops->write = fuser_mirror_write;
-    //ops->mknod = fuser_mirror_mknod;
-    //ops->mkdir = fuser_mirror_mkdir;
-    //ops->symlink = fuser_mirror_symlink;
-    //ops->statfs = fuser_mirror_statfs;
-    //ops->unlink = fuser_mirror_unlink;
-    //ops->flock = fuser_mirror_flock;
-    //ops->flush = fuser_mirror_flush;
-    //ops->fallocate = fuser_mirror_fallocate;
+    ops->mknod = fuser_mirror_mknod;
+    ops->mkdir = fuser_mirror_mkdir;
+    ops->symlink = fuser_mirror_symlink;
+    ops->statfs = fuser_mirror_statfs;
+    ops->unlink = fuser_mirror_unlink;
+    ops->flock = fuser_mirror_flock;
+    ops->flush = fuser_mirror_flush;
+    ops->fallocate = fuser_mirror_fallocate;
 }
 
