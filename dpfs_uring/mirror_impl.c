@@ -154,6 +154,7 @@ int fuser_mirror_getattr(struct fuse_session *se, void *user_data,
     cb_data->f = f;
     cb_data->se = se;
     cb_data->out_hdr = out_hdr;
+    cb_data->getattr.out_attr = out_attr;
     cb_data->completion_context = completion_context;
 
     struct io_uring_sqe *sqe = io_uring_get_sqe(&f->ring);
@@ -598,7 +599,7 @@ int fuser_mirror_release(struct fuse_session *se, void *user_data,
     return 0;
 }
 
-static int do_fsync (struct fuse_session *se, void *user_data,
+static int do_fsync(struct fuse_session *se, void *user_data,
         struct fuse_in_header *in_hdr, int fd, unsigned fuse_flags,
         struct fuse_out_header *out_hdr,
         void *completion_context)
@@ -618,6 +619,7 @@ static int do_fsync (struct fuse_session *se, void *user_data,
         return 0;
     }
     unsigned flags = 0;
+    // Currently these flags have the same values, compiler will figure it out for us
     if (fuse_flags & FUSE_FSYNC_FDATASYNC)
         flags |=  IORING_FSYNC_DATASYNC;
     io_uring_prep_fsync(sqe, fd, flags);
