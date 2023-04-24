@@ -58,6 +58,13 @@ struct fuse_ll {
     bool debug;
 };
 
+#define ST_ATIM_NSEC(stbuf) ((stbuf)->st_atim.tv_nsec)
+#define ST_CTIM_NSEC(stbuf) ((stbuf)->st_ctim.tv_nsec)
+#define ST_MTIM_NSEC(stbuf) ((stbuf)->st_mtim.tv_nsec)
+#define ST_ATIM_NSEC_SET(stbuf, val) (stbuf)->st_atim.tv_nsec = (val)
+#define ST_CTIM_NSEC_SET(stbuf, val) (stbuf)->st_ctim.tv_nsec = (val)
+#define ST_MTIM_NSEC_SET(stbuf, val) (stbuf)->st_mtim.tv_nsec = (val)
+
 static void convert_stat(const struct stat *stbuf, struct fuse_attr *attr)
 {
     attr->ino	= stbuf->st_ino;
@@ -75,10 +82,24 @@ static void convert_stat(const struct stat *stbuf, struct fuse_attr *attr)
     attr->atimensec = 0;
     attr->mtimensec = 0;
     attr->ctimensec = 0;
-
-    //attr->atimensec = ST_ATIM_NSEC(stbuf);
-    //attr->mtimensec = ST_MTIM_NSEC(stbuf);
-    //attr->ctimensec = ST_CTIM_NSEC(stbuf);
+}
+static void convert_statx(const struct statx *stbuf, struct fuse_attr *attr)
+{
+    attr->ino	= stbuf->stx_ino;
+    attr->mode	= stbuf->stx_mode;
+    attr->nlink	= stbuf->stx_nlink;
+    attr->uid	= stbuf->stx_uid;
+    attr->gid	= stbuf->stx_gid;
+    attr->rdev	= stbuf->stx_rdev_major;
+    attr->size	= stbuf->stx_size;
+    attr->blksize	= stbuf->stx_blksize;
+    attr->blocks	= stbuf->stx_blocks;
+    attr->atime	= stbuf->stx_atime.tv_sec;
+    attr->mtime	= stbuf->stx_mtime.tv_sec;
+    attr->ctime	= stbuf->stx_ctime.tv_sec;
+    attr->atimensec = 0;
+    attr->mtimensec = 0;
+    attr->ctimensec = 0;
 }
 
 static void convert_attr(const struct fuse_setattr_in *attr, struct stat *stbuf)
@@ -93,10 +114,6 @@ static void convert_attr(const struct fuse_setattr_in *attr, struct stat *stbuf)
     stbuf->st_atim.tv_nsec = 0;
     stbuf->st_mtim.tv_nsec = 0;
     stbuf->st_ctim.tv_nsec = 0;
-
-    //ST_ATIM_NSEC_SET(stbuf, attr->atimensec);
-    //ST_MTIM_NSEC_SET(stbuf, attr->mtimensec);
-    //ST_CTIM_NSEC_SET(stbuf, attr->ctimensec);
 }
 
 static void convert_statfs(const struct statvfs *stbuf,
@@ -163,6 +180,19 @@ unsigned int calc_timeout_nsec(double t)
         return 999999999;
     else
         return (unsigned int) (f * 1.0e9);
+}
+
+int fuse_ll_reply_attrx(struct fuse_session *se, struct fuse_out_header *out_hdr, struct fuse_attr_out *out_attr, struct statx *s, double attr_timeout) {
+    size_t size = se->conn.proto_minor < 9 ?
+        FUSE_COMPAT_ATTR_OUT_SIZE : sizeof(*out_attr);
+
+    memset(out_attr, 0, sizeof(*out_attr));
+    out_attr->attr_valid = calc_timeout_sec(attr_timeout);
+    out_attr->attr_valid_nsec = calc_timeout_nsec(attr_timeout);
+    convert_statx(s, &out_attr->attr);
+
+    out_hdr->len += size;
+    return 0;
 }
 
 int fuse_ll_reply_attr(struct fuse_session *se, struct fuse_out_header *out_hdr, struct fuse_attr_out *out_attr, struct stat *s, double attr_timeout) {
