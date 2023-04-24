@@ -9,14 +9,17 @@
 #define VIRTIOFUSER_MIRROR_IMPL_H
 
 #include "dpfs_fuse.h"
+#include <linux/io_uring.h>
+
+// This must be checked before liburing include because
+// liburing defines all the ops even if they aren't supported
+// by the local kernel
+#ifdef IORING_OP_STATX
+#define IORING_METADATA_SUPPORTED
+#endif
+
 #include <liburing.h>
 #include <linux/stat.h>
-
-enum fuser_rw_cb_op {
-    FUSER_RW_CB_WRITE = 0,
-    FUSER_RW_CB_READ,
-    FUSER_RW_CB_FSYNC,
-};
 
 struct fuser_cb_data;
 typedef void (*fuser_uring_cb) (struct fuser_cb_data *, struct io_uring_cqe *);
@@ -32,10 +35,12 @@ struct fuser_cb_data {
         struct {
             struct fuse_write_out *out_write;
         } write;
+#ifdef IORING_METADATA_SUPPORTED
         struct {
             struct statx s;
             struct fuse_attr_out *out_attr;
         } getattr;
+#endif
     };
     void *completion_context;
 };

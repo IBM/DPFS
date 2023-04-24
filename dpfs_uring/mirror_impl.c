@@ -126,6 +126,8 @@ int fuser_mirror_destroy (struct fuse_session *se, void *user_data,
     return 0;
 }
 
+#ifdef IORING_METADATA_SUPPORTED
+
 static void fuser_mirror_getattr_cb(struct fuser_cb_data *cb_data, struct io_uring_cqe *cqe)
 {
     if (cqe->res < 0) {
@@ -165,7 +167,7 @@ int fuser_mirror_getattr(struct fuse_session *se, void *user_data,
         out_hdr->error = -ENOMEM;
         return 0;
     }
-    io_uring_prep_statx(sqe, fd, "", AT_EMPTY_PATH | AT_SYMLINK_NOFOLLOW, STATX_BASIC_STATS, &cb_data->getattr.s);
+    io_uring_prep_statx(sqe, fd, "", AT_EMPTY_PATH | AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT, STATX_BASIC_STATS, &cb_data->getattr.s);
     io_uring_sqe_set_data(sqe, cb_data);
 
     int res = io_uring_submit(&f->ring);
@@ -176,6 +178,30 @@ int fuser_mirror_getattr(struct fuse_session *se, void *user_data,
 
     return EWOULDBLOCK; // We move async
 }
+
+#else
+
+int fuser_mirror_getattr(struct fuse_session *se, void *user_data,
+    struct fuse_in_header *in_hdr, struct fuse_getattr_in *in_getattr,
+    struct fuse_out_header *out_hdr, struct fuse_attr_out *out_attr,
+    void *completion_context)
+{
+    (void) in_getattr;
+    struct fuser *f = user_data;
+
+    struct inode *i = ino_to_inodeptr(f, in_hdr->nodeid);
+    struct stat s;
+    int res = fstatat(i->fd, "", &s,
+                       AT_EMPTY_PATH | AT_SYMLINK_NOFOLLOW);
+    if (res == -1) {
+        out_hdr->error = -errno;
+        return 0;
+    }
+    
+    return fuse_ll_reply_attr(se, out_hdr, out_attr, &s, f->timeout);
+}
+
+#endif
 
 static int do_lookup(struct fuser *f, fuse_ino_t parent, const char *name,
                      struct fuse_entry_param *e) {

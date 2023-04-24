@@ -39,7 +39,9 @@ ramcloud_coordinator = "PLACEHOLDER"
 
 [local_mirror]
 dir = "/mnt/shared"
-cached = false
+# If 0, then metadata cache is fully disabled
+# Value is in seconds, integers and doubles are accepted
+metadata_timeout = 84600.0
 # Enables userspace polling on the completion queue
 # This causes high CPU usage!
 uring_cq_polling = true

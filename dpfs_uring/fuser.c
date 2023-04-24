@@ -208,7 +208,7 @@ static void *fuser_io_poll_thread(struct fuser *f) {
 }
 
 // todo proper error handling
-int fuser_main(bool debug, char *source, bool cached, const char *conf_path,
+int fuser_main(bool debug, char *source, double metadata_timeout, const char *conf_path,
         bool cq_polling, bool sq_polling) {
     struct fuser *f = calloc(1, sizeof(struct fuser));
     if (f == NULL)
@@ -216,7 +216,7 @@ int fuser_main(bool debug, char *source, bool cached, const char *conf_path,
 
     f->debug = debug;
     f->source = strdup(source);
-    f->timeout = cached ? 84600.0 : 0; // 24 hours
+    f->timeout = metadata_timeout;
 
     struct stat s;
     int ret = lstat(f->source, &s);

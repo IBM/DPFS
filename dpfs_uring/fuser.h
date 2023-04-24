@@ -83,7 +83,7 @@ struct fuser {
 struct inode *ino_to_inodeptr(struct fuser *, fuse_ino_t);
 int ino_to_fd(struct fuser *, fuse_ino_t);
 
-int fuser_main(bool debug, char *source, bool cached,
+int fuser_main(bool debug, char *source, double metadata_timeout,
                const char *conf_path, bool cq_polling,
                bool sq_polling);
 
