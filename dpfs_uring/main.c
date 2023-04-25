@@ -85,14 +85,15 @@ int main(int argc, char **argv)
         fprintf(stderr, "You must supply a bool `uring_cq_polling` under [local_mirror]\n");
         return -1;
     }
-    toml_datum_t sq_polling = toml_bool_in(local_mirror_conf, "uring_sq_polling");
-    if (!sq_polling.ok) {
-        fprintf(stderr, "You must supply a bool `uring_sq_polling` under [local_mirror]\n");
-        return -1;
-    }
+    // Currently not supported because we don't implement fixed files
+    //toml_datum_t sq_polling = toml_bool_in(local_mirror_conf, "uring_sq_polling");
+    //if (!sq_polling.ok) {
+    //    fprintf(stderr, "You must supply a bool `uring_sq_polling` under [local_mirror]\n");
+    //    return -1;
+    //}
 
     printf("dpfs_uring starting up!\n");
     printf("Mirroring %s\n", rp);
 
-    fuser_main(false, rp, metadata_timeout.u.d, conf_path, cq_polling.u.b, sq_polling.u.b);
+    fuser_main(false, rp, metadata_timeout.u.d, conf_path, cq_polling.u.b, false);
 }
