@@ -1883,6 +1883,8 @@ int dpfs_fuse_main(struct fuse_ll_operations *ops, const char *hal_conf_path,
     struct fuse_ll *f_ll = (struct fuse_ll *) calloc(1, sizeof(struct fuse_ll));
     f_ll->ops = *ops;
     f_ll->user_data = user_data;
+    f_ll->register_device_cb = register_device_cb;
+    f_ll->unregister_device_cb = unregister_device_cb;
 
     fuse_ll_map(f_ll);
 
@@ -1890,8 +1892,8 @@ int dpfs_fuse_main(struct fuse_ll_operations *ops, const char *hal_conf_path,
     memset(&hal_params, 0, sizeof(hal_params));
     hal_params.user_data = f_ll;
     hal_params.ops.request_handler = fuse_handle_req;
-    hal_params.ops.register_device = register_device_cb;
-    hal_params.ops.unregister_device = unregister_device_cb;
+    hal_params.ops.register_device = register_dpfs_device;
+    hal_params.ops.unregister_device = unregister_dpfs_device;
     hal_params.conf_path = hal_conf_path;
 
     struct dpfs_hal *emu = dpfs_hal_new(&hal_params);
