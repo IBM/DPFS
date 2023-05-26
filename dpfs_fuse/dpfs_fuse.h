@@ -153,125 +153,127 @@ size_t fuse_add_direntry_plus(struct iov *read_iov, const char *name,
 struct fuse_ll_operations {
     int (*init) (struct fuse_session *, void *user_data,
                  struct fuse_in_header *, struct fuse_init_in *,
-                 struct fuse_conn_info *, struct fuse_out_header *);
+                 struct fuse_conn_info *, struct fuse_out_header *,
+                 uint16_t device_id);
     int (*destroy) (struct fuse_session *, void *user_data,
                     struct fuse_in_header *,
                     struct fuse_out_header *,
-                    void *completion_context);
+                    void *completion_context, uint16_t device_id);
     // Reply with fuse_ll_reply_entry()
     int (*lookup) (struct fuse_session *, void *user_data,
                    struct fuse_in_header *, const char *const in_name,
                    struct fuse_out_header *, struct fuse_entry_out *out_entry,
-                   void *completion_context);
+                   void *completion_context, uint16_t device_id);
     int (*setattr) (struct fuse_session *, void *user_data,
                     struct fuse_in_header *in_hdr, struct stat *s, int valid, struct fuse_file_info *fi,
                     struct fuse_out_header *out_hdr, struct fuse_attr_out *out_attr,
-                    void *completion_context);
+                    void *completion_context, uint16_t device_id);
     int (*setattr_async) (struct fuse_session *, void *user_data,
                           struct fuse_in_header *in_hdr, struct fuse_setattr_in *,
                           struct fuse_out_header *out_hdr, struct fuse_attr_out *,
-                          void *completion_context);
+                          void *completion_context, uint16_t device_id);
     int (*create) (struct fuse_session *, void *user_data,
                    struct fuse_in_header *in_hdr, struct fuse_create_in in_create, const char *const in_name,
                    struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry, struct fuse_open_out *out_open,
-                   void *completion_context);
+                   void *completion_context, uint16_t device_id);
     int (*flush) (struct fuse_session *, void *user_data,
                    struct fuse_in_header *, struct fuse_file_info fi,
                    struct fuse_out_header *,
-                   void *completion_context);
+                   void *completion_context, uint16_t device_id);
     int (*flock) (struct fuse_session *, void *user_data,
                   struct fuse_in_header *, struct fuse_file_info fi, int op,
                   struct fuse_out_header *,
-                  void *completion_context);
+                  void *completion_context, uint16_t device_id);
     // Reply with fuse_ll_reply_attr()
     int (*getattr) (struct fuse_session *, void *user_data,
                     struct fuse_in_header *, struct fuse_getattr_in *,
                     struct fuse_out_header *, struct fuse_attr_out *,
-                    void *completion_context);
+                    void *completion_context, uint16_t device_id);
     // Reply with fuse_ll_reply_open()
     int (*opendir) (struct fuse_session *, void *user_data,
                     struct fuse_in_header *, struct fuse_open_in *,
                     struct fuse_out_header *, struct fuse_open_out *,
-                    void *completion_context);
+                    void *completion_context, uint16_t device_id);
     int (*releasedir) (struct fuse_session *, void *user_data,
                        struct fuse_in_header *, struct fuse_release_in *,
                        struct fuse_out_header *,
-                       void *completion_context);
+                       void *completion_context, uint16_t device_id);
     int (*readdir) (struct fuse_session *, void *user_data,
                     struct fuse_in_header *, struct fuse_read_in *, bool plus,
                     struct fuse_out_header *, struct iov,
-                    void *completion_context);
+                    void *completion_context, uint16_t device_id);
     // Reply with fuse_ll_reply_open()
     int (*open) (struct fuse_session *, void *user_data,
                  struct fuse_in_header *, struct fuse_open_in *,
                  struct fuse_out_header *, struct fuse_open_out *,
-                 void *completion_context);
+                 void *completion_context, uint16_t device_id);
     int (*release) (struct fuse_session *, void *user_data,
                     struct fuse_in_header *, struct fuse_release_in *,
                     struct fuse_out_header *,
-                    void *completion_context);
+                    void *completion_context, uint16_t device_id);
     int (*fsync) (struct fuse_session *, void *user_data,
                   struct fuse_in_header *, struct fuse_fsync_in *,
                   struct fuse_out_header *,
-                  void *completion_context);
+                  void *completion_context, uint16_t device_id);
     int (*fsyncdir) (struct fuse_session *, void *user_data,
                      struct fuse_in_header *, struct fuse_fsync_in *,
                      struct fuse_out_header *,
-                     void *completion_context);
+                     void *completion_context, uint16_t device_id);
     int (*rmdir) (struct fuse_session *, void *user_data,
                   struct fuse_in_header *, const char *const in_name,
                   struct fuse_out_header *,
-                  void *completion_context);
+                  void *completion_context, uint16_t device_id);
     int (*forget) (struct fuse_session *, void *user_data,
                    struct fuse_in_header *, struct fuse_forget_in *in_forget,
-                   void *completion_context);
+                   void *completion_context, uint16_t device_id);
     int (*batch_forget) (struct fuse_session *, void *user_data,
                          struct fuse_in_header *, struct fuse_batch_forget_in *in_batch_forget,
                          struct fuse_forget_one *in_forget_one,
-                         void *completion_context);
+                         void *completion_context, uint16_t device_id);
     int (*rename) (struct fuse_session *, void *user_data,
                    struct fuse_in_header *, const char *const in_name,
                    fuse_ino_t in_new_parentdir, const char *const in_new_name, uint32_t in_flags,
                    struct fuse_out_header *,
-                   void *completion_context);
+                   void *completion_context, uint16_t device_id);
     int (*read) (struct fuse_session *, void *user_data,
                  struct fuse_in_header *, struct fuse_read_in *,
                  struct fuse_out_header *, struct iovec *, int iovcnt,
-                 void *completion_context);
+                 void *completion_context, uint16_t device_id);
     int (*write) (struct fuse_session *, void *user_data,
                   struct fuse_in_header *, struct fuse_write_in *,
                   struct iovec *, int iovcnt,
                   struct fuse_out_header *, struct fuse_write_out *,
-                  void *completion_context);
+                  void *completion_context, uint16_t device_id);
     int (*mknod) (struct fuse_session *, void *user_data,
                   struct fuse_in_header *, struct fuse_mknod_in *, const char *const,
                   struct fuse_out_header *, struct fuse_entry_out *,
-                  void *completion_context);
+                  void *completion_context, uint16_t device_id);
     int (*mkdir) (struct fuse_session *, void *user_data,
                   struct fuse_in_header *, struct fuse_mkdir_in *, const char *const,
                   struct fuse_out_header *, struct fuse_entry_out *,
-                  void *completion_context);
+                  void *completion_context, uint16_t device_id);
     int (*symlink) (struct fuse_session *, void *user_data,
                     struct fuse_in_header *, const char *const in_name,
                     const char *const in_link_name,
                     struct fuse_out_header *, struct fuse_entry_out *,
-                    void *completion_context);
+                    void *completion_context, uint16_t device_id);
     int (*statfs) (struct fuse_session *, void *user_data,
                    struct fuse_in_header *,
                    struct fuse_out_header *, struct fuse_statfs_out *,
-                   void *completion_context);
+                   void *completion_context, uint16_t device_id);
     int (*unlink) (struct fuse_session *, void *user_data,
                    struct fuse_in_header *, const char *const,
                    struct fuse_out_header *,
-                   void *completion_context);
+                   void *completion_context, uint16_t device_id);
     int (*fallocate) (struct fuse_session *, void *user_data,
                       struct fuse_in_header *, struct fuse_fallocate_in *,
                       struct fuse_out_header *,
-                      void *completion_context);
+                      void *completion_context, uint16_t device_id);
 };
 
-int dpfs_fuse_main(struct fuse_ll_operations *ops, const char *hal_conf_path,
-        void *user_data, bool debug);
+int dpfs_fuse_main(struct fuse_ll_operations *ops, const char *hal_conf_path, 
+                   void *user_data, dpfs_hal_register_device_t register_device_cb,
+                   dpfs_hal_unregister_device_t unregister_device_cb);
 
 #ifdef __cplusplus
 }

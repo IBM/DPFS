@@ -29,10 +29,18 @@ extern "C" {
 typedef int (*dpfs_hal_handler_t) (void *user_data,
                                    struct iovec *fuse_in_iov, int in_iovcnt,
                                    struct iovec *fuse_out_iov, int out_iovcnt,
-                                   void *completion_context);
+                                   void *completion_context, uint16_t device_id);
+typedef void (*dpfs_hal_register_device_t) (void *user_data, uint16_t device_id);
+typedef void (*dpfs_hal_unregister_device_t) (void *user_data, uint16_t device_id);
+
+struct dpfs_hal_ops {
+    dpfs_hal_handler_t request_handler;    
+    dpfs_hal_register_device_t register_device;    
+    dpfs_hal_unregister_device_t unregister_device;    
+};
 
 struct dpfs_hal_params {
-    dpfs_hal_handler_t request_handler;
+    struct dpfs_hal_ops ops;
     void *user_data; // Pointer to user data that gets passed with every dpfs_hal_handler
     const char *conf_path; // See the example toml files in the root of dpfs_hal
 };
@@ -52,9 +60,9 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params);
 void dpfs_hal_loop(struct dpfs_hal *hal);
 // DPFS backend takes control over the polling, make sure you also call poll_mmio
 // a few times a second to check for device management changes of the virtio-fs device
-int dpfs_hal_poll_io(struct dpfs_hal *hal, int thread_id);
+int dpfs_hal_poll_io(struct dpfs_hal *hal, uint16_t device);
 // Poll on the management IO
-void dpfs_hal_poll_mmio(struct dpfs_hal *hal);
+void dpfs_hal_poll_mmio(struct dpfs_hal *hal, uint16_t device);
 void dpfs_hal_destroy(struct dpfs_hal *hal);
 int dpfs_hal_async_complete(void *completion_context, enum dpfs_hal_completion_status);
 

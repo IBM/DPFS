@@ -30,7 +30,8 @@ libdpfs_hal_la_LDFLAGS += --exclude-libs=libmlx_dev_emu.a \
 # Mellanox Snap BlueField virtio-fs emulation
 libdpfs_hal_la_CFLAGS += $(BASE_CFLAGS) \
 	$(SNAP_CFLAGS) -I$(builddir)/../../src \
-	-I$(builddir)/../extern/tomlcpp
+	-I$(builddir)/../extern/tomlcpp \
+	-I$(srcdir)/../lib
 
 libdpfs_hal_la_SOURCES += src/snap.c
 

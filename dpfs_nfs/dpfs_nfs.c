@@ -373,7 +373,7 @@ ret:;
 int create(struct fuse_session *se, void *user_data,
            struct fuse_in_header *in_hdr, struct fuse_create_in *in_create, const char *in_name,
            struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry, struct fuse_open_out *out_open,
-           void *completion_context)
+           void *completion_context, uint16_t device_id)
 {
     struct virtionfs *vnfs = user_data;
     struct vnfs_conn *conn = vnfs_get_conn(vnfs);
@@ -492,7 +492,7 @@ ret:;
 int release(struct fuse_session *se, void *user_data,
            struct fuse_in_header *in_hdr, struct fuse_release_in *in_release,
            struct fuse_out_header *out_hdr,
-           void *completion_context)
+           void *completion_context, uint16_t device_id)
 {
     struct virtionfs *vnfs = user_data;
     struct inode *i = inode_table_get(vnfs->inodes, in_hdr->nodeid);
@@ -587,7 +587,7 @@ ret:;
 int vfsync(struct fuse_session *se, void *user_data,
            struct fuse_in_header *in_hdr, struct fuse_fsync_in *in_fsync,
            struct fuse_out_header *out_hdr,
-           void *completion_context)
+           void *completion_context, uint16_t device_id)
 {
     struct virtionfs *vnfs = user_data;
     struct vnfs_conn *conn = vnfs_get_conn(vnfs);
@@ -683,7 +683,7 @@ int vwrite(struct fuse_session *se, void *user_data,
          struct fuse_in_header *in_hdr, struct fuse_write_in *in_write,
          struct iovec *in_iov, int in_iov_cnt,
          struct fuse_out_header *out_hdr, struct fuse_write_out *out_write,
-         void *completion_context)
+         void *completion_context, uint16_t device_id)
 {
 #ifdef VNFS_NULLDEV
     out_write->size = in_write->size;
@@ -833,7 +833,7 @@ ret:;
 int vread(struct fuse_session *se, void *user_data,
           struct fuse_in_header *in_hdr, struct fuse_read_in *in_read,
           struct fuse_out_header *out_hdr, struct iovec *out_iov, int out_iovcnt,
-          void *completion_context)
+          void *completion_context, uint16_t device_id)
 {
 #ifdef VNFS_NULLDEV
     out_hdr->len += in_read->size;
@@ -945,7 +945,7 @@ ret:;
 int vopen(struct fuse_session *se, void *user_data,
          struct fuse_in_header *in_hdr, struct fuse_open_in *in_open,
          struct fuse_out_header *out_hdr, struct fuse_open_out *out_open,
-         void *completion_context)
+         void *completion_context, uint16_t device_id)
 {
     struct virtionfs *vnfs = user_data;
     // Get the inode manually because we want the FH of the parent later
@@ -1073,7 +1073,7 @@ ret:;
 int setattr(struct fuse_session *se, void *user_data,
             struct fuse_in_header *in_hdr, struct fuse_setattr_in *in_setattr,
             struct fuse_out_header *out_hdr, struct fuse_attr_out *out_attr,
-            void *completion_context)
+            void *completion_context, uint16_t device_id)
 {
     struct virtionfs *vnfs = user_data;
     struct vnfs_conn *conn = vnfs_get_conn(vnfs);
@@ -1198,7 +1198,7 @@ ret:;
 int statfs(struct fuse_session *se, void *user_data,
            struct fuse_in_header *in_hdr,
            struct fuse_out_header *out_hdr, struct fuse_statfs_out *stat,
-           void *completion_context)
+           void *completion_context, uint16_t device_id)
 {
     struct virtionfs *vnfs = user_data;
 #ifdef VNFS_NULLDEV
@@ -1321,7 +1321,7 @@ ret:;
 int lookup(struct fuse_session *se, void *user_data,
            struct fuse_in_header *in_hdr, const char *const in_name,
            struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry,
-           void *completion_context)
+           void *completion_context, uint16_t device_id)
 {
     struct virtionfs *vnfs = user_data;
     struct vnfs_conn *conn = vnfs_get_conn(vnfs);
@@ -1421,7 +1421,7 @@ ret:;
 int getattr(struct fuse_session *se, void *user_data,
             struct fuse_in_header *in_hdr, struct fuse_getattr_in *in_getattr,
             struct fuse_out_header *out_hdr, struct fuse_attr_out *out_attr,
-            void *completion_context)
+            void *completion_context, uint16_t device_id)
 {
     struct virtionfs *vnfs = user_data;
 
@@ -1492,7 +1492,7 @@ int getattr(struct fuse_session *se, void *user_data,
 int destroy(struct fuse_session *se, void *user_data,
             struct fuse_in_header *in_hdr,
             struct fuse_out_header *out_hdr,
-            void *completion_context)
+            void *completion_context, uint16_t device_id)
 {
 #ifdef LATENCY_MEASURING_ENABLED
     struct virtionfs *vnfs = user_data;
@@ -1518,7 +1518,8 @@ int destroy(struct fuse_session *se, void *user_data,
 
 int init(struct fuse_session *se, void *user_data,
     struct fuse_in_header *in_hdr, struct fuse_init_in *in_init,
-    struct fuse_conn_info *conn, struct fuse_out_header *out_hdr)
+    struct fuse_conn_info *conn, struct fuse_out_header *out_hdr,
+    uint16_t device_id)
 {
     struct virtionfs *vnfs = user_data;
 
@@ -1615,7 +1616,7 @@ void dpfs_nfs_main(char *server, char *export,
     memset(&ops, 0, sizeof(ops));
     dpfs_nfs_assign_ops(&ops);
 
-    dpfs_fuse_main(&ops, conf_path, vnfs, debug);
+    dpfs_fuse_main(&ops, conf_path, vnfs, NULL, NULL);
 
     inode_table_destroy(vnfs->inodes);
 ret_c:

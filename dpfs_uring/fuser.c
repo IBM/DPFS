@@ -270,12 +270,15 @@ int fuser_main(bool debug, char *source, double metadata_timeout, const char *co
     pthread_t poll_thread;
     pthread_create(&poll_thread, NULL, (void *(*)(void *))fuser_io_poll_thread, f);
 
-    dpfs_fuse_main(&ops, conf_path, f, debug);
+    dpfs_fuse_main(&ops, conf_path, f, NULL, NULL);
 
     f->io_poll_thread_stop = true;
     // TODO drain the queue first
     io_uring_queue_exit(&f->ring);
-    pthread_cancel(poll_thread);
+    if (!f->cq_polling)
+        pthread_cancel(poll_thread);
+    else
+        pthread_join(poll_thread, NULL);
     
     mpool_destroy(f->cb_data_pool);
     // destroy inode table

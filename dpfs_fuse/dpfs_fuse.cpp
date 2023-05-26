@@ -28,6 +28,8 @@
 #include <sys/uio.h>
 #include <sys/fcntl.h>
 #include <stddef.h>
+#include <unordered_map>
+#include <memory>
 #include <linux/fuse.h>
 #include <string.h>
 
@@ -44,18 +46,20 @@ struct fuse_ll;
 typedef int (*fuse_handler_t) (struct fuse_ll *,
                              struct iovec *fuse_in_iov, int in_iovcnt,
                              struct iovec *fuse_out_iov, int out_iovcnt,
-                             void *completion_context);
+                             void *completion_context, uint16_t device_id);
 
 #define DPFS_FUSE_MAX_OPCODE FUSE_REMOVEMAPPING
 // The opcodes begin at FUSE_LOOKUP = 1, so need one more array index
 #define DPFS_FUSE_HANDLERS_LEN DPFS_FUSE_MAX_OPCODE+1
 
 struct fuse_ll {
+    fuse_handler_t fuse_handlers[DPFS_FUSE_HANDLERS_LEN];
+    std::unordered_map<uint16_t, fuse_session*> se;
+
     void *user_data;
     struct fuse_ll_operations ops;
-    struct fuse_session *se;
-    fuse_handler_t fuse_handlers[DPFS_FUSE_HANDLERS_LEN];
-    bool debug;
+    dpfs_hal_register_device_t register_device_cb;
+    dpfs_hal_unregister_device_t unregister_device_cb;
 };
 
 #define ST_ATIM_NSEC(stbuf) ((stbuf)->st_atim.tv_nsec)
@@ -365,7 +369,7 @@ size_t fuse_add_direntry_plus(struct iov *read_iov,
 static int fuse_ll_init(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-               void *completion_context) {
+               void *completion_context, uint16_t device_id) {
     if (in_iovcnt != 2 || out_iovcnt != 2) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
@@ -379,7 +383,7 @@ static int fuse_ll_init(struct fuse_ll *f_ll,
     struct fuse_init_in *inarg = (struct fuse_init_in *) fuse_in_iov[1].iov_base;
     struct fuse_init_out *outarg = (struct fuse_init_out *) fuse_out_iov[1].iov_base;
 
-    struct fuse_session *se = f_ll->se;
+    struct fuse_session *se = f_ll->se.at(device_id);
     if (se->got_init == 1 && se->got_destroy == 0) {
         out_hdr->error = -EISCONN;
         return 0;
@@ -522,7 +526,7 @@ static int fuse_ll_init(struct fuse_ll *f_ll,
 
     se->got_init = 1;
     if (f_ll->ops.init) {
-        int op_res = f_ll->ops.init(se, f_ll->user_data, in_hdr, inarg, &se->conn, out_hdr);
+        int op_res = f_ll->ops.init(se, f_ll->user_data, in_hdr, inarg, &se->conn, out_hdr, device_id);
         if (out_hdr->error != 0 || op_res != 0) {
             se->error = -EPROTO;
             se->got_destroy = 1;
@@ -622,7 +626,7 @@ static int fuse_ll_init(struct fuse_ll *f_ll,
 static int fuse_ll_destroy(struct fuse_ll *f_ll,
                   struct iovec *fuse_in_iov, int in_iovcnt,
                   struct iovec *fuse_out_iov, int out_iovcnt,
-                  void *completion_context) {
+                  void *completion_context, uint16_t device_id) {
     if (in_iovcnt != 1 || out_iovcnt != 1) {
         fprintf(stderr, "fuser_destroy: invalid number of iovecs!\n");
         return -EINVAL;
@@ -634,9 +638,9 @@ static int fuse_ll_destroy(struct fuse_ll *f_ll,
     out_hdr->len = sizeof(*out_hdr);
     out_hdr->error = 0;
 
-    f_ll->se->got_destroy = 1;
+    f_ll->se.at(device_id)->got_destroy = 1;
     if (f_ll->ops.destroy)
-        return f_ll->ops.destroy(f_ll->se, f_ll->user_data, in_hdr, out_hdr, completion_context);
+        return f_ll->ops.destroy(f_ll->se.at(device_id), f_ll->user_data, in_hdr, out_hdr, completion_context, device_id);
     else
         return 0;
 }
@@ -645,7 +649,7 @@ static int fuse_ll_destroy(struct fuse_ll *f_ll,
 static int fuse_ll_lookup(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                  void *completion_context) {
+                  void *completion_context, uint16_t device_id) {
     if (in_iovcnt != 2 || out_iovcnt != 2) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
@@ -664,12 +668,12 @@ static int fuse_ll_lookup(struct fuse_ll *f_ll,
     printf("* in_name: %s\n", in_name);
 #endif
 
-    if (!f_ll->se->init_done) {
+    if (!f_ll->se.at(device_id)->init_done) {
         out_hdr->error = -EBUSY;
         return 0;
     }
     if (f_ll->ops.lookup)
-        return f_ll->ops.lookup(f_ll->se, f_ll->user_data, in_hdr, in_name, out_hdr, out_entry, completion_context);
+        return f_ll->ops.lookup(f_ll->se.at(device_id), f_ll->user_data, in_hdr, in_name, out_hdr, out_entry, completion_context, device_id);
     else {
         out_hdr->error = -ENOSYS;
         return 0;
@@ -679,7 +683,7 @@ static int fuse_ll_lookup(struct fuse_ll *f_ll,
 static int fuse_ll_setattr(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                  void *completion_context) {
+                  void *completion_context, uint16_t device_id) {
 
     if (in_iovcnt != 2 || out_iovcnt != 2) {
         fprintf(stderr, "fuser_setattr: invalid number of iovecs!\n");
@@ -700,7 +704,7 @@ static int fuse_ll_setattr(struct fuse_ll *f_ll,
     printf("* fh: %lu", in_setattr->fh);
 #endif
 
-    if (!f_ll->se->init_done) {
+    if (!f_ll->se.at(device_id)->init_done) {
         out_hdr->error = -EBUSY;
         return 0;
     }
@@ -728,9 +732,9 @@ static int fuse_ll_setattr(struct fuse_ll *f_ll,
             FUSE_SET_ATTR_MTIME_NOW |
             FUSE_SET_ATTR_CTIME;
 
-        return f_ll->ops.setattr(f_ll->se, f_ll->user_data, in_hdr, &s, in_setattr->valid, fi, out_hdr, out_attr, completion_context);
+        return f_ll->ops.setattr(f_ll->se.at(device_id), f_ll->user_data, in_hdr, &s, in_setattr->valid, fi, out_hdr, out_attr, completion_context, device_id);
     } else if (f_ll->ops.setattr_async) {
-        return f_ll->ops.setattr_async(f_ll->se, f_ll->user_data, in_hdr, in_setattr, out_hdr, out_attr, completion_context);
+        return f_ll->ops.setattr_async(f_ll->se.at(device_id), f_ll->user_data, in_hdr, in_setattr, out_hdr, out_attr, completion_context, device_id);
     } else {
         out_hdr->error = -ENOSYS;
         return 0;
@@ -741,11 +745,12 @@ static int fuse_ll_setattr(struct fuse_ll *f_ll,
 static int fuse_ll_create(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-               void *completion_context) {
+               void *completion_context, uint16_t device_id) {
     if (in_iovcnt != 2 || out_iovcnt != 2) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
     }
+    struct fuse_session *se = f_ll->se.at(device_id);
 
     struct fuse_in_header *in_hdr = (struct fuse_in_header *) fuse_in_iov[0].iov_base;
     struct fuse_out_header *out_hdr = (struct fuse_out_header *) fuse_out_iov[0].iov_base;
@@ -755,12 +760,12 @@ static int fuse_ll_create(struct fuse_ll *f_ll,
 
     char *name;
     struct fuse_entry_out *out_entry = (struct fuse_entry_out *) fuse_out_iov[1].iov_base;
-    size_t entrysize = f_ll->se->conn.proto_minor < 9 ?
+    size_t entrysize = se->conn.proto_minor < 9 ?
         FUSE_COMPAT_ENTRY_OUT_SIZE : sizeof(struct fuse_entry_out);
     struct fuse_open_out *out_open = (struct fuse_open_out *) (((char *)fuse_out_iov[1].iov_base) + entrysize);
 
     struct fuse_create_in *in_create;
-    if (f_ll->se->conn.proto_minor >= 12) {
+    if (se->conn.proto_minor >= 12) {
         in_create = (struct fuse_create_in *) fuse_in_iov[1].iov_base;
         name = ((char *) fuse_in_iov[1].iov_base) + sizeof(struct fuse_create_in);
     } else {
@@ -780,7 +785,7 @@ static int fuse_ll_create(struct fuse_ll *f_ll,
     printf("* name: %s\n", name);
 #endif
 
-    if (!f_ll->se->init_done) {
+    if (!se->init_done) {
         out_hdr->error = -EBUSY;
         return 0;
     }
@@ -789,17 +794,18 @@ static int fuse_ll_create(struct fuse_ll *f_ll,
         return 0;
     }
 
-    return f_ll->ops.create(f_ll->se, f_ll->user_data, in_hdr, *in_create, name, out_hdr, out_entry, out_open, completion_context);
+    return f_ll->ops.create(se, f_ll->user_data, in_hdr, *in_create, name, out_hdr, out_entry, out_open, completion_context, device_id);
 }
 
 static int fuse_ll_flush(struct fuse_ll *f_ll,
                 struct iovec *fuse_in_iov, int in_iovcnt,
                 struct iovec *fuse_out_iov, int out_iovcnt,
-                void *completion_context) {
+                void *completion_context, uint16_t device_id) {
     if (in_iovcnt != 2 || out_iovcnt != 1) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
     }
+    struct fuse_session *se = f_ll->se.at(device_id);
 
     struct fuse_in_header *in_hdr = (struct fuse_in_header *) fuse_in_iov[0].iov_base;
     struct fuse_out_header *out_hdr = (struct fuse_out_header *) fuse_out_iov[0].iov_base;
@@ -815,7 +821,7 @@ static int fuse_ll_flush(struct fuse_ll *f_ll,
     printf("* fh: %lu\n", in_flush->fh);
 #endif
 
-    if (!f_ll->se->init_done) {
+    if (!se->init_done) {
         out_hdr->error = -EBUSY;
         return 0;
     }
@@ -827,20 +833,21 @@ static int fuse_ll_flush(struct fuse_ll *f_ll,
     memset(&fi, 0, sizeof(fi));
     fi.fh = in_flush->fh;
     fi.flush = 1;
-    if (f_ll->se->conn.proto_minor >= 7)
+    if (se->conn.proto_minor >= 7)
         fi.lock_owner = in_flush->lock_owner;
 
-    return f_ll->ops.flush(f_ll->se, f_ll->user_data, in_hdr, fi, out_hdr, completion_context);
+    return f_ll->ops.flush(se, f_ll->user_data, in_hdr, fi, out_hdr, completion_context, device_id);
 }
 
 static int fuse_ll_setlk_common(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-               void *completion_context, bool sleep) {
+               void *completion_context, uint16_t device_id, bool sleep) {
     if (in_iovcnt != 2 || out_iovcnt != 1) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
     }
+    struct fuse_session *se = f_ll->se.at(device_id);
 
     struct fuse_in_header *in_hdr = (struct fuse_in_header *) fuse_in_iov[0].iov_base;
     struct fuse_out_header *out_hdr = (struct fuse_out_header *) fuse_out_iov[0].iov_base;
@@ -857,7 +864,7 @@ static int fuse_ll_setlk_common(struct fuse_ll *f_ll,
     printf("* fh: %lu\n", in_lk->fh);
 #endif
 
-    if (!f_ll->se->init_done) {
+    if (!se->init_done) {
         out_hdr->error = -EBUSY;
         return 0;
     }
@@ -883,7 +890,7 @@ static int fuse_ll_setlk_common(struct fuse_ll *f_ll,
             op |= LOCK_NB;
 
         if (f_ll->ops.flock) {
-            return f_ll->ops.flock(f_ll->se, f_ll->user_data, in_hdr, fi, op, out_hdr, completion_context);
+            return f_ll->ops.flock(se, f_ll->user_data, in_hdr, fi, op, out_hdr, completion_context, device_id);
         } else {
             out_hdr->error = -ENOSYS;
             return 0;
@@ -898,25 +905,26 @@ static int fuse_ll_setlk_common(struct fuse_ll *f_ll,
 static int fuse_ll_setlkw(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                  void *completion_context) {
-    return fuse_ll_setlk_common(f_ll, fuse_in_iov, in_iovcnt, fuse_out_iov, out_iovcnt, completion_context, true);
+                  void *completion_context, uint16_t device_id) {
+    return fuse_ll_setlk_common(f_ll, fuse_in_iov, in_iovcnt, fuse_out_iov, out_iovcnt, completion_context, device_id, true);
 }
 
 static int fuse_ll_setlk(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                  void *completion_context) {
-    return fuse_ll_setlk_common(f_ll, fuse_in_iov, in_iovcnt, fuse_out_iov, out_iovcnt, completion_context, true);
+                  void *completion_context, uint16_t device_id) {
+    return fuse_ll_setlk_common(f_ll, fuse_in_iov, in_iovcnt, fuse_out_iov, out_iovcnt, completion_context, device_id, true);
 }
 
 static int fuse_ll_getattr(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                  void *completion_context) {
+                  void *completion_context, uint16_t device_id) {
     if (in_iovcnt != 2 || out_iovcnt != 2) {
         fprintf(stderr, "fuser_mirror_getattr: invalid number of iovecs!\n");
         return -EINVAL;
     }
+    struct fuse_session *se = f_ll->se.at(device_id);
 
     struct fuse_in_header *in_hdr = (struct fuse_in_header *) fuse_in_iov[0].iov_base;
     struct fuse_out_header *out_hdr = (struct fuse_out_header *) fuse_out_iov[0].iov_base;
@@ -932,7 +940,7 @@ static int fuse_ll_getattr(struct fuse_ll *f_ll,
     printf("* fh: %lu\n", in_getattr->fh);
 #endif
 
-    if (!f_ll->se->init_done) {
+    if (!se->init_done) {
         out_hdr->error = -EBUSY;
         return 0;
     }
@@ -941,17 +949,18 @@ static int fuse_ll_getattr(struct fuse_ll *f_ll,
         return 0;
     }
 
-    return f_ll->ops.getattr(f_ll->se, f_ll->user_data, in_hdr, in_getattr, out_hdr, out_attr, completion_context);
+    return f_ll->ops.getattr(se, f_ll->user_data, in_hdr, in_getattr, out_hdr, out_attr, completion_context, device_id);
 }
 
 static int fuse_ll_opendir(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                  void *completion_context) {
+                  void *completion_context, uint16_t device_id) {
     if (in_iovcnt != 2 || out_iovcnt != 2) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
     }
+    struct fuse_session *se = f_ll->se.at(device_id);
 
     struct fuse_in_header *in_hdr = (struct fuse_in_header *) fuse_in_iov[0].iov_base;
     struct fuse_out_header *out_hdr = (struct fuse_out_header *) fuse_out_iov[0].iov_base;
@@ -967,7 +976,7 @@ static int fuse_ll_opendir(struct fuse_ll *f_ll,
     printf("* flags: 0x%X\n", in_open->flags);
 #endif
 
-    if (!f_ll->se->init_done) {
+    if (!se->init_done) {
         out_hdr->error = -EBUSY;
         return 0;
     }
@@ -976,17 +985,18 @@ static int fuse_ll_opendir(struct fuse_ll *f_ll,
         return 0;
     }
 
-    return f_ll->ops.opendir(f_ll->se, f_ll->user_data, in_hdr, in_open, out_hdr, out_open, completion_context);
+    return f_ll->ops.opendir(se, f_ll->user_data, in_hdr, in_open, out_hdr, out_open, completion_context, device_id);
 }
 
 static int fuse_ll_releasedir(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                  void *completion_context) {
+                  void *completion_context, uint16_t device_id) {
     if (in_iovcnt != 2 || out_iovcnt != 1) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
     }
+    struct fuse_session *se = f_ll->se.at(device_id);
 
     struct fuse_in_header *in_hdr = (struct fuse_in_header *) fuse_in_iov[0].iov_base;
     struct fuse_out_header *out_hdr = (struct fuse_out_header *) fuse_out_iov[0].iov_base;
@@ -1001,7 +1011,7 @@ static int fuse_ll_releasedir(struct fuse_ll *f_ll,
     printf("* fh: %lu\n", in_release->fh);
 #endif
 
-    if (!f_ll->se->init_done) {
+    if (!se->init_done) {
         out_hdr->error = -EBUSY;
         return 0;
     }
@@ -1010,18 +1020,19 @@ static int fuse_ll_releasedir(struct fuse_ll *f_ll,
         return 0;
     }
 
-    return f_ll->ops.releasedir(f_ll->se, f_ll->user_data, in_hdr, in_release, out_hdr, completion_context);
+    return f_ll->ops.releasedir(se, f_ll->user_data, in_hdr, in_release, out_hdr, completion_context, device_id);
 }
 
 static int fuse_ll_readdir_common(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-               void *completion_context,
+               void *completion_context, uint16_t device_id,
                bool plus) {
     if (!(in_iovcnt > 1 || out_iovcnt > 1)) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
     }
+    struct fuse_session *se = f_ll->se.at(device_id);
 
     struct fuse_in_header *in_hdr = (struct fuse_in_header *) fuse_in_iov[0].iov_base;
     struct fuse_out_header *out_hdr = (struct fuse_out_header *) fuse_out_iov[0].iov_base;
@@ -1037,7 +1048,7 @@ static int fuse_ll_readdir_common(struct fuse_ll *f_ll,
     printf("* fh: %lu\n", in_read->fh);
 #endif
 
-    if (!f_ll->se->init_done) {
+    if (!se->init_done) {
         out_hdr->error = -EBUSY;
         return 0;
     }
@@ -1049,31 +1060,32 @@ static int fuse_ll_readdir_common(struct fuse_ll *f_ll,
     struct iov read_iov;
     iov_init(&read_iov, &fuse_out_iov[1], out_iovcnt-1);
 
-    return f_ll->ops.readdir(f_ll->se, f_ll->user_data, in_hdr, in_read, plus, out_hdr, read_iov, completion_context);
+    return f_ll->ops.readdir(se, f_ll->user_data, in_hdr, in_read, plus, out_hdr, read_iov, completion_context, device_id);
 }
 
 static int fuse_ll_readdir(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                void *completion_context) {
-    return fuse_ll_readdir_common(f_ll, fuse_in_iov, in_iovcnt, fuse_out_iov, out_iovcnt, completion_context, false);
+                void *completion_context, uint16_t device_id) {
+    return fuse_ll_readdir_common(f_ll, fuse_in_iov, in_iovcnt, fuse_out_iov, out_iovcnt, completion_context, device_id, false);
 }
 
 static int fuse_ll_readdirplus(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                  void *completion_context) {
-    return fuse_ll_readdir_common(f_ll, fuse_in_iov, in_iovcnt, fuse_out_iov, out_iovcnt, completion_context, true);
+                  void *completion_context, uint16_t device_id) {
+    return fuse_ll_readdir_common(f_ll, fuse_in_iov, in_iovcnt, fuse_out_iov, out_iovcnt, completion_context, device_id, true);
 }
 
 static int fuse_ll_open(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                  void *completion_context) {
+                  void *completion_context, uint16_t device_id) {
     if (in_iovcnt != 2 || out_iovcnt != 2) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
     }
+    struct fuse_session *se = f_ll->se.at(device_id);
 
     struct fuse_in_header *in_hdr = (struct fuse_in_header *) fuse_in_iov[0].iov_base;
     struct fuse_out_header *out_hdr = (struct fuse_out_header *) fuse_out_iov[0].iov_base;
@@ -1089,7 +1101,7 @@ static int fuse_ll_open(struct fuse_ll *f_ll,
     printf("* flags: 0x%X\n", in_open->flags);
 #endif
 
-    if (!f_ll->se->init_done) {
+    if (!se->init_done) {
         out_hdr->error = -EBUSY;
         return 0;
     }
@@ -1098,17 +1110,18 @@ static int fuse_ll_open(struct fuse_ll *f_ll,
         return 0;
     }
 
-    return f_ll->ops.open(f_ll->se, f_ll->user_data, in_hdr, in_open, out_hdr, out_open, completion_context);
+    return f_ll->ops.open(se, f_ll->user_data, in_hdr, in_open, out_hdr, out_open, completion_context, device_id);
 }
 
 static int fuse_ll_release(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                  void *completion_context) {
+                  void *completion_context, uint16_t device_id) {
     if (in_iovcnt != 2 || out_iovcnt != 1) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
     }
+    struct fuse_session *se = f_ll->se.at(device_id);
 
     struct fuse_in_header *in_hdr = (struct fuse_in_header *) fuse_in_iov[0].iov_base;
     struct fuse_out_header *out_hdr = (struct fuse_out_header *) fuse_out_iov[0].iov_base;
@@ -1126,7 +1139,7 @@ static int fuse_ll_release(struct fuse_ll *f_ll,
     printf("* lock_owner: %lu\n", in_release->lock_owner);
 #endif
 
-    if (!f_ll->se->init_done) {
+    if (!se->init_done) {
         out_hdr->error = -EBUSY;
         return 0;
     }
@@ -1135,17 +1148,18 @@ static int fuse_ll_release(struct fuse_ll *f_ll,
         return 0;
     }
 
-    return f_ll->ops.release(f_ll->se, f_ll->user_data, in_hdr, in_release, out_hdr, completion_context);
+    return f_ll->ops.release(se, f_ll->user_data, in_hdr, in_release, out_hdr, completion_context, device_id);
 }
 
 static int fuse_ll_fsync(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                  void *completion_context) {
+                  void *completion_context, uint16_t device_id) {
     if (in_iovcnt != 2 || out_iovcnt != 1) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
     }
+    struct fuse_session *se = f_ll->se.at(device_id);
 
     struct fuse_in_header *in_hdr = (struct fuse_in_header *) fuse_in_iov[0].iov_base;
     struct fuse_out_header *out_hdr = (struct fuse_out_header *) fuse_out_iov[0].iov_base;
@@ -1161,7 +1175,7 @@ static int fuse_ll_fsync(struct fuse_ll *f_ll,
     printf("* fsync_flags: 0x%X\n", in_fsync->fsync_flags);
 #endif
 
-    if (!f_ll->se->init_done) {
+    if (!se->init_done) {
         out_hdr->error = -EBUSY;
         return 0;
     }
@@ -1170,17 +1184,18 @@ static int fuse_ll_fsync(struct fuse_ll *f_ll,
         return 0;
     }
 
-    return f_ll->ops.fsync(f_ll->se, f_ll->user_data, in_hdr, in_fsync, out_hdr, completion_context);
+    return f_ll->ops.fsync(se, f_ll->user_data, in_hdr, in_fsync, out_hdr, completion_context, device_id);
 }
 
 static int fuse_ll_fsyncdir(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                  void *completion_context) {
+                  void *completion_context, uint16_t device_id) {
     if (in_iovcnt != 2 || out_iovcnt != 1) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
     }
+    struct fuse_session *se = f_ll->se.at(device_id);
 
     struct fuse_in_header *in_hdr = (struct fuse_in_header *) fuse_in_iov[0].iov_base;
     struct fuse_out_header *out_hdr = (struct fuse_out_header *) fuse_out_iov[0].iov_base;
@@ -1196,7 +1211,7 @@ static int fuse_ll_fsyncdir(struct fuse_ll *f_ll,
     printf("* fsync_flags: 0x%X\n", in_fsync->fsync_flags);
 #endif
 
-    if (!f_ll->se->init_done) {
+    if (!se->init_done) {
         out_hdr->error = -EBUSY;
         return 0;
     }
@@ -1205,17 +1220,18 @@ static int fuse_ll_fsyncdir(struct fuse_ll *f_ll,
         return 0;
     }
 
-    return f_ll->ops.fsyncdir(f_ll->se, f_ll->user_data, in_hdr, in_fsync, out_hdr, completion_context);
+    return f_ll->ops.fsyncdir(se, f_ll->user_data, in_hdr, in_fsync, out_hdr, completion_context, device_id);
 }
 
 static int fuse_ll_rmdir(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                  void *completion_context) {
+                  void *completion_context, uint16_t device_id) {
     if (in_iovcnt != 2 || out_iovcnt != 1) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
     }
+    struct fuse_session *se = f_ll->se.at(device_id);
 
     struct fuse_in_header *in_hdr = (struct fuse_in_header *) fuse_in_iov[0].iov_base;
     struct fuse_out_header *out_hdr = (struct fuse_out_header *) fuse_out_iov[0].iov_base;
@@ -1230,7 +1246,7 @@ static int fuse_ll_rmdir(struct fuse_ll *f_ll,
     printf("* name: %s\n", in_name);
 #endif
 
-    if (!f_ll->se->init_done) {
+    if (!se->init_done) {
         out_hdr->error = -EBUSY;
         return 0;
     }
@@ -1239,13 +1255,13 @@ static int fuse_ll_rmdir(struct fuse_ll *f_ll,
         return 0;
     }
 
-    return f_ll->ops.rmdir(f_ll->se, f_ll->user_data, in_hdr, in_name, out_hdr, completion_context);
+    return f_ll->ops.rmdir(se, f_ll->user_data, in_hdr, in_name, out_hdr, completion_context, device_id);
 }
 
 static int fuse_ll_forget(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                  void *completion_context) {
+                  void *completion_context, uint16_t device_id) {
     if (in_iovcnt != 1 || out_iovcnt != 0) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
@@ -1259,7 +1275,7 @@ static int fuse_ll_forget(struct fuse_ll *f_ll,
 #endif
 
     if (f_ll->ops.forget)
-        return f_ll->ops.forget(f_ll->se, f_ll->user_data, in_hdr, in_forget, completion_context);
+        return f_ll->ops.forget(f_ll->se.at(device_id), f_ll->user_data, in_hdr, in_forget, completion_context, device_id);
     else
         return 0;
 }
@@ -1267,7 +1283,7 @@ static int fuse_ll_forget(struct fuse_ll *f_ll,
 static int fuse_ll_batch_forget(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                  void *completion_context) {
+                  void *completion_context, uint16_t device_id) {
     if (in_iovcnt != 1 || out_iovcnt != 0) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
@@ -1284,7 +1300,7 @@ static int fuse_ll_batch_forget(struct fuse_ll *f_ll,
 #endif
 
     if (f_ll->ops.batch_forget)
-        return f_ll->ops.batch_forget(f_ll->se, f_ll->user_data, in_hdr, in_batch_forget, in_forget, completion_context);
+        return f_ll->ops.batch_forget(f_ll->se.at(device_id), f_ll->user_data, in_hdr, in_batch_forget, in_forget, completion_context, device_id);
     else
         return 0;
 }
@@ -1292,11 +1308,12 @@ static int fuse_ll_batch_forget(struct fuse_ll *f_ll,
 static int fuse_ll_rename(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                  void *completion_context) {
+                  void *completion_context, uint16_t device_id) {
     if (in_iovcnt != 2 || out_iovcnt != 1) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
     }
+    struct fuse_session *se = f_ll->se.at(device_id);
 
     struct fuse_in_header *in_hdr = (struct fuse_in_header *) fuse_in_iov[0].iov_base;
     struct fuse_out_header *out_hdr = (struct fuse_out_header *) fuse_out_iov[0].iov_base;
@@ -1315,7 +1332,7 @@ static int fuse_ll_rename(struct fuse_ll *f_ll,
     printf("* new_name: %s\n", new_name);
 #endif
 
-    if (!f_ll->se->init_done) {
+    if (!se->init_done) {
         out_hdr->error = -EBUSY;
         return 0;
     }
@@ -1324,18 +1341,19 @@ static int fuse_ll_rename(struct fuse_ll *f_ll,
         return 0;
     }
 
-    return f_ll->ops.rename(f_ll->se, f_ll->user_data, in_hdr, name, in_rename->newdir,
-                    new_name, 0, out_hdr, completion_context);
+    return f_ll->ops.rename(se, f_ll->user_data, in_hdr, name, in_rename->newdir,
+                    new_name, 0, out_hdr, completion_context, device_id);
 }
 
 static int fuse_ll_rename2(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                  void *completion_context) {
+                  void *completion_context, uint16_t device_id) {
     if (in_iovcnt != 2 || out_iovcnt != 1) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
     }
+    struct fuse_session *se = f_ll->se.at(device_id);
 
     struct fuse_in_header *in_hdr = (struct fuse_in_header *) fuse_in_iov[0].iov_base;
     struct fuse_out_header *out_hdr = (struct fuse_out_header *) fuse_out_iov[0].iov_base;
@@ -1355,7 +1373,7 @@ static int fuse_ll_rename2(struct fuse_ll *f_ll,
     printf("* new_name: %s\n", new_name);
 #endif
 
-    if (!f_ll->se->init_done) {
+    if (!se->init_done) {
         out_hdr->error = -EBUSY;
         return 0;
     }
@@ -1365,18 +1383,19 @@ static int fuse_ll_rename2(struct fuse_ll *f_ll,
     }
 
 
-    return f_ll->ops.rename(f_ll->se, f_ll->user_data, in_hdr, name, in_rename2->newdir,
-                    new_name, in_rename2->flags, out_hdr, completion_context);
+    return f_ll->ops.rename(se, f_ll->user_data, in_hdr, name, in_rename2->newdir,
+                    new_name, in_rename2->flags, out_hdr, completion_context, device_id);
 }
 
 static int fuse_ll_read(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-                  void *completion_context) {
+                  void *completion_context, uint16_t device_id) {
     if (in_iovcnt != 2 || out_iovcnt < 2) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
     }
+    struct fuse_session *se = f_ll->se.at(device_id);
 
     struct fuse_in_header *in_hdr = (struct fuse_in_header *) fuse_in_iov[0].iov_base;
     struct fuse_out_header *out_hdr = (struct fuse_out_header *) fuse_out_iov[0].iov_base;
@@ -1396,7 +1415,7 @@ static int fuse_ll_read(struct fuse_ll *f_ll,
     printf("* flags: 0x%X\n", in_read->flags);
 #endif
 
-    if (!f_ll->se->init_done) {
+    if (!se->init_done) {
         out_hdr->error = -EBUSY;
         return 0;
     }
@@ -1415,18 +1434,19 @@ static int fuse_ll_read(struct fuse_ll *f_ll,
         return -EINVAL;
     }
 
-    return f_ll->ops.read(f_ll->se, f_ll->user_data, in_hdr, in_read, out_hdr,
-            &fuse_out_iov[1], out_iovcnt-1, completion_context);
+    return f_ll->ops.read(se, f_ll->user_data, in_hdr, in_read, out_hdr,
+            &fuse_out_iov[1], out_iovcnt-1, completion_context, device_id);
 }
 
 static int fuse_ll_write(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-               void *completion_context) {
+               void *completion_context, uint16_t device_id) {
     if (in_iovcnt < 2 || out_iovcnt != 2) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
     }
+    struct fuse_session *se = f_ll->se.at(device_id);
 
     struct fuse_in_header *in_hdr = (struct fuse_in_header *) fuse_in_iov[0].iov_base;
     struct fuse_out_header *out_hdr = (struct fuse_out_header *) fuse_out_iov[0].iov_base;
@@ -1447,7 +1467,7 @@ static int fuse_ll_write(struct fuse_ll *f_ll,
     printf("* flags: 0x%X\n", in_write->flags);
 #endif
 
-    if (!f_ll->se->init_done) {
+    if (!se->init_done) {
         out_hdr->error = -EBUSY;
         return 0;
     }
@@ -1466,19 +1486,20 @@ static int fuse_ll_write(struct fuse_ll *f_ll,
         return -EINVAL;
     }
 
-    return f_ll->ops.write(f_ll->se, f_ll->user_data, in_hdr, in_write,
-            &fuse_in_iov[2], in_iovcnt-2, out_hdr, out_write, completion_context);
+    return f_ll->ops.write(se, f_ll->user_data, in_hdr, in_write,
+            &fuse_in_iov[2], in_iovcnt-2, out_hdr, out_write, completion_context, device_id);
 }
 
 static int fuse_ll_mknod(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-           void *completion_context)
+           void *completion_context, uint16_t device_id)
 {
     if (in_iovcnt != 2 || out_iovcnt != 2) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
     }
+    struct fuse_session *se = f_ll->se.at(device_id);
 
     struct fuse_in_header *in_hdr = (struct fuse_in_header *) fuse_in_iov[0].iov_base;
     struct fuse_out_header *out_hdr = (struct fuse_out_header *) fuse_out_iov[0].iov_base;
@@ -1486,7 +1507,7 @@ static int fuse_ll_mknod(struct fuse_ll *f_ll,
     out_hdr->len = sizeof(*out_hdr);
     out_hdr->error = 0;
 
-    if (!f_ll->se->init_done) {
+    if (!se->init_done) {
         out_hdr->error = -EBUSY;
         return 0;
     }
@@ -1497,7 +1518,7 @@ static int fuse_ll_mknod(struct fuse_ll *f_ll,
 
     struct fuse_mknod_in *in_mknod = (struct fuse_mknod_in *) fuse_in_iov[1].iov_base;
     const char *in_name;
-    if (f_ll->se->conn.proto_minor < 12)
+    if (se->conn.proto_minor < 12)
         in_name = ((char *) fuse_in_iov[1].iov_base) + FUSE_COMPAT_MKNOD_IN_SIZE;
     else
         in_name = ((char *) fuse_in_iov[1].iov_base) + sizeof(struct fuse_mknod_in);
@@ -1512,18 +1533,19 @@ static int fuse_ll_mknod(struct fuse_ll *f_ll,
     printf("* umask: 0x%X\n", in_mknod->umask);
 #endif
 
-    return f_ll->ops.mknod(f_ll->se, f_ll->user_data, in_hdr, in_mknod, in_name, out_hdr, out_entry, completion_context);
+    return f_ll->ops.mknod(se, f_ll->user_data, in_hdr, in_mknod, in_name, out_hdr, out_entry, completion_context, device_id);
 }
 
 static int fuse_ll_mkdir(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-           void *completion_context)
+           void *completion_context, uint16_t device_id)
 {
     if (in_iovcnt != 2 || out_iovcnt != 2) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
     }
+    struct fuse_session *se = f_ll->se.at(device_id);
 
     struct fuse_in_header *in_hdr = (struct fuse_in_header *) fuse_in_iov[0].iov_base;
     struct fuse_out_header *out_hdr = (struct fuse_out_header *) fuse_out_iov[0].iov_base;
@@ -1542,7 +1564,7 @@ static int fuse_ll_mkdir(struct fuse_ll *f_ll,
     printf("* umask: 0x%X\n", in_mkdir->umask);
 #endif
 
-    if (!f_ll->se->init_done) {
+    if (!se->init_done) {
         out_hdr->error = -EBUSY;
         return 0;
     }
@@ -1551,18 +1573,19 @@ static int fuse_ll_mkdir(struct fuse_ll *f_ll,
         return 0;
     }
 
-    return f_ll->ops.mkdir(f_ll->se, f_ll->user_data, in_hdr, in_mkdir, in_name, out_hdr, out_entry, completion_context);
+    return f_ll->ops.mkdir(se, f_ll->user_data, in_hdr, in_mkdir, in_name, out_hdr, out_entry, completion_context, device_id);
 }
 
 static int fuse_ll_symlink(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-           void *completion_context)
+           void *completion_context, uint16_t device_id)
 {
     if (in_iovcnt != 2 || out_iovcnt != 2) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
     }
+    struct fuse_session *se = f_ll->se.at(device_id);
 
     struct fuse_in_header *in_hdr = (struct fuse_in_header *) fuse_in_iov[0].iov_base;
     struct fuse_out_header *out_hdr = (struct fuse_out_header *) fuse_out_iov[0].iov_base;
@@ -1582,7 +1605,7 @@ static int fuse_ll_symlink(struct fuse_ll *f_ll,
     printf("* oldnodeid: %lu\n", in_link->oldnodeid);
 #endif
 
-    if (!f_ll->se->init_done) {
+    if (!se->init_done) {
         out_hdr->error = -EBUSY;
         return 0;
     }
@@ -1591,18 +1614,19 @@ static int fuse_ll_symlink(struct fuse_ll *f_ll,
         return 0;
     }
 
-    return f_ll->ops.symlink(f_ll->se, f_ll->user_data, in_hdr, in_name, in_link_name, out_hdr, out_entry, completion_context);
+    return f_ll->ops.symlink(se, f_ll->user_data, in_hdr, in_name, in_link_name, out_hdr, out_entry, completion_context, device_id);
 }
 
 static int fuse_ll_statfs(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-           void *completion_context)
+           void *completion_context, uint16_t device_id)
 {
     if (in_iovcnt != 1 || out_iovcnt != 2) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
     }
+    struct fuse_session *se = f_ll->se.at(device_id);
 
     struct fuse_in_header *in_hdr = (struct fuse_in_header *) fuse_in_iov[0].iov_base;
     struct fuse_out_header *out_hdr = (struct fuse_out_header *) fuse_out_iov[0].iov_base;
@@ -1616,7 +1640,7 @@ static int fuse_ll_statfs(struct fuse_ll *f_ll,
     fuse_ll_debug_print_in_hdr(in_hdr);
 #endif
 
-    if (!f_ll->se->init_done) {
+    if (!se->init_done) {
         out_hdr->error = -EBUSY;
         return 0;
     }
@@ -1625,18 +1649,19 @@ static int fuse_ll_statfs(struct fuse_ll *f_ll,
         return 0;
     }
 
-    return f_ll->ops.statfs(f_ll->se, f_ll->user_data, in_hdr, out_hdr, out_statfs, completion_context);
+    return f_ll->ops.statfs(se, f_ll->user_data, in_hdr, out_hdr, out_statfs, completion_context, device_id);
 }
 
 static int fuse_ll_unlink(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-           void *completion_context)
+           void *completion_context, uint16_t device_id)
 {
     if (in_iovcnt != 2 || out_iovcnt != 1) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
     }
+    struct fuse_session *se = f_ll->se.at(device_id);
 
     struct fuse_in_header *in_hdr = (struct fuse_in_header *) fuse_in_iov[0].iov_base;
     struct fuse_out_header *out_hdr = (struct fuse_out_header *) fuse_out_iov[0].iov_base;
@@ -1651,7 +1676,7 @@ static int fuse_ll_unlink(struct fuse_ll *f_ll,
     printf("* name: %s\n", in_name);
 #endif
 
-    if (!f_ll->se->init_done) {
+    if (!se->init_done) {
         out_hdr->error = -EBUSY;
         return 0;
     }
@@ -1660,13 +1685,13 @@ static int fuse_ll_unlink(struct fuse_ll *f_ll,
         return 0;
     }
 
-    return f_ll->ops.unlink(f_ll->se, f_ll->user_data , in_hdr, in_name, out_hdr, completion_context);
+    return f_ll->ops.unlink(se, f_ll->user_data , in_hdr, in_name, out_hdr, completion_context, device_id);
 }
 
 static int fuse_ll_readlink(struct fuse_ll *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
-           void *completion_context)
+           void *completion_context, uint16_t device_id)
 {
     // TODO this function is still WIP, printing to see how it works
     fprintf(stderr, "READLINK called with:\n");
@@ -1688,12 +1713,13 @@ static int fuse_ll_readlink(struct fuse_ll *f_ll,
 static int fuse_ll_fallocate(struct fuse_ll *f_ll,
         struct iovec *fuse_in_iov, int in_iovcnt,
         struct iovec *fuse_out_iov, int out_iovcnt,
-        void *completion_context)
+        void *completion_context, uint16_t device_id)
 {
     if (in_iovcnt != 2 || out_iovcnt != 1) {
         fprintf(stderr, "%s: invalid number of iovecs!\n", __func__);
         return -EINVAL;
     }
+    struct fuse_session *se = f_ll->se.at(device_id);
 
     struct fuse_in_header *in_hdr = (struct fuse_in_header *) fuse_in_iov[0].iov_base;
     struct fuse_out_header *out_hdr = (struct fuse_out_header *) fuse_out_iov[0].iov_base;
@@ -1711,7 +1737,7 @@ static int fuse_ll_fallocate(struct fuse_ll *f_ll,
     printf("* mode: %u\n", in_fallocate->mode);
 #endif
 
-    if (!f_ll->se->init_done) {
+    if (!se->init_done) {
         out_hdr->error = -EBUSY;
         return 0;
     }
@@ -1720,7 +1746,7 @@ static int fuse_ll_fallocate(struct fuse_ll *f_ll,
         return 0;
     }
 
-    return f_ll->ops.fallocate(f_ll->se, f_ll->user_data, in_hdr, in_fallocate, out_hdr, completion_context);
+    return f_ll->ops.fallocate(se, f_ll->user_data, in_hdr, in_fallocate, out_hdr, completion_context, device_id);
 }
 
 static void fuse_ll_map(struct fuse_ll *fuse_ll) {
@@ -1765,7 +1791,7 @@ static void fuse_ll_map(struct fuse_ll *fuse_ll) {
 static int fuse_unknown(struct fuse_ll *fuse_ll,
                         struct iovec *fuse_in_iov, int in_iovcnt,
                         struct iovec *fuse_out_iov, int out_iovcnt,
-                        void *completion_context) {
+                        void *completion_context, uint16_t device_id) {
     struct fuse_in_header *in_hdr = (struct fuse_in_header *) fuse_in_iov[0].iov_base;
     struct fuse_out_header *out_hdr = (struct fuse_out_header *) fuse_out_iov[0].iov_base;
     out_hdr->unique = in_hdr->unique;
@@ -1780,7 +1806,7 @@ static int fuse_unknown(struct fuse_ll *fuse_ll,
 static int fuse_handle_req(void *u,
                            struct iovec *in_iov, int in_iovcnt,
                            struct iovec *out_iov, int out_iovcnt,
-                           void *completion_context)
+                           void *completion_context, uint16_t device_id)
 {
     struct fuse_ll *fuse_ll = (struct fuse_ll *) u;
 
@@ -1799,7 +1825,7 @@ static int fuse_handle_req(void *u,
         if (h == NULL) {
             h = fuse_unknown;
         }
-        int ret = h(fuse_ll, in_iov, in_iovcnt, out_iov, out_iovcnt, completion_context);
+        int ret = h(fuse_ll, in_iov, in_iovcnt, out_iov, out_iovcnt, completion_context, device_id);
         
 #ifdef DEBUG_ENABLED
         if (ret == 0 && out_iovcnt > 0 &&
@@ -1815,8 +1841,40 @@ static int fuse_handle_req(void *u,
     }
 }
 
-int dpfs_fuse_main(struct fuse_ll_operations *ops, const char *hal_conf_path,
-                   void *user_data, bool debug)
+void register_dpfs_device(void *user_data, uint16_t device_id)
+{
+    struct fuse_ll *f_ll = (struct fuse_ll *) user_data;
+
+    struct fuse_session *se = (struct fuse_session *) calloc(1, sizeof(struct fuse_session));
+    if (se == NULL) {
+        fprintf(stderr, "%s - ERROR: Could not allocate memory for fuse_session", __func__);
+        return;
+    }
+    f_ll->se.insert(std::make_pair(device_id, se));
+
+    se->conn.max_write = UINT_MAX;
+    se->conn.max_readahead = UINT_MAX;
+
+    se->bufsize = FUSE_MAX_MAX_PAGES * getpagesize() +
+        FUSE_BUFFER_HEADER_SIZE;
+
+    f_ll->register_device_cb(f_ll->user_data, device_id);
+}
+
+void unregister_dpfs_device(void *user_data, uint16_t device_id)
+{
+    struct fuse_ll *f_ll = (struct fuse_ll *) user_data;
+    struct fuse_session *se = f_ll->se.at(device_id);
+
+    f_ll->unregister_device_cb(f_ll->user_data, device_id);
+
+    f_ll->se.erase(device_id);
+    free(se);
+}
+
+int dpfs_fuse_main(struct fuse_ll_operations *ops, const char *hal_conf_path, 
+                   void *user_data, dpfs_hal_register_device_t register_device_cb,
+                   dpfs_hal_unregister_device_t unregister_device_cb)
 {
 #ifdef DEBUG_ENABLED
     printf("dpfs_fuse is running in DEBUG mode\n");
@@ -1824,25 +1882,16 @@ int dpfs_fuse_main(struct fuse_ll_operations *ops, const char *hal_conf_path,
 
     struct fuse_ll *f_ll = (struct fuse_ll *) calloc(1, sizeof(struct fuse_ll));
     f_ll->ops = *ops;
-    f_ll->debug = debug;
     f_ll->user_data = user_data;
-
-    f_ll->se = (struct fuse_session *) calloc(1, sizeof(struct fuse_session));
-    if (f_ll->se == NULL) {
-        err(1, "ERROR: Could not allocate memory for fuse_session");
-    }
-    f_ll->se->conn.max_write = UINT_MAX;
-    f_ll->se->conn.max_readahead = UINT_MAX;
-
-    f_ll->se->bufsize = FUSE_MAX_MAX_PAGES * getpagesize() +
-        FUSE_BUFFER_HEADER_SIZE;
 
     fuse_ll_map(f_ll);
 
     struct dpfs_hal_params hal_params;
     memset(&hal_params, 0, sizeof(hal_params));
     hal_params.user_data = f_ll;
-    hal_params.request_handler = fuse_handle_req;
+    hal_params.ops.request_handler = fuse_handle_req;
+    hal_params.ops.register_device = register_device_cb;
+    hal_params.ops.unregister_device = unregister_device_cb;
     hal_params.conf_path = hal_conf_path;
 
     struct dpfs_hal *emu = dpfs_hal_new(&hal_params);

@@ -360,7 +360,7 @@ public:
 
 static int fuse_init(struct fuse_session *se, RamCloudUserData *userData,
                      struct fuse_in_header *in_hdr, struct fuse_init_in *in_init,
-                     struct fuse_conn_info *conn, struct fuse_out_header *out_hdr)
+                     struct fuse_conn_info *conn, struct fuse_out_header *out_hdr, uint16_t device_id)
 {
 
     printf("FUSE init\n");
@@ -375,7 +375,7 @@ static int fuse_init(struct fuse_session *se, RamCloudUserData *userData,
 static int fuse_lookup(struct fuse_session *se, RamCloudUserData *userData,
                        struct fuse_in_header *in_hdr, const char *const in_name,
                        struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry,
-                       void *completion_context)
+                       void *completion_context, uint16_t device_id)
 {
     new AsyncLookupOp{*userData, fnv1a_hash(in_name), se, out_hdr, out_entry, completion_context};
 
@@ -385,7 +385,7 @@ static int fuse_lookup(struct fuse_session *se, RamCloudUserData *userData,
 static int fuse_getattr(struct fuse_session *se, RamCloudUserData *userData,
                         struct fuse_in_header *in_hdr, struct fuse_getattr_in *in_getattr,
                         struct fuse_out_header *out_hdr, struct fuse_attr_out *out_attr,
-                        void *completion_context)
+                        void *completion_context, uint16_t device_id)
 {
     struct stat st;
 
@@ -415,7 +415,7 @@ static int fuse_getattr(struct fuse_session *se, RamCloudUserData *userData,
 static int fuse_statfs(struct fuse_session *se, RamCloudUserData *userData,
                        struct fuse_in_header *in_hdr,
                        struct fuse_out_header *out_hdr, struct fuse_statfs_out *out_statfs,
-                       void *completion_context)
+                       void *completion_context, uint16_t device_id)
 {
     struct statvfs stbuf;
     stbuf.f_bsize = 1;    /* Filesystem block size */
@@ -436,7 +436,7 @@ static int fuse_statfs(struct fuse_session *se, RamCloudUserData *userData,
 static int fuse_setattr(struct fuse_session *se, RamCloudUserData *userData,
                         struct fuse_in_header *in_hdr, struct stat *s, int valid, struct fuse_file_info *fi,
                         struct fuse_out_header *out_hdr, struct fuse_attr_out *out_attr,
-                        void *completion_context)
+                        void *completion_context, uint16_t device_id)
 {
     RamCloudInode inode;
     try {
@@ -489,7 +489,7 @@ static int fuse_mknod(struct fuse_session *se, RamCloudUserData *userData,
                       struct fuse_in_header *in_hdr, struct fuse_mknod_in *in_mknod,
                       const char *const in_name,
                       struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry,
-                      void *completion_context)
+                      void *completion_context, uint16_t device_id)
 {
     if (in_hdr->nodeid != 1) {
         /* we don't support directories so anything other than root nodeid should not happen!? */
@@ -544,7 +544,7 @@ static int fuse_write(struct fuse_session *se, RamCloudUserData *userData,
                       struct fuse_in_header *in_hdr, struct fuse_write_in *in_write,
                       struct iovec *in_iov, int iovcnt,
                       struct fuse_out_header *out_hdr, struct fuse_write_out *out_write,
-                      void *completion_context)
+                      void *completion_context, uint16_t device_id)
 {
     // The ramcloud backend only allows for complete file writes
     if (in_write->offset != 0) {
@@ -562,7 +562,7 @@ static int fuse_write(struct fuse_session *se, RamCloudUserData *userData,
 static int fuse_read(struct fuse_session *se, RamCloudUserData *userData,
                  struct fuse_in_header *in_hdr, struct fuse_read_in *in_read,
                  struct fuse_out_header *out_hdr, struct iovec *in_iov, int iovcnt,
-                 void *completion_context)
+                 void *completion_context, uint16_t device_id)
 {
 
     new AsyncReadOp{*userData, in_hdr->nodeid, in_read->offset, in_iov, iovcnt, se, out_hdr,
@@ -574,7 +574,7 @@ static int fuse_read(struct fuse_session *se, RamCloudUserData *userData,
 static int fuse_readdir(struct fuse_session *se, RamCloudUserData *userData,
                         struct fuse_in_header *in_hdr, struct fuse_read_in *in_read, bool plus,
                         struct fuse_out_header *out_hdr, struct iov iov,
-                        void *completion_context)
+                        void *completion_context, uint16_t device_id)
 {
     RAMCloud::TableEnumerator *tableEnum =
         reinterpret_cast<RAMCloud::TableEnumerator *>(in_read->fh);
@@ -623,7 +623,7 @@ static int fuse_readdir(struct fuse_session *se, RamCloudUserData *userData,
 static int fuse_opendir(struct fuse_session *se, RamCloudUserData *userData,
                         struct fuse_in_header *in_hdr, struct fuse_open_in *in_open,
                         struct fuse_out_header *out_hdr, struct fuse_open_out *out_open,
-                        void *completion_context)
+                        void *completion_context, uint16_t device_id)
 {
     struct fuse_file_info fi = {};
     fi.fh = (uint64_t) new RAMCloud::TableEnumerator{*userData->ramcloud, userData->inodeTableId,
@@ -635,7 +635,7 @@ static int fuse_opendir(struct fuse_session *se, RamCloudUserData *userData,
 static int fuse_releasedir(struct fuse_session *se, RamCloudUserData *userData,
                            struct fuse_in_header *in_hdr, struct fuse_release_in *in_release,
                            struct fuse_out_header *out_hdr,
-                           void *completion_context)
+                           void *completion_context, uint16_t device_id)
 {
     RAMCloud::TableEnumerator *tableEnum =
         reinterpret_cast<RAMCloud::TableEnumerator *>(in_release->fh);
@@ -646,7 +646,7 @@ static int fuse_releasedir(struct fuse_session *se, RamCloudUserData *userData,
 static int fuse_unlink(struct fuse_session *se, RamCloudUserData *userData,
                        struct fuse_in_header *in_hdr, const char *const in_name,
                        struct fuse_out_header *out_hdr,
-                       void *completion_context)
+                       void *completion_context, uint16_t device_id)
 {
     /* TODO: use multiRemove */
     uint64_t inodeId = fnv1a_hash(in_name);
@@ -756,7 +756,7 @@ int main(int argc, char **argv)
     ops.mknod = (typeof(ops.mknod)) fuse_mknod; /* not sure if this is needed at all */
     ops.unlink = (typeof(ops.unlink)) fuse_unlink;
 
-    dpfs_fuse_main(&ops, conf_path, &user_data, false);
+    dpfs_fuse_main(&ops, conf_path, &user_data, NULL, NULL);
 
     user_data.stopPoller = true;
     pthread_join(ramcloud_poll_thread, NULL);

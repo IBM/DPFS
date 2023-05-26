@@ -18,6 +18,7 @@ enum fuser_rw_cb_op {
 struct fuser_rw_cb_data {
     enum fuser_rw_cb_op op;
     void *completion_context;
+    uint16_t device_id;
     struct fuse_in_header *in_hdr;
     struct fuse_out_header *out_hdr;
     union {

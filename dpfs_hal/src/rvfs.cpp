@@ -45,7 +45,7 @@ struct rpc_msg {
 };
 
 struct dpfs_hal {
-    dpfs_hal_handler_t request_handler;
+    dpfs_hal_ops ops;
     void *user_data;
 
     // eRPC
@@ -53,8 +53,8 @@ struct dpfs_hal {
     std::unique_ptr<Nexus> nexus;
     std::unique_ptr<Rpc<CTransport>> rpc;
 
-    dpfs_hal(dpfs_hal_handler_t rh, void *ud) :
-        request_handler(rh), user_data(ud), avail() {}
+    dpfs_hal(dpfs_hal_ops o, void *ud) :
+        ops(o), user_data(ud), avail() {}
 };
     
 static void req_handler(ReqHandle *reqh, void *context)
@@ -111,10 +111,10 @@ static void req_handler(ReqHandle *reqh, void *context)
         resp_buf += iov_len;
     }
 
-    int ret = hal->request_handler(hal->user_data,
+    int ret = hal->ops.request_handler(hal->user_data,
             msg->iov, msg->in_iovcnt,
             msg->iov+msg->in_iovcnt, msg->out_iovcnt,
-            static_cast<void *>(msg));
+            static_cast<void *>(msg), 0);
 
     if (ret == 0) {
         dpfs_hal_async_complete(msg, DPFS_HAL_COMPLETION_SUCCES);
@@ -132,7 +132,7 @@ static void sm_handler(int, SmEventType event, SmErrType err, void *) {
 
 __attribute__((visibility("default")))
 struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params) {
-    dpfs_hal *hal = new dpfs_hal(params->request_handler, params->user_data);
+    dpfs_hal *hal = new dpfs_hal(params->ops, params->user_data);
     auto res = toml::parseFile(params->conf_path);
     if (!res.table) {
         std::cerr << "cannot parse file: " << res.errmsg << std::endl;
@@ -168,6 +168,8 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params) {
     // Same as in rvfs_dpu
     hal->rpc->set_pre_resp_msgbuf_size(DPFS_RVFS_MAX_REQRESP_SIZE);
 
+    hal->ops.register_device(hal->user_data, 0);
+
     std::cout << "DPFS HAL with RVFS frontend online at " << remote_uri << "!" << std::endl;
 
     return hal;
@@ -196,14 +198,14 @@ void dpfs_hal_loop(struct dpfs_hal *hal) {
 }
 
 __attribute__((visibility("default")))
-int dpfs_hal_poll_io(struct dpfs_hal *hal, int) {
+int dpfs_hal_poll_io(struct dpfs_hal *hal, uint16_t) {
     hal->rpc->run_event_loop_once();
     return 0;
 }
 
 // Just do nothing
 __attribute__((visibility("default")))
-void dpfs_hal_poll_mmio(struct dpfs_hal *) {}
+void dpfs_hal_poll_mmio(struct dpfs_hal *, uint16_t) {}
 
 __attribute__((visibility("default")))
 void dpfs_hal_destroy(struct dpfs_hal *hal) {
@@ -213,6 +215,7 @@ void dpfs_hal_destroy(struct dpfs_hal *hal) {
         delete msg;
     }
 
+    hal->ops.unregister_device(hal->user_data, 0);
     delete hal;
 }
 

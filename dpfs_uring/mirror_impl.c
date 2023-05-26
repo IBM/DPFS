@@ -70,7 +70,8 @@ static void forget_one(struct fuser *f, fuse_ino_t ino, uint64_t n)
 
 int fuser_mirror_init(struct fuse_session *se, void *user_data,
     struct fuse_in_header *in_hdr, struct fuse_init_in *in_init,
-    struct fuse_conn_info *conn, struct fuse_out_header *out_hdr)
+    struct fuse_conn_info *conn, struct fuse_out_header *out_hdr,
+    uint16_t device_id)
 {
     struct fuser *f = user_data;
 
@@ -118,7 +119,7 @@ ret_errno:
 int fuser_mirror_destroy (struct fuse_session *se, void *user_data,
         struct fuse_in_header *in_hdr,
         struct fuse_out_header *out_hdr,
-        void *completion_context)
+        void *completion_context, uint16_t device_id)
 {
     struct fuser *f = user_data;
     inode_table_clear(f->inodes);
@@ -141,7 +142,7 @@ static void fuser_mirror_getattr_cb(struct fuser_cb_data *cb_data, struct io_uri
 int fuser_mirror_getattr(struct fuse_session *se, void *user_data,
     struct fuse_in_header *in_hdr, struct fuse_getattr_in *in_getattr,
     struct fuse_out_header *out_hdr, struct fuse_attr_out *out_attr,
-    void *completion_context)
+    void *completion_context, uint16_t device_id)
 {
     (void) in_getattr;
     struct fuser *f = user_data;
@@ -184,7 +185,7 @@ int fuser_mirror_getattr(struct fuse_session *se, void *user_data,
 int fuser_mirror_getattr(struct fuse_session *se, void *user_data,
     struct fuse_in_header *in_hdr, struct fuse_getattr_in *in_getattr,
     struct fuse_out_header *out_hdr, struct fuse_attr_out *out_attr,
-    void *completion_context)
+    void *completion_context, uint16_t device_id)
 {
     (void) in_getattr;
     struct fuser *f = user_data;
@@ -286,7 +287,7 @@ static int do_lookup(struct fuser *f, fuse_ino_t parent, const char *name,
 int fuser_mirror_lookup(struct fuse_session *se, void *user_data,
                         struct fuse_in_header *in_hdr, const char *const in_name,
                         struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry,
-                        void *completion_context)
+                        void *completion_context, uint16_t device_id)
 {
     struct fuser *f = user_data;
 
@@ -310,7 +311,7 @@ int fuser_mirror_lookup(struct fuse_session *se, void *user_data,
 int fuser_mirror_setattr(struct fuse_session *se, void *user_data,
                          struct fuse_in_header *in_hdr, struct stat *s, int valid, struct fuse_file_info *fi,
                          struct fuse_out_header *out_hdr, struct fuse_attr_out *out_attr,
-                         void *completion_context)
+                         void *completion_context, uint16_t device_id)
 {
     struct fuser *f = user_data;
 
@@ -393,7 +394,7 @@ out_err:
 int fuser_mirror_opendir(struct fuse_session *se, void *user_data,
                     struct fuse_in_header *in_hdr, struct fuse_open_in *in_open,
                     struct fuse_out_header *out_hdr, struct fuse_open_out *out_open,
-                    void *completion_context)
+                    void *completion_context, uint16_t device_id)
 {
     struct fuser *f = user_data;
     struct inode *i = ino_to_inodeptr(f, in_hdr->nodeid);
@@ -445,7 +446,7 @@ out_errno:
 int fuser_mirror_releasedir(struct fuse_session *se, void *user_data,
                     struct fuse_in_header *in_hdr, struct fuse_release_in *in_release,
                     struct fuse_out_header *out_hdr,
-                    void *completion_context)
+                    void *completion_context, uint16_t device_id)
 {
     struct directory *d = (struct directory *) in_release->fh;
     directory_destroy(d);
@@ -460,7 +461,7 @@ static bool is_dot_or_dotdot(const char *name) {
 int fuser_mirror_readdir(struct fuse_session *se, void *user_data,
                        struct fuse_in_header *in_hdr, struct fuse_read_in *in_read, bool plus,
                        struct fuse_out_header *out_hdr, struct iov read_iov,
-                       void *completion_context)
+                       void *completion_context, uint16_t device_id)
 {
     struct fuser *f = user_data;
 
@@ -554,7 +555,7 @@ error:
 int fuser_mirror_open(struct fuse_session *se, void *user_data,
                       struct fuse_in_header *in_hdr, struct fuse_open_in *in_open,
                       struct fuse_out_header *out_hdr, struct fuse_open_out *out_open,
-                      void *completion_context)
+                      void *completion_context, uint16_t device_id)
 {
     struct fuser *f = user_data;
 
@@ -609,7 +610,7 @@ int fuser_mirror_open(struct fuse_session *se, void *user_data,
 int fuser_mirror_release(struct fuse_session *se, void *user_data,
                     struct fuse_in_header *in_hdr, struct fuse_release_in *in_release,
                     struct fuse_out_header *out_hdr,
-                    void *completion_context)
+                    void *completion_context, uint16_t device_id)
 {
     struct fuser *f = user_data;
 
@@ -666,7 +667,7 @@ static int do_fsync(struct fuse_session *se, void *user_data,
 int fuser_mirror_fsync(struct fuse_session *se, void *user_data,
         struct fuse_in_header *in_hdr, struct fuse_fsync_in *in_fsync,
         struct fuse_out_header *out_hdr,
-        void *completion_context)
+        void *completion_context, uint16_t device_id)
 {
     return do_fsync(se, user_data, in_hdr, in_fsync->fh, in_fsync->fsync_flags, out_hdr, completion_context);
 }
@@ -674,7 +675,7 @@ int fuser_mirror_fsync(struct fuse_session *se, void *user_data,
 int fuser_mirror_fsyncdir(struct fuse_session *se, void *user_data,
         struct fuse_in_header *in_hdr, struct fuse_fsync_in *in_fsync,
         struct fuse_out_header *out_hdr,
-        void *completion_context)
+        void *completion_context, uint16_t device_id)
 {
     struct directory *d = (struct directory *) in_fsync->fh;
     int fd = dirfd(d->dp);
@@ -685,7 +686,7 @@ int fuser_mirror_fsyncdir(struct fuse_session *se, void *user_data,
 int fuser_mirror_create(struct fuse_session *se, void *user_data,
     struct fuse_in_header *in_hdr, struct fuse_create_in in_create, const char *const in_name,
     struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry, struct fuse_open_out *out_open,
-    void *completion_context)
+    void *completion_context, uint16_t device_id)
 {
     struct fuser *f = user_data;
 
@@ -729,7 +730,7 @@ int fuser_mirror_create(struct fuse_session *se, void *user_data,
 int fuser_mirror_rmdir(struct fuse_session *se, void *user_data,
                   struct fuse_in_header *in_hdr, const char *const in_name,
                   struct fuse_out_header *out_hdr,
-                  void *completion_context)
+                  void *completion_context, uint16_t device_id)
 {
     struct fuser *f = user_data;
 
@@ -750,7 +751,7 @@ int fuser_mirror_rmdir(struct fuse_session *se, void *user_data,
 
 int fuser_mirror_forget(struct fuse_session *se, void *user_data,
                   struct fuse_in_header *in_hdr, struct fuse_forget_in *in_forget,
-                  void *completion_context)
+                  void *completion_context, uint16_t device_id)
 {
     struct fuser *f = user_data;
 
@@ -761,7 +762,7 @@ int fuser_mirror_forget(struct fuse_session *se, void *user_data,
 int fuser_mirror_batch_forget(struct fuse_session *se, void *user_data,
                          struct fuse_in_header *in_hdr, struct fuse_batch_forget_in *in_batch_forget,
                          struct fuse_forget_one *in_forget_one,
-                         void *completion_context)
+                         void *completion_context, uint16_t device_id)
 {
     struct fuser *f = user_data;
 
@@ -775,7 +776,7 @@ int fuser_mirror_rename(struct fuse_session *se, void *user_data,
                    struct fuse_in_header *in_hdr, const char *const in_name,
                    fuse_ino_t in_new_parentdir, const char *const in_new_name, uint32_t in_flags,
                    struct fuse_out_header *out_hdr,
-                   void *completion_context)
+                   void *completion_context, uint16_t device_id)
 {
     struct fuser *f = user_data;
 
@@ -809,7 +810,7 @@ void fuser_mirror_read_cb(struct fuser_cb_data *cb_data, struct io_uring_cqe *cq
 int fuser_mirror_read(struct fuse_session *se, void *user_data,
         struct fuse_in_header *in_hdr, struct fuse_read_in *in_read,
         struct fuse_out_header *out_hdr, struct iovec *out_iov, int out_iovcnt,
-        void *completion_context)
+        void *completion_context, uint16_t device_id)
 {
     struct fuser *f = user_data;
         
@@ -855,7 +856,7 @@ int fuser_mirror_write(struct fuse_session *se, void *user_data,
         struct fuse_in_header *in_hdr, struct fuse_write_in *in_write,
         struct iovec *in_iov, int in_iovcnt,
         struct fuse_out_header *out_hdr, struct fuse_write_out *out_write,
-        void *completion_context)
+        void *completion_context, uint16_t device_id)
 {
     struct fuser *f = user_data;
         
@@ -919,7 +920,7 @@ out_err:
 int fuser_mirror_mknod(struct fuse_session *se, void *user_data,
                   struct fuse_in_header *in_hdr, struct fuse_mknod_in * in_mknod, const char *const in_name,
                   struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry,
-                  void *completion_context)
+                  void *completion_context, uint16_t device_id)
 {
     struct fuser *f = user_data;
 
@@ -936,7 +937,7 @@ int fuser_mirror_mknod(struct fuse_session *se, void *user_data,
 int fuser_mirror_mkdir(struct fuse_session *se, void *user_data,
                   struct fuse_in_header *in_hdr, struct fuse_mkdir_in *in_mkdir, const char *const in_name,
                   struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry,
-                  void *completion_context)
+                  void *completion_context, uint16_t device_id)
 {
     struct fuser *f = user_data;
 
@@ -953,7 +954,7 @@ int fuser_mirror_mkdir(struct fuse_session *se, void *user_data,
 int fuser_mirror_symlink(struct fuse_session *se, void *user_data,
                     struct fuse_in_header *in_hdr, const char *const in_name, const char *const in_link,
                     struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry,
-                    void *completion_context)
+                    void *completion_context, uint16_t device_id)
 {
     struct fuser *f = user_data;
 
@@ -970,7 +971,7 @@ int fuser_mirror_symlink(struct fuse_session *se, void *user_data,
 int fuser_mirror_statfs(struct fuse_session *se, void *user_data,
                    struct fuse_in_header *in_hdr,
                    struct fuse_out_header *out_hdr, struct fuse_statfs_out *out_statfs,
-                   void *completion_context)
+                   void *completion_context, uint16_t device_id)
 {
     struct fuser *f = user_data;
 
@@ -987,7 +988,7 @@ int fuser_mirror_statfs(struct fuse_session *se, void *user_data,
 int fuser_mirror_unlink(struct fuse_session *se, void *user_data,
                   struct fuse_in_header *in_hdr, const char *const in_name,
                   struct fuse_out_header *out_hdr,
-                  void *completion_context)
+                  void *completion_context, uint16_t device_id)
 {
     struct fuser *f = user_data;
 
@@ -1037,7 +1038,7 @@ int fuser_mirror_unlink(struct fuse_session *se, void *user_data,
 int fuser_mirror_flush(struct fuse_session *se, void *user_data,
                struct fuse_in_header *in_hdr, struct fuse_file_info fi,
                struct fuse_out_header *out_hdr,
-               void *completion_context)
+               void *completion_context, uint16_t device_id)
 {
     (void) in_hdr;
 
@@ -1051,7 +1052,7 @@ int fuser_mirror_flush(struct fuse_session *se, void *user_data,
 int fuser_mirror_flock(struct fuse_session *se, void *user_data,
                 struct fuse_in_header *in_hdr, struct fuse_file_info fi, int op,
                 struct fuse_out_header *out_hdr,
-                void *completion_context)
+                void *completion_context, uint16_t device_id)
 {
     (void) in_hdr;
 
@@ -1065,7 +1066,7 @@ int fuser_mirror_flock(struct fuse_session *se, void *user_data,
 int fuser_mirror_fallocate(struct fuse_session *se, void *user_data,
                         struct fuse_in_header *in_hdr, struct fuse_fallocate_in *in_fallocate,
                       struct fuse_out_header *out_hdr,
-                      void *completion_context)
+                      void *completion_context, uint16_t device_id)
 {
     int res = fallocate64(in_fallocate->fh, in_fallocate->mode, in_fallocate->offset, in_fallocate->length);
 

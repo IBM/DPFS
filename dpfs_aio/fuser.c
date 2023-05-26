@@ -240,7 +240,7 @@ int fuser_main(bool debug, char *source, bool cached, const char *conf_path) {
     pthread_t poll_thread;
     pthread_create(&poll_thread, NULL, (void *(*)(void *))fuser_io_poll_thread, f);
 
-    dpfs_fuse_main(&ops, conf_path, f, debug);
+    dpfs_fuse_main(&ops, conf_path, f, NULL, NULL);
 
     f->io_poll_thread_stop = true;
     pthread_join(poll_thread, NULL);

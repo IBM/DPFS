@@ -79,7 +79,7 @@ static void sm_handler(int, SmEventType event, SmErrType err, void *) {
 static int fuse_handler(void *user_data,
                         struct iovec *in_iov, int in_iovcnt,
                         struct iovec *out_iov, int out_iovcnt,
-                        void *completion_context)
+                        void *completion_context, uint16_t device_id)
 {
     rpc_state *state = (rpc_state *) user_data;
     // Messages and their buffers are dynamically allocated
@@ -140,17 +140,30 @@ void usage()
     printf("dpfs_rvfs_dpu [-c config_path]\n");
 }
 
+static volatile uint16_t ndevices;
+
 void hal_polling(struct dpfs_hal *hal, Nexus *nexus) {
     // We need to register ourself in eRPC so that we can send requests in the fuse_handler
     nexus->tls_registry_.init();
 
     uint32_t count = 0;
     while(keep_running) {
-        if (count++ % 10000 == 0)
-            dpfs_hal_poll_mmio(hal);
+        for (uint16_t i = 0; i < ndevices; i++) {
+            if (count++ == 10000) {
+                dpfs_hal_poll_mmio(hal, i);
+                count = 0;
+            }
 
-        dpfs_hal_poll_io(hal, 0);
+            dpfs_hal_poll_io(hal, i);
+        }
     }
+}
+
+void register_dpfs_device(void *user_data, uint16_t device_id) {
+    ndevices++;
+}
+void unregister_dpfs_device(void *user_data, uint16_t device_id) {
+    ndevices--;
 }
 
 int main(int argc, char **argv)
@@ -220,7 +233,9 @@ int main(int argc, char **argv)
     // just for safety if a new option gets added
     memset(&hal_params, 0, sizeof(struct dpfs_hal_params));
     hal_params.conf_path = config_path;
-    hal_params.request_handler = fuse_handler;
+    hal_params.ops.request_handler = fuse_handler;
+    hal_params.ops.register_device = register_dpfs_device;
+    hal_params.ops.unregister_device = unregister_dpfs_device;
     hal_params.user_data = &state;
 
     struct dpfs_hal *hal = dpfs_hal_new(&hal_params);
@@ -248,15 +263,20 @@ int main(int argc, char **argv)
         while(keep_running && state.rpc->is_connected(state.session_num)) {
             state.rpc->run_event_loop_once();
         }
+        keep_running = 0;
         hal_thread.join();
     } else {
         uint32_t count = 0;
         while(keep_running && state.rpc->is_connected(state.session_num)) {
-            if (count++ % 10000 == 0)
-                dpfs_hal_poll_mmio(hal);
+            for (uint16_t i = 0; i < ndevices; i++) {
+                if (count++ == 10000) {
+                    dpfs_hal_poll_mmio(hal, i);
+                    count = 0;
+                }
 
-            dpfs_hal_poll_io(hal, 0);
-            state.rpc->run_event_loop_once();
+                dpfs_hal_poll_io(hal, i);
+                state.rpc->run_event_loop_once();
+            }
         }
     }
 

@@ -1,19 +1,21 @@
 [snap_hal]
 # Time between every poll
 polling_interval_usec = 0
-# Physical function ID
-pf_id = 0
-# Virtual function ID
-vf_id = -1
+# Physical Function IDs
+# When multiple PFs are supplied, multiple virtio-fs devices will be created
+# The index of this array is the device_id supplied by the HAL to the backend
+pf_id = [ 0 ]
 # Emulation manager, DPU specific
 emu_manager = "mlx5_0"
-# Amount of Virtio requests queues, every queue is paired with a single thread for polling. 1 for single threaded mode, >1 for multithreaded mode
-# Multithreaded not supported in snap_hal currently as the virtio-fs driver still only support a single Virtio queue.
-nthreads = 1
 # Must be a power of 2 and >= 1! The virtio-fs specification requires this
 queue_depth = 64
 # Filesystem tag (i.e. the name of the virtiofs device to mount for the host)
 tag = "dpfs"
+# int = n threads that each own pf_ids/int devices
+# "dynamic" = dynamic threading ala https://spdk.io/doc/scheduler.html
+nthreads = 1
+# The number of Virtio requests, currently the driver and DPFS only support a single queue
+#virtio_request_queues = 1
 
 [rvfs_hal]
 # Time between every poll

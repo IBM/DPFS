@@ -16,7 +16,7 @@
 static int fuse_handler(void *user_data,
                         struct iovec *fuse_in_iov, int in_iovcnt,
                         struct iovec *fuse_out_iov, int out_iovcnt,
-                        void *completion_context)
+                        void *completion_context, uint16_t device_id)
 {
     struct fuse_in_header *in_hdr = (struct fuse_in_header *) fuse_in_iov[0].iov_base;
     struct fuse_out_header *out_hdr = (struct fuse_out_header *) fuse_out_iov[0].iov_base;
@@ -63,7 +63,7 @@ int main(int argc, char **argv)
     }
     printf("dpfs_template starting up!\n");
 
-    hal_params.request_handler = fuse_handler;
+    hal_params.ops.request_handler = fuse_handler;
 
     struct dpfs_hal *hal = dpfs_hal_new(&hal_params);
     if (hal == NULL) {
