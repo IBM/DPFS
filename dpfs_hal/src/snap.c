@@ -104,34 +104,42 @@ static void dpfs_hal_poll_device(struct dpfs_hal_device *dev)
 {
     struct dpfs_hal *hal = dev->hal;
 
-    if (!virtio_fs_ctrl_is_suspended(dev->snap_ctrl)) {
+    /*
+     * don't call usleep(0) because it adds a huge overhead
+     * to polling.
+     */
+    if (hal->polling_interval_usec > 0) {
+        usleep(hal->polling_interval_usec);
+        // actual io
+        virtio_fs_ctrl_progress_io(dev->snap_ctrl, 0);
+        // This is for mmio (management io)
+        virtio_fs_ctrl_progress(dev->snap_ctrl);
+    } else {
         /*
-         * don't call usleep(0) because it adds a huge overhead
-         * to polling.
+         * poll submission queues as fast as we can
+         * but don't spend resources on polling mmio
          */
-        if (hal->polling_interval_usec > 0) {
-            usleep(hal->polling_interval_usec);
-            // actual io
-            virtio_fs_ctrl_progress_io(dev->snap_ctrl, 0);
-            // This is for mmio (management io)
+        virtio_fs_ctrl_progress_io(dev->snap_ctrl, 0);
+        if (dev->poll_counter++ == 10000) {
             virtio_fs_ctrl_progress(dev->snap_ctrl);
-        } else {
-            /*
-             * poll submission queues as fast as we can
-             * but don't spend resources on polling mmio
-             */
-            virtio_fs_ctrl_progress_io(dev->snap_ctrl, 0);
-            if (dev->poll_counter++ == 10000) {
-                virtio_fs_ctrl_progress(dev->snap_ctrl);
-                dev->poll_counter = 0;
-            }
-        }
-
-        if (unlikely(!keep_running && !dev->suspending)) {
-            virtio_fs_ctrl_suspend(dev->snap_ctrl);
-            dev->suspending = true;
+            dev->poll_counter = 0;
         }
     }
+
+    if (unlikely(!keep_running && !dev->suspending)) {
+        virtio_fs_ctrl_suspend(dev->snap_ctrl);
+        dev->suspending = true;
+    }
+}
+
+static bool all_devices_suspended(struct dpfs_hal *hal)
+{
+    uint16_t n = 0;
+    for (uint16_t i = 0; i < hal->ndevices; i++) {
+        if (virtio_fs_ctrl_is_suspended(hal->devices[i].snap_ctrl))
+            n++;
+    }
+    return n == hal->ndevices;
 }
 
 struct dpfs_hal_thread {
@@ -156,7 +164,7 @@ static void *dpfs_hal_loop_static_thread(void *arg)
     // with two threads and 8 total cores:
     // thread 0 will occupy core 7
     // thread 0 will occupy core 6
-    CPU_SET(num_cpus-1-ht->thread_id, &loop_cpu);
+    CPU_SET(num_cpus - 1 - ht->thread_id, &loop_cpu);
     int ret = sched_setaffinity(getpid(), sizeof(loop_cpu), &loop_cpu);
     if (ret == -1) {
         warn("Could not set the CPU affinity of polling thread %lu. DPFS thread %lu will continue not pinned.", ht->thread_id, ht->thread_id);
@@ -166,12 +174,15 @@ static void *dpfs_hal_loop_static_thread(void *arg)
     double remainder = (double) hal->ndevices / (double) hal->nthreads;
     size_t devices_start = ndevices * ht->thread_id;
     size_t devices_end = devices_start + ndevices;
-    if (ht->thread_id == 0 && remainder != 0)
+    if (ht->thread_id == 0 && remainder != 0) {
         devices_end++;
-    else if (remainder != 0)
+        ndevices++;
+    } else if (remainder != 0) {
         devices_start++;
+        ndevices++;
+    }
 
-    while (keep_running) {
+    while (keep_running || !all_devices_suspended(hal)) {
         for (size_t i = devices_start; i < devices_end; i++) {
             dpfs_hal_poll_device(&hal->devices[i]);
         }
@@ -191,8 +202,9 @@ static void dpfs_hal_loop_static(struct dpfs_hal *hal)
 
     struct dpfs_hal_thread tdatas[hal->nthreads];
 
-    for (int i = 1; i < hal->nthreads; i++) {
+    for (int i = 0; i < hal->nthreads; i++) {
         tdatas[i].thread_id = i;
+        tdatas[i].hal = hal;
         // Only the first thread does mmio polling (sometimes)
         if (pthread_create(&tdatas[i].thread, NULL, dpfs_hal_loop_static_thread, &tdatas[i])) {
             warn("Failed to create thread for io %d", i);
@@ -295,9 +307,9 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params)
         return NULL;
     }
     toml_array_t *pf_ids = toml_array_in(snap_conf, "pf_ids");
-    if (toml_array_nelem(pf_ids) < 1 || toml_array_nelem(pf_ids) > UINT16_MAX || toml_array_kind(pf_ids) != 'a') {
+    if (!pf_ids || toml_array_nelem(pf_ids) < 1 || toml_array_nelem(pf_ids) > UINT16_MAX || toml_array_kind(pf_ids) != 'v') {
         fprintf(stderr, "%s: pf_ids is required and must be an array of integer values!"
-                "Hint: use list_emulation_managers to find out the physical function id.\n", __func__);
+                " Hint: use list_emulation_managers to find out the physical function id.\n", __func__);
         return NULL;
     }
     for (int i = 0; i < toml_array_nelem(pf_ids); i++) {
@@ -359,7 +371,7 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params)
     for (uint16_t i = 0; i < hal->ndevices; i++) {
         toml_datum_t pf = toml_int_at(pf_ids, i);
 
-        struct dpfs_hal_device *hal_ctrl = calloc(sizeof(struct dpfs_hal_device), 1);
+        struct dpfs_hal_device *dev = &hal->devices[0];
 
         struct virtio_fs_ctrl_init_attr param;
         param.emu_manager_name = emu_manager.u.s;
@@ -384,8 +396,7 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params)
         param.virtiofs_emu_handle_req = dpfs_hal_handle_req;
         param.vf_change_cb = NULL;
         param.vf_change_cb_arg = NULL;
-
-        param.virtiofs_emu = hal_ctrl;
+        param.virtiofs_emu = dev;
 
         struct virtio_fs_ctrl *snap_ctrl = virtio_fs_ctrl_init(&param);
         if (!snap_ctrl) {
@@ -393,10 +404,10 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params)
             goto clear_pci_list;
         }
 
-        hal_ctrl->snap_ctrl = snap_ctrl;
-        hal_ctrl->device_id = i;
-        hal_ctrl->pf_id = pf.u.i;
-        hal_ctrl->hal = hal;
+        dev->snap_ctrl = snap_ctrl;
+        dev->device_id = i;
+        dev->pf_id = pf.u.i;
+        dev->hal = hal;
 
         if (hal->ops.register_device)
             hal->ops.register_device(hal->user_data, i);
