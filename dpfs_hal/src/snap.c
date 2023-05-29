@@ -424,12 +424,12 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params)
     }
 
     printf("DPFS HAL with SNAP frontend online!\n");
-    printf("The virtio-fs device with tag \"%s\" is running on emulation manager \"%s\" (PF",
+    printf("The virtio-fs device with tag \"%s\" is running on emulation manager \"%s\" (",
         tag.u.s, emu_manager.u.s);
-    printf("%u", hal->devices[0].pf_id);
+    printf("PF%u", hal->devices[0].pf_id);
     for (uint16_t i = 1; i < hal->ndevices; i++)
-            printf(", %u", hal->devices[i].pf_id);
-    printf(" and ready to be consumed by the host\n");
+            printf(", PF%u", hal->devices[i].pf_id);
+    printf(") and ready to be consumed by the host\n");
 
     return hal;
 
@@ -449,7 +449,7 @@ void dpfs_hal_destroy(struct dpfs_hal *hal)
     for (uint16_t i = 0; i < hal->ndevices; i++) {
         if (hal->ops.unregister_device)
             hal->ops.unregister_device(hal->user_data, i);
-        virtio_fs_ctrl_destroy(hal->devices[0].snap_ctrl);
+        virtio_fs_ctrl_destroy(hal->devices[i].snap_ctrl);
         free(hal->devices[i].tag);
     }
     mlnx_snap_pci_manager_clear();
