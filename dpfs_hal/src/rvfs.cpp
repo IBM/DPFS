@@ -25,6 +25,11 @@ using namespace erpc;
 
 __attribute__((visibility("default")))
 pthread_key_t dpfs_hal_thread_id_key;
+__attribute__((visibility("default")))
+uint16_t dpfs_hal_nthreads(struct dpfs_hal *hal)
+{
+    return 1;
+}
 
 struct rpc_msg {
     // Back reference to dpfs_hal for the async_completion

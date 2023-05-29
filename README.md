@@ -3,6 +3,8 @@ The DPFS framework allows Cloud and datacenter operators to provide virtualized 
 With DPFS the complete file system implementation runs on the CPU complex of the DPU. Tenants consume the file system through the `virtio-fs` device that the DPU exposes over PCIe (multi-tenancy via SR-IOV).
 DPFS provides a hardware abstraction layer, FUSE API implementation and several file system implementations.
 
+> Warning: DPFS is currently a research project, its code is therefore not battle-tested, nor very clean. Use at your discretion.
+
 ## Research Publications
 * [ACM SYSTOR '23 conference (preprint)](DPFS_systor23_preprint.pdf)!
 * We have presented this work at the OpenFabrics Alliance Workshop '23 ([slidedeck](https://www.openfabrics.org/wp-content/uploads/2023-workshop/2023-workshop-presentations/day-3/303_PGootzen.pdf), [presentation recording](https://youtu.be/2cTxELxCG_g))
@@ -66,5 +68,7 @@ It employs the [FUSE](https://www.kernel.org/doc/html/latest/filesystems/fuse.ht
 There are now DPUs comming out on the market that have support for hardware-accelerated virtio-fs emulation. Thereby having a real hardware device implement the virtual filesystem layer of virtio.
 We are using the Nvidia BlueField-2 which has support for virtio-fs emulation using Nvidia SNAP (Currently only available as a limited technical feature preview).
 
-## :switzerland: Hybrid Cloud / Infrastructure Software group at IBM Research Zurich
+# Contact and Credits
+* :switzerland: Hybrid Cloud / Infrastructure Software group at IBM Research Zurich
+* :netherlands: StoNet-research at VU Amsterdam
 For contact about DPFS and the research we are conducting please reach out to: Peter.Jan.Gootzen at ibm d0t c0m. If you are a DPU-vendor looking into support file system offloading on your DPU, we would be happy to help with porting DPFS to your hardware.

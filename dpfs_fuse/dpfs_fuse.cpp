@@ -42,8 +42,8 @@
 #define MIN(x, y) x < y ? x : y
 #define MAX(x, y) x > y ? x : y
 
-struct fuse_ll;
-typedef int (*fuse_handler_t) (struct fuse_ll *,
+struct dpfs_fuse;
+typedef int (*fuse_handler_t) (struct dpfs_fuse *,
                              struct iovec *fuse_in_iov, int in_iovcnt,
                              struct iovec *fuse_out_iov, int out_iovcnt,
                              void *completion_context, uint16_t device_id);
@@ -52,7 +52,9 @@ typedef int (*fuse_handler_t) (struct fuse_ll *,
 // The opcodes begin at FUSE_LOOKUP = 1, so need one more array index
 #define DPFS_FUSE_HANDLERS_LEN DPFS_FUSE_MAX_OPCODE+1
 
-struct fuse_ll {
+struct dpfs_fuse {
+    struct dpfs_hal *hal;
+
     fuse_handler_t fuse_handlers[DPFS_FUSE_HANDLERS_LEN];
     std::unordered_map<uint16_t, fuse_session*> se;
 
@@ -366,7 +368,7 @@ size_t fuse_add_direntry_plus(struct iov *read_iov,
     return iov_write_buf(read_iov, buf, entlen_padded);
 }
 
-static int fuse_ll_init(struct fuse_ll *f_ll,
+static int fuse_ll_init(struct dpfs_fuse *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
                void *completion_context, uint16_t device_id) {
@@ -623,7 +625,7 @@ static int fuse_ll_init(struct fuse_ll *f_ll,
     return 0;
 }
 
-static int fuse_ll_destroy(struct fuse_ll *f_ll,
+static int fuse_ll_destroy(struct dpfs_fuse *f_ll,
                   struct iovec *fuse_in_iov, int in_iovcnt,
                   struct iovec *fuse_out_iov, int out_iovcnt,
                   void *completion_context, uint16_t device_id) {
@@ -646,7 +648,7 @@ static int fuse_ll_destroy(struct fuse_ll *f_ll,
 }
 
 
-static int fuse_ll_lookup(struct fuse_ll *f_ll,
+static int fuse_ll_lookup(struct dpfs_fuse *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
                   void *completion_context, uint16_t device_id) {
@@ -680,7 +682,7 @@ static int fuse_ll_lookup(struct fuse_ll *f_ll,
     }
 }
 
-static int fuse_ll_setattr(struct fuse_ll *f_ll,
+static int fuse_ll_setattr(struct dpfs_fuse *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
                   void *completion_context, uint16_t device_id) {
@@ -742,7 +744,7 @@ static int fuse_ll_setattr(struct fuse_ll *f_ll,
 }
     
 
-static int fuse_ll_create(struct fuse_ll *f_ll,
+static int fuse_ll_create(struct dpfs_fuse *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
                void *completion_context, uint16_t device_id) {
@@ -797,7 +799,7 @@ static int fuse_ll_create(struct fuse_ll *f_ll,
     return f_ll->ops.create(se, f_ll->user_data, in_hdr, *in_create, name, out_hdr, out_entry, out_open, completion_context, device_id);
 }
 
-static int fuse_ll_flush(struct fuse_ll *f_ll,
+static int fuse_ll_flush(struct dpfs_fuse *f_ll,
                 struct iovec *fuse_in_iov, int in_iovcnt,
                 struct iovec *fuse_out_iov, int out_iovcnt,
                 void *completion_context, uint16_t device_id) {
@@ -839,7 +841,7 @@ static int fuse_ll_flush(struct fuse_ll *f_ll,
     return f_ll->ops.flush(se, f_ll->user_data, in_hdr, fi, out_hdr, completion_context, device_id);
 }
 
-static int fuse_ll_setlk_common(struct fuse_ll *f_ll,
+static int fuse_ll_setlk_common(struct dpfs_fuse *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
                void *completion_context, uint16_t device_id, bool sleep) {
@@ -902,21 +904,21 @@ static int fuse_ll_setlk_common(struct fuse_ll *f_ll,
     }
 }
 
-static int fuse_ll_setlkw(struct fuse_ll *f_ll,
+static int fuse_ll_setlkw(struct dpfs_fuse *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
                   void *completion_context, uint16_t device_id) {
     return fuse_ll_setlk_common(f_ll, fuse_in_iov, in_iovcnt, fuse_out_iov, out_iovcnt, completion_context, device_id, true);
 }
 
-static int fuse_ll_setlk(struct fuse_ll *f_ll,
+static int fuse_ll_setlk(struct dpfs_fuse *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
                   void *completion_context, uint16_t device_id) {
     return fuse_ll_setlk_common(f_ll, fuse_in_iov, in_iovcnt, fuse_out_iov, out_iovcnt, completion_context, device_id, true);
 }
 
-static int fuse_ll_getattr(struct fuse_ll *f_ll,
+static int fuse_ll_getattr(struct dpfs_fuse *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
                   void *completion_context, uint16_t device_id) {
@@ -952,7 +954,7 @@ static int fuse_ll_getattr(struct fuse_ll *f_ll,
     return f_ll->ops.getattr(se, f_ll->user_data, in_hdr, in_getattr, out_hdr, out_attr, completion_context, device_id);
 }
 
-static int fuse_ll_opendir(struct fuse_ll *f_ll,
+static int fuse_ll_opendir(struct dpfs_fuse *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
                   void *completion_context, uint16_t device_id) {
@@ -988,7 +990,7 @@ static int fuse_ll_opendir(struct fuse_ll *f_ll,
     return f_ll->ops.opendir(se, f_ll->user_data, in_hdr, in_open, out_hdr, out_open, completion_context, device_id);
 }
 
-static int fuse_ll_releasedir(struct fuse_ll *f_ll,
+static int fuse_ll_releasedir(struct dpfs_fuse *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
                   void *completion_context, uint16_t device_id) {
@@ -1023,7 +1025,7 @@ static int fuse_ll_releasedir(struct fuse_ll *f_ll,
     return f_ll->ops.releasedir(se, f_ll->user_data, in_hdr, in_release, out_hdr, completion_context, device_id);
 }
 
-static int fuse_ll_readdir_common(struct fuse_ll *f_ll,
+static int fuse_ll_readdir_common(struct dpfs_fuse *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
                void *completion_context, uint16_t device_id,
@@ -1063,21 +1065,21 @@ static int fuse_ll_readdir_common(struct fuse_ll *f_ll,
     return f_ll->ops.readdir(se, f_ll->user_data, in_hdr, in_read, plus, out_hdr, read_iov, completion_context, device_id);
 }
 
-static int fuse_ll_readdir(struct fuse_ll *f_ll,
+static int fuse_ll_readdir(struct dpfs_fuse *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
                 void *completion_context, uint16_t device_id) {
     return fuse_ll_readdir_common(f_ll, fuse_in_iov, in_iovcnt, fuse_out_iov, out_iovcnt, completion_context, device_id, false);
 }
 
-static int fuse_ll_readdirplus(struct fuse_ll *f_ll,
+static int fuse_ll_readdirplus(struct dpfs_fuse *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
                   void *completion_context, uint16_t device_id) {
     return fuse_ll_readdir_common(f_ll, fuse_in_iov, in_iovcnt, fuse_out_iov, out_iovcnt, completion_context, device_id, true);
 }
 
-static int fuse_ll_open(struct fuse_ll *f_ll,
+static int fuse_ll_open(struct dpfs_fuse *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
                   void *completion_context, uint16_t device_id) {
@@ -1113,7 +1115,7 @@ static int fuse_ll_open(struct fuse_ll *f_ll,
     return f_ll->ops.open(se, f_ll->user_data, in_hdr, in_open, out_hdr, out_open, completion_context, device_id);
 }
 
-static int fuse_ll_release(struct fuse_ll *f_ll,
+static int fuse_ll_release(struct dpfs_fuse *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
                   void *completion_context, uint16_t device_id) {
@@ -1151,7 +1153,7 @@ static int fuse_ll_release(struct fuse_ll *f_ll,
     return f_ll->ops.release(se, f_ll->user_data, in_hdr, in_release, out_hdr, completion_context, device_id);
 }
 
-static int fuse_ll_fsync(struct fuse_ll *f_ll,
+static int fuse_ll_fsync(struct dpfs_fuse *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
                   void *completion_context, uint16_t device_id) {
@@ -1187,7 +1189,7 @@ static int fuse_ll_fsync(struct fuse_ll *f_ll,
     return f_ll->ops.fsync(se, f_ll->user_data, in_hdr, in_fsync, out_hdr, completion_context, device_id);
 }
 
-static int fuse_ll_fsyncdir(struct fuse_ll *f_ll,
+static int fuse_ll_fsyncdir(struct dpfs_fuse *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
                   void *completion_context, uint16_t device_id) {
@@ -1223,7 +1225,7 @@ static int fuse_ll_fsyncdir(struct fuse_ll *f_ll,
     return f_ll->ops.fsyncdir(se, f_ll->user_data, in_hdr, in_fsync, out_hdr, completion_context, device_id);
 }
 
-static int fuse_ll_rmdir(struct fuse_ll *f_ll,
+static int fuse_ll_rmdir(struct dpfs_fuse *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
                   void *completion_context, uint16_t device_id) {
@@ -1258,7 +1260,7 @@ static int fuse_ll_rmdir(struct fuse_ll *f_ll,
     return f_ll->ops.rmdir(se, f_ll->user_data, in_hdr, in_name, out_hdr, completion_context, device_id);
 }
 
-static int fuse_ll_forget(struct fuse_ll *f_ll,
+static int fuse_ll_forget(struct dpfs_fuse *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
                   void *completion_context, uint16_t device_id) {
@@ -1280,7 +1282,7 @@ static int fuse_ll_forget(struct fuse_ll *f_ll,
         return 0;
 }
 
-static int fuse_ll_batch_forget(struct fuse_ll *f_ll,
+static int fuse_ll_batch_forget(struct dpfs_fuse *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
                   void *completion_context, uint16_t device_id) {
@@ -1305,7 +1307,7 @@ static int fuse_ll_batch_forget(struct fuse_ll *f_ll,
         return 0;
 }
 
-static int fuse_ll_rename(struct fuse_ll *f_ll,
+static int fuse_ll_rename(struct dpfs_fuse *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
                   void *completion_context, uint16_t device_id) {
@@ -1345,7 +1347,7 @@ static int fuse_ll_rename(struct fuse_ll *f_ll,
                     new_name, 0, out_hdr, completion_context, device_id);
 }
 
-static int fuse_ll_rename2(struct fuse_ll *f_ll,
+static int fuse_ll_rename2(struct dpfs_fuse *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
                   void *completion_context, uint16_t device_id) {
@@ -1387,7 +1389,7 @@ static int fuse_ll_rename2(struct fuse_ll *f_ll,
                     new_name, in_rename2->flags, out_hdr, completion_context, device_id);
 }
 
-static int fuse_ll_read(struct fuse_ll *f_ll,
+static int fuse_ll_read(struct dpfs_fuse *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
                   void *completion_context, uint16_t device_id) {
@@ -1438,7 +1440,7 @@ static int fuse_ll_read(struct fuse_ll *f_ll,
             &fuse_out_iov[1], out_iovcnt-1, completion_context, device_id);
 }
 
-static int fuse_ll_write(struct fuse_ll *f_ll,
+static int fuse_ll_write(struct dpfs_fuse *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
                void *completion_context, uint16_t device_id) {
@@ -1490,7 +1492,7 @@ static int fuse_ll_write(struct fuse_ll *f_ll,
             &fuse_in_iov[2], in_iovcnt-2, out_hdr, out_write, completion_context, device_id);
 }
 
-static int fuse_ll_mknod(struct fuse_ll *f_ll,
+static int fuse_ll_mknod(struct dpfs_fuse *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
            void *completion_context, uint16_t device_id)
@@ -1536,7 +1538,7 @@ static int fuse_ll_mknod(struct fuse_ll *f_ll,
     return f_ll->ops.mknod(se, f_ll->user_data, in_hdr, in_mknod, in_name, out_hdr, out_entry, completion_context, device_id);
 }
 
-static int fuse_ll_mkdir(struct fuse_ll *f_ll,
+static int fuse_ll_mkdir(struct dpfs_fuse *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
            void *completion_context, uint16_t device_id)
@@ -1576,7 +1578,7 @@ static int fuse_ll_mkdir(struct fuse_ll *f_ll,
     return f_ll->ops.mkdir(se, f_ll->user_data, in_hdr, in_mkdir, in_name, out_hdr, out_entry, completion_context, device_id);
 }
 
-static int fuse_ll_symlink(struct fuse_ll *f_ll,
+static int fuse_ll_symlink(struct dpfs_fuse *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
            void *completion_context, uint16_t device_id)
@@ -1617,7 +1619,7 @@ static int fuse_ll_symlink(struct fuse_ll *f_ll,
     return f_ll->ops.symlink(se, f_ll->user_data, in_hdr, in_name, in_link_name, out_hdr, out_entry, completion_context, device_id);
 }
 
-static int fuse_ll_statfs(struct fuse_ll *f_ll,
+static int fuse_ll_statfs(struct dpfs_fuse *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
            void *completion_context, uint16_t device_id)
@@ -1652,7 +1654,7 @@ static int fuse_ll_statfs(struct fuse_ll *f_ll,
     return f_ll->ops.statfs(se, f_ll->user_data, in_hdr, out_hdr, out_statfs, completion_context, device_id);
 }
 
-static int fuse_ll_unlink(struct fuse_ll *f_ll,
+static int fuse_ll_unlink(struct dpfs_fuse *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
            void *completion_context, uint16_t device_id)
@@ -1688,7 +1690,7 @@ static int fuse_ll_unlink(struct fuse_ll *f_ll,
     return f_ll->ops.unlink(se, f_ll->user_data , in_hdr, in_name, out_hdr, completion_context, device_id);
 }
 
-static int fuse_ll_readlink(struct fuse_ll *f_ll,
+static int fuse_ll_readlink(struct dpfs_fuse *f_ll,
                struct iovec *fuse_in_iov, int in_iovcnt,
                struct iovec *fuse_out_iov, int out_iovcnt,
            void *completion_context, uint16_t device_id)
@@ -1710,7 +1712,7 @@ static int fuse_ll_readlink(struct fuse_ll *f_ll,
     return 0;
 }
 
-static int fuse_ll_fallocate(struct fuse_ll *f_ll,
+static int fuse_ll_fallocate(struct dpfs_fuse *f_ll,
         struct iovec *fuse_in_iov, int in_iovcnt,
         struct iovec *fuse_out_iov, int out_iovcnt,
         void *completion_context, uint16_t device_id)
@@ -1749,7 +1751,7 @@ static int fuse_ll_fallocate(struct fuse_ll *f_ll,
     return f_ll->ops.fallocate(se, f_ll->user_data, in_hdr, in_fallocate, out_hdr, completion_context, device_id);
 }
 
-static void fuse_ll_map(struct fuse_ll *fuse_ll) {
+static void fuse_ll_map(struct dpfs_fuse *fuse_ll) {
     // NULL maps to fuse_unknown
     memset(&fuse_ll->fuse_handlers, 0, sizeof(fuse_ll->fuse_handlers));
 
@@ -1788,7 +1790,7 @@ static void fuse_ll_map(struct fuse_ll *fuse_ll) {
     fuse_ll->fuse_handlers[FUSE_FALLOCATE] = fuse_ll_fallocate;
 }
 
-static int fuse_unknown(struct fuse_ll *fuse_ll,
+static int fuse_unknown(struct dpfs_fuse *fuse_ll,
                         struct iovec *fuse_in_iov, int in_iovcnt,
                         struct iovec *fuse_out_iov, int out_iovcnt,
                         void *completion_context, uint16_t device_id) {
@@ -1808,7 +1810,7 @@ static int fuse_handle_req(void *u,
                            struct iovec *out_iov, int out_iovcnt,
                            void *completion_context, uint16_t device_id)
 {
-    struct fuse_ll *fuse_ll = (struct fuse_ll *) u;
+    struct dpfs_fuse *fuse_ll = (struct dpfs_fuse *) u;
 
     if (in_iovcnt < 1 || in_iovcnt < 1) {
         fprintf(stderr, "%s: iovecs in and out don't both atleast one iovec\n", __func__);
@@ -1841,9 +1843,15 @@ static int fuse_handle_req(void *u,
     }
 }
 
+uint16_t dpfs_fuse_nthreads(struct dpfs_fuse *f_ll)
+{
+    return dpfs_hal_nthreads(f_ll->hal);
+
+}
+
 void register_dpfs_device(void *user_data, uint16_t device_id)
 {
-    struct fuse_ll *f_ll = (struct fuse_ll *) user_data;
+    struct dpfs_fuse *f_ll = (struct dpfs_fuse *) user_data;
 
     struct fuse_session *se = (struct fuse_session *) calloc(1, sizeof(struct fuse_session));
     if (se == NULL) {
@@ -1864,7 +1872,7 @@ void register_dpfs_device(void *user_data, uint16_t device_id)
 
 void unregister_dpfs_device(void *user_data, uint16_t device_id)
 {
-    struct fuse_ll *f_ll = (struct fuse_ll *) user_data;
+    struct dpfs_fuse *f_ll = (struct dpfs_fuse *) user_data;
     struct fuse_session *se = f_ll->se.at(device_id);
 
     if (f_ll->unregister_device_cb)
@@ -1874,7 +1882,7 @@ void unregister_dpfs_device(void *user_data, uint16_t device_id)
     free(se);
 }
 
-int dpfs_fuse_main(struct fuse_ll_operations *ops, const char *hal_conf_path, 
+struct dpfs_fuse *dpfs_fuse_new(struct fuse_ll_operations *ops, const char *hal_conf_path, 
                    void *user_data, dpfs_hal_register_device_t register_device_cb,
                    dpfs_hal_unregister_device_t unregister_device_cb)
 {
@@ -1882,7 +1890,7 @@ int dpfs_fuse_main(struct fuse_ll_operations *ops, const char *hal_conf_path,
     printf("dpfs_fuse is running in DEBUG mode\n");
 #endif
 
-    struct fuse_ll *f_ll = (struct fuse_ll *) calloc(1, sizeof(struct fuse_ll));
+    struct dpfs_fuse *f_ll = (struct dpfs_fuse *) calloc(1, sizeof(struct dpfs_fuse));
     f_ll->se = std::unordered_map<uint16_t, struct fuse_session *>();
     f_ll->ops = *ops;
     f_ll->user_data = user_data;
@@ -1898,13 +1906,25 @@ int dpfs_fuse_main(struct fuse_ll_operations *ops, const char *hal_conf_path,
     hal_params.ops.unregister_device = unregister_dpfs_device;
     hal_params.conf_path = hal_conf_path;
 
-    struct dpfs_hal *emu = dpfs_hal_new(&hal_params);
-    if (emu == NULL) {
+    struct dpfs_hal *hal = dpfs_hal_new(&hal_params);
+    if (hal == NULL) {
         fprintf(stderr, "Failed to initialize hal, exiting...\n");
-        return -1;
+        return NULL;
     }
-    dpfs_hal_loop(emu);
-    dpfs_hal_destroy(emu);
+    f_ll->hal = hal;
+
+    return f_ll;
+}
+
+int dpfs_fuse_main(struct fuse_ll_operations *ops, const char *hal_conf_path, 
+                   void *user_data, dpfs_hal_register_device_t register_device_cb,
+                   dpfs_hal_unregister_device_t unregister_device_cb)
+{
+    struct dpfs_fuse *f_ll = dpfs_fuse_new(ops, hal_conf_path, user_data, register_device_cb, unregister_device_cb);
+    if (!f_ll)
+        return -1;
+    dpfs_hal_loop(f_ll->hal);
+    dpfs_hal_destroy(f_ll->hal);
     
     return 0;
 }

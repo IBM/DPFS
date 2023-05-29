@@ -35,6 +35,7 @@ typedef void (*dpfs_hal_unregister_device_t) (void *user_data, uint16_t device_i
 
 struct dpfs_hal_ops {
     dpfs_hal_handler_t request_handler;    
+    // These two callbacks are called during dpfs_hal_new
     dpfs_hal_register_device_t register_device;    
     dpfs_hal_unregister_device_t unregister_device;    
 };
@@ -54,6 +55,7 @@ enum dpfs_hal_completion_status {
 struct dpfs_hal;
 
 extern pthread_key_t dpfs_hal_thread_id_key;
+uint16_t dpfs_hal_nthreads(struct dpfs_hal *);
 
 struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params);
 // DPFS will handle the polling for you, using the supplied interval in the params

@@ -33,6 +33,8 @@
 extern "C" {
 #endif
 
+struct dpfs_fuse;
+
 /** Inode number type */
 typedef uint64_t fuse_ino_t;
 
@@ -271,6 +273,16 @@ struct fuse_ll_operations {
                       void *completion_context, uint16_t device_id);
 };
 
+uint16_t dpfs_fuse_nthreads(struct dpfs_fuse *);
+
+struct dpfs_fuse *dpfs_fuse_new(struct fuse_ll_operations *ops, const char *hal_conf_path, 
+                   void *user_data, dpfs_hal_register_device_t register_device_cb,
+                   dpfs_hal_unregister_device_t unregister_device_cb);
+// Loops until stopped by Ctrl+c
+void dpfs_fuse_loop(struct dpfs_fuse *); 
+void dpfs_fuse_destroy(struct dpfs_fuse *); 
+
+// Does new, loop and destroy for you, ala libfuse
 int dpfs_fuse_main(struct fuse_ll_operations *ops, const char *hal_conf_path, 
                    void *user_data, dpfs_hal_register_device_t register_device_cb,
                    dpfs_hal_unregister_device_t unregister_device_cb);

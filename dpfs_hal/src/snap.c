@@ -72,13 +72,18 @@ struct dpfs_hal {
     struct dpfs_hal_ops ops;
     void *user_data;
     useconds_t polling_interval_usec;
-    uint32_t nthreads;
+    uint16_t nthreads;
 };
 
 static volatile int keep_running = 1;
 
 __attribute__((visibility("default")))
 pthread_key_t dpfs_hal_thread_id_key;
+__attribute__((visibility("default")))
+uint16_t dpfs_hal_nthreads(struct dpfs_hal *hal)
+{
+    return hal->nthreads;
+}
 
 static void signal_handler(int dummy)
 {
@@ -334,7 +339,7 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params)
         return NULL;
     }
     if (nthreads.u.i > toml_array_nelem(pf_ids)) {
-        fprintf(stderr, "%s: nthreads value invalid! there cannot be more threads than virtio-fs devices", __func__);
+        fprintf(stderr, "%s: nthreads value invalid! there cannot be more threads than virtio-fs devices\n", __func__);
         return NULL;
     }
     toml_datum_t polling_interval = toml_int_in(snap_conf, "polling_interval_usec");

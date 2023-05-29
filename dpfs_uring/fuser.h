@@ -74,9 +74,13 @@ struct fuser {
     dev_t src_dev; // gets set to the dev of the source
     // bool nocache;
 
+    uint16_t dpfs_threads;
+
     volatile bool io_poll_thread_stop;
-    struct io_uring ring;
+    struct io_uring *rings;
     bool cq_polling;
+
+
     struct mpool *cb_data_pool;
 };
 
