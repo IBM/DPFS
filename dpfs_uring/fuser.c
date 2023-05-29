@@ -258,6 +258,7 @@ int fuser_main(bool debug, char *source, double metadata_timeout, const char *co
     memset(&params, 0, sizeof(params));
     f->cq_polling = cq_polling;
     if (f->cq_polling) {
+        // Kernel-side polling can only be enabled with fixed buffers
         //params.flags |= IORING_SETUP_IOPOLL;
     }
     if (sq_polling) {
@@ -278,6 +279,9 @@ int fuser_main(bool debug, char *source, double metadata_timeout, const char *co
     mpool_init(&f->cb_data_pool, sizeof(struct fuser_cb_data), 256);
     pthread_t poll_thread;
     pthread_create(&poll_thread, NULL, (void *(*)(void *))fuser_io_poll_thread, f);
+
+    dpfs_fuse_loop(fuse);
+    dpfs_fuse_destroy(fuse);
 
     f->io_poll_thread_stop = true;
     for (uint16_t i = 0; i < f->dpfs_threads; i++) {
