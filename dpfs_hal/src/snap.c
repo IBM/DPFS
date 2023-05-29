@@ -166,7 +166,7 @@ static void *dpfs_hal_loop_static_thread(void *arg)
     // thread 0 will occupy core 7
     // thread 0 will occupy core 6
     CPU_SET(num_cpus - 1 - ht->thread_id, &loop_cpu);
-    int ret = sched_setaffinity(getpid(), sizeof(loop_cpu), &loop_cpu);
+    int ret = sched_setaffinity(gettid(), sizeof(loop_cpu), &loop_cpu);
     if (ret == -1) {
         warn("Could not set the CPU affinity of polling thread %lu. DPFS thread %lu will continue not pinned.", ht->thread_id, ht->thread_id);
     }
@@ -331,6 +331,10 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params)
     toml_datum_t nthreads = toml_int_in(snap_conf, "nthreads");
     if (!nthreads.ok || nthreads.u.i < 1) {
         fprintf(stderr, "%s: nthreads must be >= 1!", __func__);
+        return NULL;
+    }
+    if (nthreads.u.i > toml_array_nelem(pf_ids)) {
+        fprintf(stderr, "%s: nthreads value invalid! there cannot be more threads than virtio-fs devices", __func__);
         return NULL;
     }
     toml_datum_t polling_interval = toml_int_in(snap_conf, "polling_interval_usec");
