@@ -58,6 +58,7 @@ struct dpfs_hal_device {
     struct virtio_fs_ctrl *snap_ctrl;
     uint16_t device_id;
     uint16_t pf_id;
+    char *tag;
 
     uint16_t poll_counter;
     bool suspending;
@@ -170,16 +171,18 @@ static void *dpfs_hal_loop_static_thread(void *arg)
         warn("Could not set the CPU affinity of polling thread %lu. DPFS thread %lu will continue not pinned.", ht->thread_id, ht->thread_id);
     }
 
-    size_t ndevices = hal->ndevices % hal->nthreads;
-    double remainder = (double) hal->ndevices / (double) hal->nthreads;
+    size_t ndevices = hal->ndevices / hal->nthreads;
+    size_t remainder = hal->ndevices % hal->nthreads;
     size_t devices_start = ndevices * ht->thread_id;
     size_t devices_end = devices_start + ndevices;
     if (ht->thread_id == 0 && remainder != 0) {
-        devices_end++;
-        ndevices++;
+        // Extend our window to the right with the remainder devices
+        devices_end += remainder;
+        ndevices += remainder;
     } else if (remainder != 0) {
-        devices_start++;
-        ndevices++;
+        // Move our window to the right by the number of devices T0 has
+        devices_start += remainder;
+        devices_end += remainder;
     }
 
     while (keep_running || !all_devices_suspended(hal)) {
@@ -371,14 +374,20 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params)
     for (uint16_t i = 0; i < hal->ndevices; i++) {
         toml_datum_t pf = toml_int_at(pf_ids, i);
 
-        struct dpfs_hal_device *dev = &hal->devices[0];
+        struct dpfs_hal_device *dev = &hal->devices[i];
+        char *full_tag;
+        int ret = asprintf(&full_tag, "%s-%u", tag.u.s, i);
+        if (ret == -1 || !full_tag) {
+            fprintf(stderr, "%s: couldn't allocate memory for virtio-fs tag", __func__);
+            goto clear_pci_list;
+        }
 
         struct virtio_fs_ctrl_init_attr param;
         param.emu_manager_name = emu_manager.u.s;
         // A single device could be shared amongst multiple polling threads, but because of locking
         // in SNAP, there is no point in doing this. So a device is owned by a single thread
         param.nthreads = 1;
-        param.tag = tag.u.s;
+        param.tag = full_tag;
         param.pf_id = pf.u.i;
         param.vf_id = -1;
 
@@ -408,19 +417,19 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params)
         dev->device_id = i;
         dev->pf_id = pf.u.i;
         dev->hal = hal;
+        dev->tag = full_tag;
 
         if (hal->ops.register_device)
             hal->ops.register_device(hal->user_data, i);
     }
-
 
     printf("DPFS HAL with SNAP frontend online!\n");
     printf("The virtio-fs device with tag \"%s\" is running on emulation manager \"%s\" (PF",
         tag.u.s, emu_manager.u.s);
     printf("%u", hal->devices[0].pf_id);
     for (uint16_t i = 1; i < hal->ndevices; i++)
-            printf(",%u", hal->devices[i].pf_id);
-    printf("and ready to be consumed by the host\n");
+            printf(", %u", hal->devices[i].pf_id);
+    printf(" and ready to be consumed by the host\n");
 
     return hal;
 
@@ -441,6 +450,7 @@ void dpfs_hal_destroy(struct dpfs_hal *hal)
         if (hal->ops.unregister_device)
             hal->ops.unregister_device(hal->user_data, i);
         virtio_fs_ctrl_destroy(hal->devices[0].snap_ctrl);
+        free(hal->devices[i].tag);
     }
     mlnx_snap_pci_manager_clear();
 

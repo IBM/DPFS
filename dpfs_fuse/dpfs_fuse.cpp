@@ -1858,7 +1858,8 @@ void register_dpfs_device(void *user_data, uint16_t device_id)
     se->bufsize = FUSE_MAX_MAX_PAGES * getpagesize() +
         FUSE_BUFFER_HEADER_SIZE;
 
-    f_ll->register_device_cb(f_ll->user_data, device_id);
+    if (f_ll->register_device_cb)
+        f_ll->register_device_cb(f_ll->user_data, device_id);
 }
 
 void unregister_dpfs_device(void *user_data, uint16_t device_id)
@@ -1866,7 +1867,8 @@ void unregister_dpfs_device(void *user_data, uint16_t device_id)
     struct fuse_ll *f_ll = (struct fuse_ll *) user_data;
     struct fuse_session *se = f_ll->se.at(device_id);
 
-    f_ll->unregister_device_cb(f_ll->user_data, device_id);
+    if (f_ll->unregister_device_cb)
+        f_ll->unregister_device_cb(f_ll->user_data, device_id);
 
     f_ll->se.erase(device_id);
     free(se);
@@ -1881,11 +1883,11 @@ int dpfs_fuse_main(struct fuse_ll_operations *ops, const char *hal_conf_path,
 #endif
 
     struct fuse_ll *f_ll = (struct fuse_ll *) calloc(1, sizeof(struct fuse_ll));
+    f_ll->se = std::unordered_map<uint16_t, struct fuse_session *>();
     f_ll->ops = *ops;
     f_ll->user_data = user_data;
     f_ll->register_device_cb = register_device_cb;
     f_ll->unregister_device_cb = unregister_device_cb;
-
     fuse_ll_map(f_ll);
 
     struct dpfs_hal_params hal_params;
