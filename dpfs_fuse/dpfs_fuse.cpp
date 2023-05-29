@@ -1916,6 +1916,15 @@ struct dpfs_fuse *dpfs_fuse_new(struct fuse_ll_operations *ops, const char *hal_
     return f_ll;
 }
 
+void dpfs_fuse_loop(struct dpfs_fuse *f_ll)
+{
+    dpfs_hal_loop(f_ll->hal);
+}
+void dpfs_fuse_destroy(struct dpfs_fuse *f_ll)
+{
+    dpfs_hal_destroy(f_ll->hal);
+}
+
 int dpfs_fuse_main(struct fuse_ll_operations *ops, const char *hal_conf_path, 
                    void *user_data, dpfs_hal_register_device_t register_device_cb,
                    dpfs_hal_unregister_device_t unregister_device_cb)
@@ -1923,8 +1932,8 @@ int dpfs_fuse_main(struct fuse_ll_operations *ops, const char *hal_conf_path,
     struct dpfs_fuse *f_ll = dpfs_fuse_new(ops, hal_conf_path, user_data, register_device_cb, unregister_device_cb);
     if (!f_ll)
         return -1;
-    dpfs_hal_loop(f_ll->hal);
-    dpfs_hal_destroy(f_ll->hal);
+    dpfs_fuse_loop(f_ll);
+    dpfs_fuse_destroy(f_ll);
     
     return 0;
 }
