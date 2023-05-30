@@ -1635,6 +1635,8 @@ void dpfs_nfs_main(char *server, char *export,
     dpfs_nfs_assign_ops(&ops);
 
     struct dpfs_fuse *fuse = dpfs_fuse_new(&ops, conf_path, vnfs, NULL, NULL);
+    if (!fuse)
+        goto ret_a;
     vnfs->nthreads = dpfs_fuse_nthreads(fuse);
 
     vnfs->p = calloc(vnfs->nthreads, sizeof(*vnfs->p));

@@ -68,6 +68,8 @@ struct dpfs_hal_device {
 struct dpfs_hal {
     int ndevices;
     struct dpfs_hal_device *devices;
+    int nmock_devices;
+    struct dpfs_hal_device **mock_devices;
     struct dpfs_hal_ops ops;
     void *user_data;
     useconds_t polling_interval_usec;
@@ -150,7 +152,28 @@ static bool all_devices_suspended(struct dpfs_hal *hal)
     return n == hal->ndevices;
 }
 
-struct dpfs_hal_thread {
+struct dpfs_hal_mock_thread {
+    pthread_t thread;
+    struct dpfs_hal *hal;
+};
+
+// Checks for management I/O every second on all mock devices
+static void *dpfs_hal_mock_thread(void *arg)
+{
+    struct dpfs_hal_mock_thread *ht = arg;
+    struct dpfs_hal *hal = ht->hal;
+
+    while (keep_running || !all_devices_suspended(hal)) {
+        for (size_t i = 0; i < hal->nmock_devices; i++) {
+            dpfs_hal_poll_mmio(hal, hal->mock_devices[i]->device_id);
+        }
+        sleep(1);
+    }
+
+    return NULL;
+}
+
+struct dpfs_hal_loop_thread {
     pthread_t thread;
     size_t thread_id;
     struct dpfs_hal *hal;
@@ -158,7 +181,7 @@ struct dpfs_hal_thread {
 
 static void *dpfs_hal_loop_static_thread(void *arg)
 {
-    struct dpfs_hal_thread *ht = arg;
+    struct dpfs_hal_loop_thread *ht = arg;
     struct dpfs_hal *hal = ht->hal;
 
     // Store the thread_id in thread local storage so that the FUSE implementation
@@ -210,7 +233,7 @@ static void dpfs_hal_loop_static(struct dpfs_hal *hal)
     sigaction(SIGPIPE, &act, 0);
     sigaction(SIGTERM, &act, 0);
 
-    struct dpfs_hal_thread tdatas[hal->nthreads];
+    struct dpfs_hal_loop_thread tdatas[hal->nthreads];
 
     for (int i = 0; i < hal->nthreads; i++) {
         tdatas[i].thread_id = i;
@@ -220,7 +243,18 @@ static void dpfs_hal_loop_static(struct dpfs_hal *hal)
             warn("Failed to create thread for io %d", i);
             for (int j = 0; j < i; i++) {
                 pthread_cancel(tdatas[j].thread);
-                pthread_join(tdatas[j].thread, NULL);
+            }
+            return;
+        }
+    }
+
+    struct dpfs_hal_mock_thread mt;
+    if (hal->nmock_devices > 0) {
+        mt.hal = hal;
+        if (pthread_create(&mt.thread, NULL, dpfs_hal_mock_thread, &mt)) {
+            warn("Failed to create thread for mock devices mmio");
+            for (int i = 0; i < hal->nthreads; i++) {
+                pthread_cancel(tdatas[i].thread);
             }
             return;
         }
@@ -230,6 +264,8 @@ static void dpfs_hal_loop_static(struct dpfs_hal *hal)
     for (int i = 0; i < hal->nthreads; i++) {
         pthread_join(tdatas[i].thread, NULL);
     }
+    if (hal->nmock_devices > 0)
+        pthread_join(mt.thread, NULL);
 }
 
 __attribute__((visibility("default")))
@@ -356,14 +392,42 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params)
                 "This is the name with which the host mounts the file system\n", __func__);
         return NULL;
     }
+    toml_array_t *mock_pf_ids = toml_array_in(snap_conf, "mock_pf_ids");
+    if (mock_pf_ids && (toml_array_nelem(mock_pf_ids) > toml_array_nelem(pf_ids)
+                || toml_array_kind(mock_pf_ids) != 'v')) {
+        fprintf(stderr, "%s: the optional mock_pf_ids must not be larger than the pf_ids array and must be an array of integer values!"
+                " Hint: use list_emulation_managers to find out the physical function id.\n", __func__);
+        return NULL;
+    }
+    for (int i = 0; i < toml_array_nelem(mock_pf_ids); i++) {
+        toml_datum_t mock_pf = toml_int_at(mock_pf_ids, i);
+        if (!mock_pf.ok || mock_pf.u.i < 0) {
+            fprintf(stderr, "%s: All mock physical function ids must be >= 0 integers!"
+                " Hint: use list_emulation_managers to find out the physical function id.\n", __func__);
+            return NULL;
+        }
+        bool found = false;
+        for (int j = 0; j < toml_array_nelem(pf_ids); j++) {
+            if (mock_pf.u.i == toml_int_at(pf_ids, j).u.i) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            fprintf(stderr, "%s: All mock physical function ids must also be present in pf_ids!", __func__);
+            return NULL;
+        }
+    }
 
-    struct dpfs_hal *hal = calloc(sizeof(struct dpfs_hal), 1);
+    struct dpfs_hal *hal = calloc(1, sizeof(struct dpfs_hal));
     hal->polling_interval_usec = polling_interval.u.i;
     hal->user_data = params->user_data;
     hal->ops = params->ops;
     hal->nthreads = nthreads.u.i;
     hal->ndevices = toml_array_nelem(pf_ids);
-    hal->devices = calloc(sizeof(struct dpfs_hal_device) , hal->ndevices);
+    hal->devices = calloc(hal->ndevices, sizeof(struct dpfs_hal_device));
+    hal->nmock_devices = toml_array_nelem(mock_pf_ids);
+    hal->mock_devices = calloc(hal->nmock_devices, sizeof(struct dpfs_hal_device *));
 
     // Initialize the thread-local key we use to tell each of the Virtio
     // polling threads, which thread id it has
@@ -383,6 +447,7 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params)
         goto out;
     };
 
+    int mock_idx = 0;
     for (uint16_t i = 0; i < hal->ndevices; i++) {
         toml_datum_t pf = toml_int_at(pf_ids, i);
 
@@ -423,6 +488,8 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params)
         if (!snap_ctrl) {
             fprintf(stderr, "failed to initialize virtio-fs device using SNAP on PF %u\n", param.pf_id);
             for (uint16_t j = 0; j < i; j++) {
+                if (hal->ops.unregister_device)
+                    hal->ops.unregister_device(hal->user_data, j);
                 virtio_fs_ctrl_destroy(hal->devices[j].snap_ctrl);
                 free(hal->devices[j].tag);
             }
@@ -434,6 +501,17 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params)
         dev->pf_id = pf.u.i;
         dev->hal = hal;
         dev->tag = full_tag;
+
+        // If the PF is a mock PF, add it to the mock devices list
+        bool mock = false;
+        for (int j = 0; j < hal->nmock_devices; j++) {
+            if (pf.u.i == toml_int_at(mock_pf_ids, j).u.i) {
+                mock = true;
+                break;
+            }
+        }
+        if (mock)
+            hal->mock_devices[mock_idx++] = dev;
 
         if (hal->ops.register_device)
             hal->ops.register_device(hal->user_data, i);
@@ -455,7 +533,9 @@ out:
     free(tag.u.s);
     free(emu_manager.u.s);
     free(hal->devices);
+    free(hal->mock_devices);
     free(hal);
+    toml_free(conf);
     return NULL;
 }
 
@@ -473,6 +553,7 @@ void dpfs_hal_destroy(struct dpfs_hal *hal)
     mlnx_snap_pci_manager_clear();
 
     free(hal->devices);
+    free(hal->mock_devices);
     free(hal);
 }
 
