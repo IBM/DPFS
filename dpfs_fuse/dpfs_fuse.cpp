@@ -1846,7 +1846,6 @@ static int fuse_handle_req(void *u,
 uint16_t dpfs_fuse_nthreads(struct dpfs_fuse *f_ll)
 {
     return dpfs_hal_nthreads(f_ll->hal);
-
 }
 
 void register_dpfs_device(void *user_data, uint16_t device_id)

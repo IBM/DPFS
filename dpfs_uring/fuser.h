@@ -73,6 +73,8 @@ struct fuser {
     // size_t blocksize;
     dev_t src_dev; // gets set to the dev of the source
     // bool nocache;
+    
+    struct dpfs_fuse *fuse;
 
     uint16_t nrings;
     uint16_t cq_polling_nthreads;
@@ -80,6 +82,7 @@ struct fuser {
     volatile bool io_poll_thread_stop;
     struct io_uring *rings;
     bool cq_polling;
+    // if cq_polling == false, then nthreads = nrings
 
     struct mpool **cb_data_pools;
 };

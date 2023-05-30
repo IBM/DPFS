@@ -5,11 +5,13 @@
 #
 */
 
+#define _GNU_SOURCE
 #include <sys/resource.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <stdio.h>
 #include <err.h>
+#include <sched.h>
 #include <errno.h>
 #include <string.h>
 #include <unistd.h>
@@ -218,6 +220,21 @@ static void *fuser_io_poll_thread(void *arg) {
     struct tdata *td = arg;
     struct fuser *f = td->f;
 
+    long num_cpus = sysconf(_SC_NPROCESSORS_CONF);
+    if (dpfs_fuse_nthreads(f->fuse) + f->cq_polling_nthreads <= num_cpus) {
+        cpu_set_t loop_cpu;
+        CPU_ZERO(&loop_cpu);
+        // Calculate our polling CPU
+        // with two threads and 8 total cores:
+        // thread 0 will occupy core 7
+        // thread 0 will occupy core 6
+        CPU_SET(num_cpus - dpfs_fuse_nthreads(f->fuse) - td->thread_id, &loop_cpu);
+        int ret = sched_setaffinity(gettid(), sizeof(loop_cpu), &loop_cpu);
+        if (ret == -1) {
+            warn("Could not set the CPU affinity of polling thread %u. uring polling thread %u will continue not pinned.", td->thread_id, td->thread_id);
+        }
+    }
+
     // Determine the window of rings we need to poll
     size_t n = f->nrings / f->cq_polling_nthreads;
     size_t remainder = f->nrings % f->cq_polling_nthreads;
@@ -299,20 +316,20 @@ int fuser_main(bool debug, char *source, double metadata_timeout, const char *co
     fuser_mirror_assign_ops(&ops);
 
     struct dpfs_fuse *fuse = dpfs_fuse_new(&ops, conf_path, f, NULL, NULL);
+    f->fuse = fuse;
     f->nrings = dpfs_fuse_nthreads(fuse);
-    if (f->nrings > 1 && f->cq_polling) {
-    }
 
     struct io_uring_params params;
 
     memset(&params, 0, sizeof(params));
     f->cq_polling = cq_polling;
+    f->cq_polling_nthreads = cq_polling_nthreads;
     if (f->cq_polling) {
         params.flags |= IORING_SETUP_IOPOLL;
     }
     if (sq_polling) {
         // Kernel-side polling can only be enabled with fixed files
-        // Which we don't implement because that's a big mess with SNAP
+        // Which we don't implement because that's a big mess with SNAP in the HAL
         //params.flags |= IORING_SETUP_SQPOLL;
         //params.sq_thread_idle = 2000;
     }
@@ -334,12 +351,20 @@ int fuser_main(bool debug, char *source, double metadata_timeout, const char *co
     uint16_t nthreads;
     if (f->cq_polling) {
         nthreads = cq_polling_nthreads; // user-defined
+
+        long num_cpus = sysconf(_SC_NPROCESSORS_CONF);
+        if (dpfs_fuse_nthreads(fuse) + nthreads >= num_cpus) {
+            warn("DPFS is configured with as many or more threads than there are cores on the DPU!"
+                    "Core pinning is therefore disabled in dpfs_uring!\n");
+        }
     } else {
         nthreads = f->nrings; // a blocking thread per ring
     }
     struct tdata td[nthreads];
 
     for (uint16_t i = 0; i < nthreads; i++) {
+        td[i].thread_id = i;
+        td[i].f = f;
         if (f->cq_polling)
             pthread_create(&td[i].t, NULL, fuser_io_poll_thread, &td[i]);
         else

@@ -35,7 +35,6 @@
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <signal.h>
-#include <sched.h>
 #include <unistd.h>
 #include <sched.h>
 #include <stdint.h>

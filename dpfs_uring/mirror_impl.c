@@ -154,7 +154,10 @@ int fuser_mirror_getattr(struct fuse_session *se, void *user_data,
         struct inode *i = ino_to_inodeptr(f, in_hdr->nodeid);
         fd = i->fd;
     }
-    struct fuser_cb_data *cb_data = mpool_alloc(f->cb_data_pool);
+
+    uint16_t thread_id = dpfs_hal_thread_id();
+    struct fuser_cb_data *cb_data = mpool_alloc(f->cb_data_pools[thread_id]);
+    cb_data->thread_id = thread_id;
     cb_data->cb = fuser_mirror_getattr_cb;
     cb_data->f = f;
     cb_data->se = se;
@@ -162,7 +165,7 @@ int fuser_mirror_getattr(struct fuse_session *se, void *user_data,
     cb_data->getattr.out_attr = out_attr;
     cb_data->completion_context = completion_context;
 
-    struct io_uring_sqe *sqe = io_uring_get_sqe(&f->ring);
+    struct io_uring_sqe *sqe = io_uring_get_sqe(&f->rings[thread_id]);
     if (!sqe) {
         fprintf(stderr, "ERROR: Not enough uring sqe elements avail.\n");
         out_hdr->error = -ENOMEM;
@@ -171,7 +174,7 @@ int fuser_mirror_getattr(struct fuse_session *se, void *user_data,
     io_uring_prep_statx(sqe, fd, "", AT_EMPTY_PATH | AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT, STATX_BASIC_STATS, &cb_data->getattr.s);
     io_uring_sqe_set_data(sqe, cb_data);
 
-    int res = io_uring_submit(&f->ring);
+    int res = io_uring_submit(&f->rings[thread_id]);
     if (res < 0) {
         out_hdr->error = res;
         return 0;
@@ -638,6 +641,7 @@ static int do_fsync(struct fuse_session *se, void *user_data,
 
     uint16_t thread_id = dpfs_hal_thread_id();
     struct fuser_cb_data *cb_data = mpool_alloc(f->cb_data_pools[thread_id]);
+    cb_data->thread_id = thread_id;
     cb_data->cb = fuser_mirror_generic_cb;
     cb_data->completion_context = completion_context;
     cb_data->in_hdr = in_hdr;
@@ -817,6 +821,7 @@ int fuser_mirror_read(struct fuse_session *se, void *user_data,
 
     size_t thread_id = dpfs_hal_thread_id();
     struct fuser_cb_data *cb_data = mpool_alloc(f->cb_data_pools[thread_id]);
+    cb_data->thread_id = thread_id;
     cb_data->cb = fuser_mirror_read_cb;
     cb_data->completion_context = completion_context;
     cb_data->in_hdr = in_hdr;
@@ -863,12 +868,13 @@ int fuser_mirror_write(struct fuse_session *se, void *user_data,
     struct fuser *f = user_data;
 
     size_t thread_id = dpfs_hal_thread_id();
-    struct fuser_cb_data *rw_cb_data = mpool_alloc(f->cb_data_pools[thread_id]);
-    rw_cb_data->cb = fuser_mirror_write_cb;
-    rw_cb_data->completion_context = completion_context;
-    rw_cb_data->in_hdr = in_hdr;
-    rw_cb_data->out_hdr = out_hdr;
-    rw_cb_data->write.out_write = out_write;
+    struct fuser_cb_data *cb_data = mpool_alloc(f->cb_data_pools[thread_id]);
+    cb_data->thread_id = thread_id;
+    cb_data->cb = fuser_mirror_write_cb;
+    cb_data->completion_context = completion_context;
+    cb_data->in_hdr = in_hdr;
+    cb_data->out_hdr = out_hdr;
+    cb_data->write.out_write = out_write;
 
     struct io_uring_sqe *sqe = io_uring_get_sqe(&f->rings[thread_id]);
     if (!sqe) {
@@ -877,7 +883,7 @@ int fuser_mirror_write(struct fuse_session *se, void *user_data,
         return 0;
     }
     io_uring_prep_writev(sqe, in_write->fh, in_iov, in_iovcnt, in_write->offset);
-    io_uring_sqe_set_data(sqe, rw_cb_data);
+    io_uring_sqe_set_data(sqe, cb_data);
     // IOSQE_ASYNC doesn't work on file systems
 
     int res = io_uring_submit(&f->rings[thread_id]);
