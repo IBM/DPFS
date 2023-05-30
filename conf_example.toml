@@ -27,6 +27,9 @@ polling_interval_usec = 0
 server = "10.100.0.1"
 # The NFS server's path that you want to mirror
 export = "/mnt/shared"
+# Enables userspace busy polling on the completion queue
+# This causes high CPU usage!
+cq_polling = false
 
 # This is for dpfs_rvfs_dpu and the dpfs_hal implementation that uses RVFS
 [rvfs]
@@ -45,7 +48,7 @@ dir = "/mnt/nfs_flex01"
 # If 0, then metadata cache is fully disabled
 # Value is in seconds, integers and doubles are accepted
 metadata_timeout = 86400.0 # 24 hours
-# Enables userspace polling on the completion queue
+# Enables userspace busy polling on the completion queue
 # This causes high CPU usage!
 uring_cq_polling = false
 # dpfs_uring creates a ring per DPFS thread (as io_uring rings should not be shared
@@ -54,4 +57,4 @@ uring_cq_polling = false
 # rings will be used to determine the number of cq threads (which will block)
 # If `uring_cq_polling` is enabled, this value will determine how many threads will
 # be used to poll on the rings
-uring_cq_polling_nthreads = 2
+uring_cq_polling_nthreads = 1
