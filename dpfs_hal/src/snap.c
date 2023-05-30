@@ -218,10 +218,11 @@ static void dpfs_hal_loop_static(struct dpfs_hal *hal)
         // Only the first thread does mmio polling (sometimes)
         if (pthread_create(&tdatas[i].thread, NULL, dpfs_hal_loop_static_thread, &tdatas[i])) {
             warn("Failed to create thread for io %d", i);
-            for (int j = i - 1; j >= 0; j--) {
+            for (int j = 0; j < i; i++) {
                 pthread_cancel(tdatas[j].thread);
                 pthread_join(tdatas[j].thread, NULL);
             }
+            return;
         }
     }
 
@@ -368,7 +369,7 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params)
     // polling threads, which thread id it has
     if (pthread_key_create(&dpfs_hal_thread_id_key, NULL)) {
         fprintf(stderr, "Failed to create thread-local key for dpfs_hal threadid\n");
-        goto clear_pci_list;
+        goto out;
     }
 
     // Yes I know, we don't do NVMe here
@@ -421,6 +422,10 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params)
         struct virtio_fs_ctrl *snap_ctrl = virtio_fs_ctrl_init(&param);
         if (!snap_ctrl) {
             fprintf(stderr, "failed to initialize virtio-fs device using SNAP on PF %u\n", param.pf_id);
+            for (uint16_t j = 0; j < i; j++) {
+                virtio_fs_ctrl_destroy(hal->devices[j].snap_ctrl);
+                free(hal->devices[j].tag);
+            }
             goto clear_pci_list;
         }
 
@@ -449,6 +454,8 @@ clear_pci_list:
 out:
     free(tag.u.s);
     free(emu_manager.u.s);
+    free(hal->devices);
+    free(hal);
     return NULL;
 }
 

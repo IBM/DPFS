@@ -92,6 +92,7 @@ static uint32_t statfs_attributes[2] = {
 
 // All the cb_data structs, nice and cozy together
 struct getattr_cb_data {
+    uint16_t thread_id;
     void *completion_context;
     struct virtionfs *vnfs;
     struct vnfs_conn *conn;
@@ -104,10 +105,12 @@ struct getattr_cb_data {
     struct inode *i;
 #endif
 
+    struct fuse_session *se;
     struct fuse_out_header *out_hdr;
     struct fuse_attr_out *out_attr;
 };
 struct lookup_cb_data {
+    uint16_t thread_id;
     void *completion_context;
     struct virtionfs *vnfs;
     struct vnfs_conn *conn;
@@ -117,10 +120,12 @@ struct lookup_cb_data {
     struct ftimer ft;
 #endif
 
+    struct fuse_session *se;
     struct fuse_out_header *out_hdr;
     struct fuse_entry_out *out_entry;
 };
 struct statfs_cb_data {
+    uint16_t thread_id;
     void *completion_context;
     struct virtionfs *vnfs;
     struct vnfs_conn *conn;
@@ -130,10 +135,12 @@ struct statfs_cb_data {
     struct ftimer ft;
 #endif
 
+    struct fuse_session *se;
     struct fuse_out_header *out_hdr;
     struct fuse_statfs_out *out_statfs;
 };
 struct setattr_cb_data {
+    uint16_t thread_id;
     void *completion_context;
     struct virtionfs *vnfs;
     struct vnfs_conn *conn;
@@ -143,6 +150,7 @@ struct setattr_cb_data {
     struct ftimer ft;
 #endif
 
+    struct fuse_session *se;
     struct fuse_out_header *out_hdr;
     struct fuse_attr_out *out_attr;
 
@@ -150,6 +158,7 @@ struct setattr_cb_data {
     char *attrlist;
 };
 struct open_cb_data {
+    uint16_t thread_id;
     void *completion_context;
     struct virtionfs *vnfs;
     struct vnfs_conn *conn;
@@ -167,6 +176,7 @@ struct open_cb_data {
     uint32_t owner_val;
 };
 struct read_cb_data {
+    uint16_t thread_id;
     void *completion_context;
     struct virtionfs *vnfs;
     struct vnfs_conn *conn;
@@ -181,6 +191,7 @@ struct read_cb_data {
     int out_iovcnt;
 };
 struct write_cb_data {
+    uint16_t thread_id;
     void *completion_context;
     struct virtionfs *vnfs;
     struct vnfs_conn *conn;
@@ -198,6 +209,7 @@ struct write_cb_data {
     struct fuse_write_out *out_write;
 };
 struct fsync_cb_data {
+    uint16_t thread_id;
     void *completion_context;
     struct virtionfs *vnfs;
     struct vnfs_conn *conn;
@@ -211,6 +223,7 @@ struct fsync_cb_data {
     struct fuse_statfs_out *stat;
 };
 struct release_cb_data {
+    uint16_t thread_id;
     void *completion_context;
     struct virtionfs *vnfs;
     struct vnfs_conn *conn;
@@ -225,6 +238,7 @@ struct release_cb_data {
     struct fuse_out_header *out_hdr;
 };
 struct create_cb_data {
+    uint16_t thread_id;
     void *completion_context;
     struct virtionfs *vnfs;
     struct vnfs_conn *conn;
@@ -365,7 +379,7 @@ void create_cb(struct rpc_context *rpc, int status, void *data,
 
 ret:;
     void *completion_context = cb_data->completion_context;
-    mpool_free(vnfs->p, cb_data);
+    mpool_free(vnfs->p[cb_data->thread_id], cb_data);
     dpfs_hal_async_complete(completion_context, DPFS_HAL_COMPLETION_SUCCES);
 }
 
@@ -377,12 +391,14 @@ int create(struct fuse_session *se, void *user_data,
 {
     struct virtionfs *vnfs = user_data;
     struct vnfs_conn *conn = vnfs_get_conn(vnfs);
-    struct create_cb_data *cb_data = mpool_alloc(vnfs->p);
+    uint16_t thread_id = dpfs_hal_thread_id();
+    struct create_cb_data *cb_data = mpool_alloc(vnfs->p[thread_id]);
     if (!cb_data) {
         out_hdr->error = -ENOMEM;
         return 0;
     }
 
+    cb_data->thread_id = thread_id;
     cb_data->completion_context = completion_context;
     cb_data->vnfs = vnfs;
     cb_data->conn = conn;
@@ -410,7 +426,7 @@ int create(struct fuse_session *se, void *user_data,
     cb_data->i = i;
     if (!i) {
     	vnfs_error("Invalid nodeid supplied\n");
-        mpool_free(vnfs->p, cb_data);
+        mpool_free(vnfs->p[thread_id], cb_data);
         out_hdr->error = -ENOENT;
         return 0;
     }
@@ -452,7 +468,7 @@ int create(struct fuse_session *se, void *user_data,
     LATENCY_MEASURING_START(CREATE);
     if (rpc_nfs4_compound_async(conn->rpc, create_cb, &args, cb_data) != 0) {
     	vnfs_error("Failed to send NFS:OPEN (with create) request\n");
-        mpool_free(vnfs->p, cb_data);
+        mpool_free(vnfs->p[thread_id], cb_data);
         out_hdr->error = -EREMOTEIO;
         return 0;
     }
@@ -485,7 +501,7 @@ void release_cb(struct rpc_context *rpc, int status, void *data,
 
 ret:;
     void *completion_context = cb_data->completion_context;
-    mpool_free(vnfs->p, cb_data);
+    mpool_free(vnfs->p[cb_data->thread_id], cb_data);
     dpfs_hal_async_complete(completion_context, DPFS_HAL_COMPLETION_SUCCES);
 }
 
@@ -509,12 +525,15 @@ int release(struct fuse_session *se, void *user_data,
     }
 
     struct vnfs_conn *conn = vnfs_get_conn(vnfs);
-    struct release_cb_data *cb_data = mpool_alloc(vnfs->p);
+
+    uint16_t thread_id = dpfs_hal_thread_id();
+    struct release_cb_data *cb_data = mpool_alloc(vnfs->p[thread_id]);
     if (!cb_data) {
         out_hdr->error = -ENOMEM;
         return 0;
     }
 
+    cb_data->thread_id = thread_id;
     cb_data->completion_context = completion_context;
     cb_data->vnfs = vnfs;
     cb_data->conn = conn;
@@ -548,7 +567,7 @@ int release(struct fuse_session *se, void *user_data,
     LATENCY_MEASURING_START(RELEASE);
     if (rpc_nfs4_compound_async(conn->rpc, release_cb, &args, cb_data) != 0) {
     	vnfs_error("Failed to send NFS:CLOSE request\n");
-        mpool_free(vnfs->p, cb_data);
+        mpool_free(vnfs->p[thread_id], cb_data);
         out_hdr->error = -EREMOTEIO;
         return 0;
     }
@@ -579,7 +598,7 @@ void vfsync_cb(struct rpc_context *rpc, int status, void *data,
 
 ret:;
     void *completion_context = cb_data->completion_context;
-    mpool_free(vnfs->p, cb_data);
+    mpool_free(vnfs->p[cb_data->thread_id], cb_data);
     dpfs_hal_async_complete(completion_context, DPFS_HAL_COMPLETION_SUCCES);
 }
 
@@ -591,12 +610,14 @@ int vfsync(struct fuse_session *se, void *user_data,
 {
     struct virtionfs *vnfs = user_data;
     struct vnfs_conn *conn = vnfs_get_conn(vnfs);
-    struct fsync_cb_data *cb_data = mpool_alloc(vnfs->p);
+    uint16_t thread_id = dpfs_hal_thread_id();
+    struct fsync_cb_data *cb_data = mpool_alloc(vnfs->p[thread_id]);
     if (!cb_data) {
         out_hdr->error = -ENOMEM;
         return 0;
     }
 
+    cb_data->thread_id = thread_id;
     cb_data->completion_context = completion_context;
     cb_data->vnfs = vnfs;
     cb_data->conn = conn;
@@ -614,7 +635,7 @@ int vfsync(struct fuse_session *se, void *user_data,
     struct inode *i = vnfs4_op_putfh(vnfs, &op[1], in_hdr->nodeid);
     if (!i) {
     	vnfs_error("Invalid nodeid supplied\n");
-        mpool_free(vnfs->p, cb_data);
+        mpool_free(vnfs->p[thread_id], cb_data);
         out_hdr->error = -ENOENT;
         return 0;
     }
@@ -628,7 +649,7 @@ int vfsync(struct fuse_session *se, void *user_data,
     LATENCY_MEASURING_START(FSYNC);
     if (rpc_nfs4_compound_async(conn->rpc, vfsync_cb, &args, cb_data) != 0) {
     	vnfs_error("Failed to send NFS:commit request\n");
-        mpool_free(vnfs->p, cb_data);
+        mpool_free(vnfs->p[thread_id], cb_data);
         out_hdr->error = -EREMOTEIO;
         return 0;
     }
@@ -671,7 +692,7 @@ void vwrite_cb(struct rpc_context *rpc, int status, void *data,
 
 ret:;
     void *completion_context = cb_data->completion_context;
-    mpool_free(vnfs->p, cb_data);
+    mpool_free(vnfs->p[cb_data->thread_id], cb_data);
     dpfs_hal_async_complete(completion_context, DPFS_HAL_COMPLETION_SUCCES);
 }
 
@@ -693,12 +714,15 @@ int vwrite(struct fuse_session *se, void *user_data,
 
     struct virtionfs *vnfs = user_data;
     struct vnfs_conn *conn = vnfs_get_conn(vnfs);
-    struct write_cb_data *cb_data = mpool_alloc(vnfs->p);
+
+    uint16_t thread_id = dpfs_hal_thread_id();
+    struct write_cb_data *cb_data = mpool_alloc(vnfs->p[thread_id]);
     if (!cb_data) {
         out_hdr->error = -ENOMEM;
         return 0;
     }
 
+    cb_data->thread_id = thread_id;
     cb_data->completion_context = completion_context;
     cb_data->vnfs = vnfs;
     cb_data->conn = conn;
@@ -719,7 +743,7 @@ int vwrite(struct fuse_session *se, void *user_data,
     struct inode *i = vnfs4_op_putfh_open(vnfs, &op[1], in_hdr->nodeid);
     if (!i) {
     	vnfs_error("Invalid nodeid supplied\n");
-        mpool_free(vnfs->p, cb_data);
+        mpool_free(vnfs->p[thread_id], cb_data);
         out_hdr->error = -ENOENT;
         return 0;
     }
@@ -757,7 +781,7 @@ int vwrite(struct fuse_session *se, void *user_data,
     LATENCY_MEASURING_START(WRITE);
     if (rpc_nfs4_compound_async2(conn->rpc, vwrite_cb, &args, cb_data, alloc_hint) != 0) {
     	vnfs_error("Failed to send NFS:write request\n");
-        mpool_free(vnfs->p, cb_data);
+        mpool_free(vnfs->p[thread_id], cb_data);
         out_hdr->error = -EREMOTEIO;
         return 0;
     }
@@ -826,7 +850,7 @@ void vread_cb(struct rpc_context *rpc, int status, void *data,
 
 ret:;
     void *completion_context = cb_data->completion_context;
-    mpool_free(vnfs->p, cb_data);
+    mpool_free(vnfs->p[cb_data->thread_id], cb_data);
     dpfs_hal_async_complete(completion_context, DPFS_HAL_COMPLETION_SUCCES);
 }
 
@@ -842,12 +866,14 @@ int vread(struct fuse_session *se, void *user_data,
 
     struct virtionfs *vnfs = user_data;
     struct vnfs_conn *conn = vnfs_get_conn(vnfs);
-    struct read_cb_data *cb_data = mpool_alloc(vnfs->p);
+    uint16_t thread_id = dpfs_hal_thread_id();
+    struct read_cb_data *cb_data = mpool_alloc(vnfs->p[thread_id]);
     if (!cb_data) {
         out_hdr->error = -ENOMEM;
         return 0;
     }
 
+    cb_data->thread_id = thread_id;
     cb_data->completion_context = completion_context;
     cb_data->vnfs = vnfs;
     cb_data->conn = conn;
@@ -867,7 +893,7 @@ int vread(struct fuse_session *se, void *user_data,
     struct inode *i = vnfs4_op_putfh_open(vnfs, &op[1], in_hdr->nodeid);
     if (!i) {
     	vnfs_error("Invalid nodeid supplied\n");
-        mpool_free(vnfs->p, cb_data);
+        mpool_free(vnfs->p[thread_id], cb_data);
         out_hdr->error = -ENOENT;
         return 0;
     }
@@ -880,7 +906,7 @@ int vread(struct fuse_session *se, void *user_data,
     LATENCY_MEASURING_START(READ);
     if (rpc_nfs4_compound_async(conn->rpc, vread_cb, &args, cb_data) != 0) {
     	vnfs_error("Failed to send NFS:READ request\n");
-        mpool_free(vnfs->p, cb_data);
+        mpool_free(vnfs->p[thread_id], cb_data);
         out_hdr->error = -EREMOTEIO;
         return 0;
     }
@@ -938,7 +964,7 @@ void vopen_cb(struct rpc_context *rpc, int status, void *data,
 
 ret:;
     void *completion_context = cb_data->completion_context;
-    mpool_free(vnfs->p, cb_data);
+    mpool_free(vnfs->p[cb_data->thread_id], cb_data);
     dpfs_hal_async_complete(completion_context, DPFS_HAL_COMPLETION_SUCCES);
 }
 
@@ -965,12 +991,14 @@ int vopen(struct fuse_session *se, void *user_data,
     }
 
     struct vnfs_conn *conn = vnfs_get_conn(vnfs);
-    struct open_cb_data *cb_data = mpool_alloc(vnfs->p);
+    uint16_t thread_id = dpfs_hal_thread_id();
+    struct open_cb_data *cb_data = mpool_alloc(vnfs->p[thread_id]);
     if (!cb_data) {
         out_hdr->error = -ENOMEM;
         return 0;
     }
 
+    cb_data->thread_id = thread_id;
     cb_data->completion_context = completion_context;
     cb_data->vnfs = vnfs;
     cb_data->conn = conn;
@@ -1018,7 +1046,7 @@ int vopen(struct fuse_session *se, void *user_data,
     LATENCY_MEASURING_START(OPEN);
     if (rpc_nfs4_compound_async(conn->rpc, vopen_cb, &args, cb_data) != 0) {
     	vnfs_error("Failed to send NFS:open request\n");
-        mpool_free(vnfs->p, cb_data);
+        mpool_free(vnfs->p[thread_id], cb_data);
         out_hdr->error = -EREMOTEIO;
         return 0;
     }
@@ -1056,7 +1084,7 @@ void setattr_cb(struct rpc_context *rpc, int status, void *data,
         cb_data->out_attr->attr.rdev = 0;
         cb_data->out_attr->attr_valid = 0;
         cb_data->out_attr->attr_valid_nsec = 0;
-        cb_data->out_hdr->len += vnfs->se->conn.proto_minor < 9 ?
+        cb_data->out_hdr->len += cb_data->se->conn.proto_minor < 9 ?
             FUSE_COMPAT_ATTR_OUT_SIZE : sizeof(*cb_data->out_attr);
     } else {
         cb_data->out_hdr->error = -EREMOTEIO;
@@ -1066,7 +1094,7 @@ ret:;
     free(cb_data->bitmap);
     free(cb_data->attrlist);
     void *completion_context = cb_data->completion_context;
-    mpool_free(vnfs->p, cb_data);
+    mpool_free(vnfs->p[cb_data->thread_id], cb_data);
     dpfs_hal_async_complete(completion_context, DPFS_HAL_COMPLETION_SUCCES);
 }
 
@@ -1077,15 +1105,19 @@ int setattr(struct fuse_session *se, void *user_data,
 {
     struct virtionfs *vnfs = user_data;
     struct vnfs_conn *conn = vnfs_get_conn(vnfs);
-    struct setattr_cb_data *cb_data = mpool_alloc(vnfs->p);
+
+    uint16_t thread_id = dpfs_hal_thread_id();
+    struct setattr_cb_data *cb_data = mpool_alloc(vnfs->p[thread_id]);
     if (!cb_data) {
         out_hdr->error = -ENOMEM;
         return 0;
     }
 
+    cb_data->thread_id = thread_id;
     cb_data->completion_context = completion_context;
     cb_data->vnfs = vnfs;
     cb_data->conn = conn;
+    cb_data->se = se;
     cb_data->out_hdr = out_hdr;
     cb_data->out_attr = out_attr;
 
@@ -1100,7 +1132,7 @@ int setattr(struct fuse_session *se, void *user_data,
     struct inode *i = vnfs4_op_putfh(vnfs, &op[1], in_hdr->nodeid);
     if (!i) {
     	vnfs_error("Invalid nodeid supplied\n");
-        mpool_free(vnfs->p, cb_data);
+        mpool_free(vnfs->p[thread_id], cb_data);
         out_hdr->error = -ENOENT;
         return 0;
     }
@@ -1113,7 +1145,7 @@ int setattr(struct fuse_session *se, void *user_data,
     op[2].argop = OP_SETATTR;
     memset(&op[2].nfs_argop4_u.opsetattr.stateid, 0, sizeof(stateid4));
 
-    uint64_t *bitmap = mpool_alloc(vnfs->p);
+    uint64_t *bitmap = mpool_alloc(vnfs->p[thread_id]);
     bitmap4 attrsmask;
     attrsmask.bitmap4_len = sizeof(*bitmap);
     attrsmask.bitmap4_val = (uint32_t *) bitmap;
@@ -1149,7 +1181,7 @@ int setattr(struct fuse_session *se, void *user_data,
     LATENCY_MEASURING_START(SETATTR);
     if (rpc_nfs4_compound_async(conn->rpc, setattr_cb, &args, cb_data) != 0) {
     	vnfs_error("Failed to send nfs4 SETATTR request\n");
-        mpool_free(vnfs->p, cb_data);
+        mpool_free(vnfs->p[thread_id], cb_data);
         out_hdr->error = -EREMOTEIO;
         return 0;
     }
@@ -1185,12 +1217,12 @@ void statfs_cb(struct rpc_context *rpc, int status, void *data,
     if (nfs_parse_statfs(&cb_data->out_statfs->st, attrs, attrs_len) != 0) {
         cb_data->out_hdr->error = -EREMOTEIO;
     }
-    cb_data->out_hdr->len = vnfs->se->conn.proto_minor < 4 ?
+    cb_data->out_hdr->len = cb_data->se->conn.proto_minor < 4 ?
         FUSE_COMPAT_STATFS_SIZE : sizeof(*cb_data->out_statfs);
 
 ret:;
     void *completion_context = cb_data->completion_context;
-    mpool_free(vnfs->p, cb_data);
+    mpool_free(vnfs->p[cb_data->thread_id], cb_data);
     dpfs_hal_async_complete(completion_context, DPFS_HAL_COMPLETION_SUCCES);
 }
 
@@ -1204,13 +1236,14 @@ int statfs(struct fuse_session *se, void *user_data,
 #ifdef VNFS_NULLDEV
     // We need to provide the host with plausibly real data
     memset(stat, 0, sizeof(*stat));
-    out_hdr->len = vnfs->se->conn.proto_minor < 4 ?
+    out_hdr->len = se->conn.proto_minor < 4 ?
         FUSE_COMPAT_STATFS_SIZE : sizeof(*statfs);
     return 0;
 #else
 
     struct vnfs_conn *conn = vnfs_get_conn(vnfs);
-    struct statfs_cb_data *cb_data = mpool_alloc(vnfs->p);
+    uint16_t thread_id = dpfs_hal_thread_id();
+    struct statfs_cb_data *cb_data = mpool_alloc(vnfs->p[thread_id]);
     if (!cb_data) {
         out_hdr->error = -ENOMEM;
         return 0;
@@ -1219,6 +1252,7 @@ int statfs(struct fuse_session *se, void *user_data,
     cb_data->completion_context = completion_context;
     cb_data->vnfs = vnfs;
     cb_data->conn = conn;
+    cb_data->se = se;
     cb_data->out_hdr = out_hdr;
     cb_data->out_statfs = stat;
 
@@ -1242,7 +1276,7 @@ int statfs(struct fuse_session *se, void *user_data,
     LATENCY_MEASURING_START(STATFS);
     if (rpc_nfs4_compound_async(conn->rpc, statfs_cb, &args, cb_data) != 0) {
     	vnfs_error("Failed to send FUSE:statfs request\n");
-        mpool_free(vnfs->p, cb_data);
+        mpool_free(vnfs->p[thread_id], cb_data);
         out_hdr->error = -EREMOTEIO;
         return 0;
     }
@@ -1309,12 +1343,12 @@ void lookup_cb(struct rpc_context *rpc, int status, void *data,
             goto ret;
         }
     }
-    cb_data->out_hdr->len += vnfs->se->conn.proto_minor < 9 ?
+    cb_data->out_hdr->len += cb_data->se->conn.proto_minor < 9 ?
         FUSE_COMPAT_ENTRY_OUT_SIZE : sizeof(*cb_data->out_entry);
 
 ret:;
     void *completion_context = cb_data->completion_context;
-    mpool_free(vnfs->p, cb_data);
+    mpool_free(vnfs->p[cb_data->thread_id], cb_data);
     dpfs_hal_async_complete(completion_context, DPFS_HAL_COMPLETION_SUCCES);
 }
 
@@ -1325,15 +1359,18 @@ int lookup(struct fuse_session *se, void *user_data,
 {
     struct virtionfs *vnfs = user_data;
     struct vnfs_conn *conn = vnfs_get_conn(vnfs);
-    struct lookup_cb_data *cb_data = mpool_alloc(vnfs->p);
+    uint16_t thread_id = dpfs_hal_thread_id();
+    struct lookup_cb_data *cb_data = mpool_alloc(vnfs->p[thread_id]);
     if (!cb_data) {
         out_hdr->error = -ENOMEM;
         return 0;
     }
 
+    cb_data->thread_id = thread_id;
     cb_data->completion_context = completion_context;
     cb_data->vnfs = vnfs;
     cb_data->conn = conn;
+    cb_data->se = se;
     cb_data->out_hdr = out_hdr;
     cb_data->out_entry = out_entry;
 
@@ -1349,7 +1386,7 @@ int lookup(struct fuse_session *se, void *user_data,
     struct inode *pi = vnfs4_op_putfh(vnfs, &op[1], in_hdr->nodeid);
     if (!pi) {
     	vnfs_error("Invalid nodeid supplied\n");
-        mpool_free(vnfs->p, cb_data);
+        mpool_free(vnfs->p[thread_id], cb_data);
         out_hdr->error = -ENOENT;
         return 0;
     }
@@ -1364,7 +1401,7 @@ int lookup(struct fuse_session *se, void *user_data,
     LATENCY_MEASURING_START(LOOKUP);
     if (rpc_nfs4_compound_async(conn->rpc, lookup_cb, &args, cb_data) != 0) {
     	vnfs_error("Failed to send nfs4 LOOKUP request\n");
-        mpool_free(vnfs->p, cb_data);
+        mpool_free(vnfs->p[thread_id], cb_data);
         out_hdr->error = -EREMOTEIO;
         return 0;
     }
@@ -1402,7 +1439,7 @@ void getattr_cb(struct rpc_context *rpc, int status, void *data,
         cb_data->out_attr->attr.rdev = 0;
         cb_data->out_attr->attr_valid = 0;
         cb_data->out_attr->attr_valid_nsec = 0;
-        cb_data->out_hdr->len += vnfs->se->conn.proto_minor < 9 ?
+        cb_data->out_hdr->len += cb_data->se->conn.proto_minor < 9 ?
             FUSE_COMPAT_ATTR_OUT_SIZE : sizeof(*cb_data->out_attr);
 #ifdef VNFS_NULLDEV
         cb_data->i->cached = true;
@@ -1414,7 +1451,7 @@ void getattr_cb(struct rpc_context *rpc, int status, void *data,
 
 ret:;
     void *completion_context = cb_data->completion_context;
-    mpool_free(vnfs->p, cb_data);
+    mpool_free(vnfs->p[cb_data->thread_id], cb_data);
     dpfs_hal_async_complete(completion_context, DPFS_HAL_COMPLETION_SUCCES);
 }
 
@@ -1437,7 +1474,7 @@ int getattr(struct fuse_session *se, void *user_data,
         out_attr->attr_valid_nsec = 0;
         out_attr->dummy = 0;
         out_attr->attr = i->cached_attr;
-        out_hdr->len += vnfs->se->conn.proto_minor < 9 ?
+        out_hdr->len += se->conn.proto_minor < 9 ?
             FUSE_COMPAT_ATTR_OUT_SIZE : sizeof(*out_attr);
         return 0;
     }
@@ -1445,7 +1482,8 @@ int getattr(struct fuse_session *se, void *user_data,
 #endif
 
     struct vnfs_conn *conn = vnfs_get_conn(vnfs);
-    struct getattr_cb_data *cb_data = mpool_alloc(vnfs->p);
+    uint16_t thread_id = dpfs_hal_thread_id();
+    struct getattr_cb_data *cb_data = mpool_alloc(vnfs->p[thread_id]);
     if (!cb_data) {
         out_hdr->error = -ENOMEM;
         return 0;
@@ -1454,6 +1492,7 @@ int getattr(struct fuse_session *se, void *user_data,
     cb_data->completion_context = completion_context;
     cb_data->vnfs = vnfs;
     cb_data->conn = conn;
+    cb_data->se = se;
     cb_data->out_hdr = out_hdr;
     cb_data->out_attr = out_attr;
 
@@ -1472,7 +1511,7 @@ int getattr(struct fuse_session *se, void *user_data,
     struct inode *i = vnfs4_op_putfh(vnfs, &op[1], in_hdr->nodeid);
     if (!i) {
     	vnfs_error("Invalid nodeid supplied\n");
-        mpool_free(vnfs->p, cb_data);
+        mpool_free(vnfs->p[thread_id], cb_data);
         out_hdr->error = -ENOENT;
         return 0;
     }
@@ -1482,7 +1521,7 @@ int getattr(struct fuse_session *se, void *user_data,
     LATENCY_MEASURING_START(GETATTR);
     if (rpc_nfs4_compound_async(conn->rpc, getattr_cb, &args, cb_data) != 0) {
     	vnfs_error("Failed to send nfs4 GETATTR request\n");
-        mpool_free(vnfs->p, cb_data);
+        mpool_free(vnfs->p[thread_id], cb_data);
         out_hdr->error = -EREMOTEIO;
         return 0;
     }
@@ -1521,8 +1560,6 @@ int init(struct fuse_session *se, void *user_data,
     struct fuse_conn_info *conn, struct fuse_out_header *out_hdr,
     uint16_t device_id)
 {
-    struct virtionfs *vnfs = user_data;
-
     // TODO reenable when implementing flock()
     // if (conn->capable & FUSE_CAP_FLOCK_LOCKS)
     //     conn->want |= FUSE_CAP_FLOCK_LOCKS;
@@ -1533,17 +1570,7 @@ int init(struct fuse_session *se, void *user_data,
     conn->want &= ~FUSE_CAP_SPLICE_READ;
     conn->want &= ~FUSE_CAP_SPLICE_WRITE;
 
-    // TODO FUSE:init always supplies uid=0 and gid=0,
-    // so only setting the uid and gid once in the init is not sufficient
-    // as in subsoquent operations different uid and gids can be supplied
-    // however changing the uid and gid for every operations is very inefficient in libnfs
-    // NOTE: the root permissions only properly work if the server has no_root_squash
-    printf("%s, all NFS operations will go through uid %d and gid %d\n", __func__, vnfs->init_uid, vnfs->init_gid);
-    vnfs->init_uid = in_hdr->uid;
-    vnfs->init_gid = in_hdr->gid;
-
-    vnfs->se = se;
-    vnfs_new_connection(vnfs);
+    se->init_done = true;
 
     // TODO WARNING
     // By returning 0, we allow the host to imediately start sending us requests,
@@ -1576,8 +1603,9 @@ void dpfs_nfs_assign_ops(struct fuse_ll_operations *ops) {
 }
 
 void dpfs_nfs_main(char *server, char *export,
-               bool debug, double timeout, uint32_t nthreads,
-               const char *conf_path) {
+               double timeout, bool cq_polling,
+               const char *conf_path)
+{
     struct virtionfs *vnfs = calloc(1, sizeof(struct virtionfs));
     if (!vnfs) {
         warn("Failed to dpfs_nfs");
@@ -1589,24 +1617,11 @@ void dpfs_nfs_main(char *server, char *export,
         goto ret_a;
     }
     vnfs->export = export;
-    vnfs->debug = debug;
     vnfs->timeout_sec = calc_timeout_sec(timeout);
     vnfs->timeout_nsec = calc_timeout_nsec(timeout);
-    vnfs->nthreads = nthreads;
+    vnfs->cq_polling = cq_polling;
 
-    int ret = mpool_init(&vnfs->p, sizeof(struct cb_data), 256);
-    if (ret < 0) {
-        vnfs_error("Failed to init mpool - err=%d", ret);
-        goto ret_a;
-    }
-
-    vnfs->conns = calloc(vnfs->nthreads, sizeof(struct vnfs_conn));
-    if (!vnfs->conns) {
-        warn("Failed to init NFS connections");
-        goto ret_b;
-    }
-
-    ret = inode_table_init(&vnfs->inodes);
+    int ret = inode_table_init(&vnfs->inodes);
     if (ret < 0) {
         vnfs_error("Failed to inode table - err=%d", ret);
         goto ret_c;
@@ -1616,13 +1631,35 @@ void dpfs_nfs_main(char *server, char *export,
     memset(&ops, 0, sizeof(ops));
     dpfs_nfs_assign_ops(&ops);
 
-    dpfs_fuse_main(&ops, conf_path, vnfs, NULL, NULL);
+    struct dpfs_fuse *fuse = dpfs_fuse_new(&ops, conf_path, vnfs, NULL, NULL);
+    vnfs->nthreads = dpfs_fuse_nthreads(fuse);
+
+    vnfs->p = calloc(vnfs->nthreads, sizeof(*vnfs->p));
+    for (uint16_t i = 0; i < vnfs->nthreads; i++) {
+        int ret = mpool_init(&vnfs->p[i], sizeof(struct cb_data), 256);
+        if (ret < 0) {
+            vnfs_error("Failed to init mpool - err=%d", ret);
+            goto ret_a;
+        }
+    }
+
+    vnfs->conns = calloc(vnfs->nthreads, sizeof(struct vnfs_conn));
+    if (!vnfs->conns) {
+        warn("Failed to init NFS connections");
+        goto ret_b;
+    }
+    vnfs_init_connections(vnfs);
+
+    dpfs_fuse_loop(fuse);
+    dpfs_fuse_destroy(fuse);
 
     inode_table_destroy(vnfs->inodes);
 ret_c:
     free(vnfs->conns);
 ret_b:
-    mpool_destroy(vnfs->p);
+    for (uint16_t i = 0; i < vnfs->nthreads; i++) {
+        mpool_destroy(vnfs->p[i]);
+    }
 ret_a:
     free(vnfs);
     printf("dpfs_nfs exited\n");

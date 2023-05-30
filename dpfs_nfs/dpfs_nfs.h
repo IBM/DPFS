@@ -22,7 +22,7 @@
 #endif
 
 void dpfs_nfs_main(char *server, char *export,
-               bool debug, double timeout, uint32_t nthreads,
+               double timeout, bool cq_polling,
                const char *conf_path);
 
 enum vnfs_conn_state {
@@ -63,7 +63,8 @@ struct vnfs_conn {
 };
 
 struct virtionfs {
-    struct fuse_session *se;
+    uint16_t nthreads;
+    bool cq_polling;
 
     // We open connections on the main thread and when running
     // each thread gets its own connection
@@ -71,17 +72,16 @@ struct virtionfs {
     uint32_t conn_cntr;
 
     struct inode_table *inodes;
-    struct mpool *p;
+    struct mpool **p;
 
     char *server;
     char *export;
     bool debug;
     uint64_t timeout_sec;
     uint32_t timeout_nsec;
-    uint32_t nthreads;
     // TODO change uid and gid on a per-request basis
-    uint32_t init_uid;
-    uint32_t init_gid;
+    int init_uid;
+    int init_gid;
 
     atomic_uint open_owner_counter;
 

@@ -18,16 +18,15 @@
 
 static void vnfs_conn_up(struct virtionfs *vnfs)
 {
-    vnfs->conns[vnfs->conn_cntr].state = VNFS_CONN_STATE_ESTABLISHED;
-    printf("VNFS connection %u fully up!\n", vnfs->conn_cntr);
+    struct vnfs_conn *conn = &vnfs->conns[vnfs->conn_cntr];
+    conn->state = VNFS_CONN_STATE_ESTABLISHED;
+    printf("VNFS connection %u fully up!\n", conn->vnfs_conn_id);
 
     vnfs->conn_cntr++;
-    if (vnfs->conn_cntr < vnfs->nthreads) {
-        vnfs_new_connection(vnfs);
-    } else {
-        vnfs->se->init_done = true;
+    if (vnfs->conn_cntr < vnfs->nthreads)
+        vnfs_init_connections(vnfs);
+    else
         printf("VNFS boot finished! All %u connections are ready to roll!\n", vnfs->conn_cntr);
-    }
 }
 
 static void reclaim_complete_cb(struct rpc_context *rpc, int status, void *data,
@@ -303,11 +302,13 @@ void vnfs_destroy_connection(struct vnfs_conn *conn, enum vnfs_conn_state state)
     // RPC is paired with the NFS context, so NFS_destroy destroys RPC
 }
 
-int vnfs_new_connection(struct virtionfs *vnfs) {
+int vnfs_init_connections(struct virtionfs *vnfs)
+{
     struct vnfs_conn *conn = &vnfs->conns[vnfs->conn_cntr];
     // This might be the second FUSE_INIT call
     memset(conn, 0, sizeof(struct vnfs_conn));
     conn->vnfs_conn_id = vnfs->conn_cntr;
+
 #ifdef LATENCY_MEASURING_ENABLED
     for (int i = 0; i < FUSE_REMOVEMAPPING+1; i++) {
         ft_init(&conn->ft[i]);
@@ -325,8 +326,9 @@ int vnfs_new_connection(struct virtionfs *vnfs) {
     struct rpc_context *rpc = nfs_get_rpc_context(nfs);
     conn->rpc = rpc;
 
-    nfs_set_uid(nfs, vnfs->init_uid);
-    nfs_set_gid(nfs, vnfs->init_gid);
+    // TODO investigate if this can be efficiently set on a per FS operation basis
+    nfs_set_uid(nfs, 0);
+    nfs_set_gid(nfs, 0);
 
     if(nfs_mount(nfs, vnfs->server, vnfs->export)) {
         warn("Failed to mount nfs for connection %u\n", vnfs->conn_cntr);
@@ -337,7 +339,11 @@ int vnfs_new_connection(struct virtionfs *vnfs) {
     }
 
     // We want to poll as fast as possible, MAX PERFORMANCE
-    nfs_set_poll_timeout(nfs, -1);
+    if (vnfs->cq_polling)
+        nfs_set_poll_timeout(nfs, -1);
+    else
+        nfs_set_poll_timeout(nfs, 100);
+
     if (nfs_mt_service_thread_start(nfs)) {
         warn("Failed to start libnfs service thread for connection %u\n", conn->vnfs_conn_id);
         conn->state = VNFS_CONN_STATE_SHOULD_CLOSE;

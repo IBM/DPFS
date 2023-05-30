@@ -245,7 +245,6 @@ static void *fuser_io_poll_thread(void *arg) {
     if (td->thread_id == 0 && remainder != 0) {
         // Extend our window to the right with the remainder devices
         end += remainder;
-        n += remainder;
     } else if (remainder != 0) {
         // Move our window to the right by the number of devices T0 has
         start += remainder;

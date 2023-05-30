@@ -74,11 +74,16 @@ int main(int argc, char **argv)
         fprintf(stderr, "You must supply a export with `export` under [nfs]\n");
         return -1;
     }
+    toml_datum_t cq_polling = toml_string_in(nfs_conf, "cq_polling");
+    if (!cq_polling.ok) {
+        fprintf(stderr, "You must supply a bool `cq_polling` under [nfs]\n");
+        return -1;
+    }
 
     printf("dpfs_nfs starting up!\n");
     printf("Connecting to %s:%s\n", server.u.s, export.u.s);
 
-    dpfs_nfs_main(server.u.s, export.u.s, false, false, 1, conf_path);
+    dpfs_nfs_main(server.u.s, export.u.s, 0.0, cq_polling.u.b, conf_path);
 
     return 0;
 }

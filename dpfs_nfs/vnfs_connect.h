@@ -10,8 +10,8 @@
 
 #include "dpfs_nfs.h"
 
-// Will keep trying to connections in the background until vnfs->ntreads is reached
-int vnfs_new_connection(struct virtionfs *vnfs);
+// Will keep trying to connections in the background until vnfs->nthreads is reached
+int vnfs_init_connections(struct virtionfs *vnfs);
 void vnfs_destroy_connection(struct vnfs_conn *conn, enum vnfs_conn_state);
 
 #endif // VIRTIONFS_VNFS_CONNECT_H
