@@ -180,7 +180,8 @@ static void maximize_fd_limit() {
         warn("WARNING: setrlimit() failed with");
 }
 
-static void *fuser_io_poll_thread(struct fuser *f) {
+static void *fuser_io_poll_thread(void *arg) {
+    struct fuser *f = arg;
     while(!f->io_poll_thread_stop){
         for (uint16_t i = 0; i < f->dpfs_threads; i++) {
             struct io_uring_cqe *cqe;
@@ -259,6 +260,7 @@ int fuser_main(bool debug, char *source, double metadata_timeout, const char *co
     f->cq_polling = cq_polling;
     if (f->cq_polling) {
         // Kernel-side polling can only be enabled with fixed buffers
+        // Which we don't implement because that's a big mess with SNAP
         //params.flags |= IORING_SETUP_IOPOLL;
     }
     if (sq_polling) {
@@ -267,7 +269,6 @@ int fuser_main(bool debug, char *source, double metadata_timeout, const char *co
     }
 
     f->rings = calloc(sizeof(*f->rings), f->dpfs_threads);
-
     for (uint16_t i = 0; i < f->dpfs_threads; i++) {
         ret = io_uring_queue_init_params(512, &f->rings[i], &params);
         if (ret) {
@@ -278,7 +279,7 @@ int fuser_main(bool debug, char *source, double metadata_timeout, const char *co
 
     mpool_init(&f->cb_data_pool, sizeof(struct fuser_cb_data), 256);
     pthread_t poll_thread;
-    pthread_create(&poll_thread, NULL, (void *(*)(void *))fuser_io_poll_thread, f);
+    pthread_create(&poll_thread, NULL, fuser_io_poll_thread, f);
 
     dpfs_fuse_loop(fuse);
     dpfs_fuse_destroy(fuse);

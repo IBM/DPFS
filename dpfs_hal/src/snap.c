@@ -94,7 +94,7 @@ __attribute__((visibility("default")))
 int dpfs_hal_poll_io(struct dpfs_hal *hal, uint16_t device_id)
 {
     if (device_id < hal->ndevices)
-        return virtio_fs_ctrl_progress_io(hal->devices[device_id].snap_ctrl, 0);
+        return virtio_fs_ctrl_progress_all_io(hal->devices[device_id].snap_ctrl);
     else
         return -ENODEV;
 }
@@ -117,7 +117,7 @@ static void dpfs_hal_poll_device(struct dpfs_hal_device *dev)
     if (hal->polling_interval_usec > 0) {
         usleep(hal->polling_interval_usec);
         // actual io
-        virtio_fs_ctrl_progress_io(dev->snap_ctrl, 0);
+        virtio_fs_ctrl_progress_all_io(dev->snap_ctrl);
         // This is for mmio (management io)
         virtio_fs_ctrl_progress(dev->snap_ctrl);
     } else {
@@ -125,7 +125,7 @@ static void dpfs_hal_poll_device(struct dpfs_hal_device *dev)
          * poll submission queues as fast as we can
          * but don't spend resources on polling mmio
          */
-        virtio_fs_ctrl_progress_io(dev->snap_ctrl, 0);
+        virtio_fs_ctrl_progress_all_io(dev->snap_ctrl);
         if (dev->poll_counter++ == 10000) {
             virtio_fs_ctrl_progress(dev->snap_ctrl);
             dev->poll_counter = 0;

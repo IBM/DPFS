@@ -10,6 +10,7 @@ emu_manager = "mlx5_0"
 # Must be a power of 2 and >= 1! The virtio-fs specification requires this
 queue_depth = 64
 # Filesystem tag (i.e. the name of the virtiofs device to mount for the host)
+# The PF ID will be prepended to this tag e.g. "dpfs-0"
 tag = "dpfs"
 # int = n threads that each own pf_ids/int devices
 # "dynamic" = dynamic threading ala https://spdk.io/doc/scheduler.html
