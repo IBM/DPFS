@@ -939,6 +939,7 @@ void vopen_cb(struct rpc_context *rpc, int status, void *data,
 
     struct inode *i = cb_data->i;
 
+    atomic_fetch_add(&i->nopen, 1);
     // Store the FH from OPEN as the read write FH in the inode
     // The read-write FH is not the same (can't assume) as the metadata FH
     nfs_fh4 *fh = &res->resarray.resarray_val[3].nfs_resop4_u.opgetfh.GETFH4res_u.resok4.object;
@@ -1232,7 +1233,6 @@ int statfs(struct fuse_session *se, void *user_data,
            struct fuse_out_header *out_hdr, struct fuse_statfs_out *stat,
            void *completion_context, uint16_t device_id)
 {
-    struct virtionfs *vnfs = user_data;
 #ifdef VNFS_NULLDEV
     // We need to provide the host with plausibly real data
     memset(stat, 0, sizeof(*stat));
@@ -1240,6 +1240,7 @@ int statfs(struct fuse_session *se, void *user_data,
         FUSE_COMPAT_STATFS_SIZE : sizeof(*statfs);
     return 0;
 #else
+    struct virtionfs *vnfs = user_data;
 
     struct vnfs_conn *conn = vnfs_get_conn(vnfs);
     uint16_t thread_id = dpfs_hal_thread_id();
