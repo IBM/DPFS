@@ -1249,6 +1249,7 @@ int statfs(struct fuse_session *se, void *user_data,
         return 0;
     }
 
+    cb_data->thread_id = thread_id;
     cb_data->completion_context = completion_context;
     cb_data->vnfs = vnfs;
     cb_data->conn = conn;
@@ -1489,6 +1490,7 @@ int getattr(struct fuse_session *se, void *user_data,
         return 0;
     }
 
+    cb_data->thread_id = thread_id;
     cb_data->completion_context = completion_context;
     cb_data->vnfs = vnfs;
     cb_data->conn = conn;
