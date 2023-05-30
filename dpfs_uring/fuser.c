@@ -327,7 +327,9 @@ int fuser_main(bool debug, char *source, double metadata_timeout, const char *co
     f->cq_polling = cq_polling;
     f->cq_polling_nthreads = cq_polling_nthreads;
     if (f->cq_polling) {
-        params.flags |= IORING_SETUP_IOPOLL;
+        // The io_uring docs say this flag needs to be supplied if peek_cqe is used
+        // but if this flag is supplied, all I/O errors 🤷, without it works anyway
+        //params.flags |= IORING_SETUP_IOPOLL;
     }
     if (sq_polling) {
         // Kernel-side polling can only be enabled with fixed files
