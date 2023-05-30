@@ -274,7 +274,7 @@ static void *fuser_io_poll_thread(void *arg) {
     return NULL;
 }
 
-// todo proper error handling
+// TODO proper error handling
 int fuser_main(bool debug, char *source, double metadata_timeout, const char *conf_path,
         bool cq_polling, uint16_t cq_polling_nthreads, bool sq_polling) {
     struct fuser *f = calloc(1, sizeof(struct fuser));
@@ -351,6 +351,11 @@ int fuser_main(bool debug, char *source, double metadata_timeout, const char *co
     uint16_t nthreads;
     if (f->cq_polling) {
         nthreads = cq_polling_nthreads; // user-defined
+
+        if (nthreads > f->nrings) {
+            fprintf(stderr, "ERROR: There cannot be more cq polling threads than DPFS threads for request handling!\n");
+            return -1;
+        }
 
         long num_cpus = sysconf(_SC_NPROCESSORS_CONF);
         if (dpfs_fuse_nthreads(fuse) + nthreads >= num_cpus) {
