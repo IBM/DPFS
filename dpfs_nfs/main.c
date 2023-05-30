@@ -74,7 +74,7 @@ int main(int argc, char **argv)
         fprintf(stderr, "You must supply a export with `export` under [nfs]\n");
         return -1;
     }
-    toml_datum_t cq_polling = toml_string_in(nfs_conf, "cq_polling");
+    toml_datum_t cq_polling = toml_bool_in(nfs_conf, "cq_polling");
     if (!cq_polling.ok) {
         fprintf(stderr, "You must supply a bool `cq_polling` under [nfs]\n");
         return -1;
