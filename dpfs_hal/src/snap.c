@@ -157,7 +157,7 @@ struct dpfs_hal_mock_thread {
     struct dpfs_hal *hal;
 };
 
-// Checks for management I/O every second on all mock devices
+// Checks for (management) I/O every second on all mock devices
 static void *dpfs_hal_mock_thread(void *arg)
 {
     struct dpfs_hal_mock_thread *ht = arg;
@@ -165,7 +165,7 @@ static void *dpfs_hal_mock_thread(void *arg)
 
     while (keep_running || !all_devices_suspended(hal)) {
         for (size_t i = 0; i < hal->nmock_devices; i++) {
-            dpfs_hal_poll_mmio(hal, hal->mock_devices[i]->device_id);
+            dpfs_hal_poll_device(hal->mock_devices[i]);
         }
         sleep(1);
     }

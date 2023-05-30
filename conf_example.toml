@@ -5,9 +5,9 @@ polling_interval_usec = 0
 # When multiple PFs are supplied, multiple virtio-fs devices will be created
 # The index of this array is the device_id supplied by the HAL to the backend
 pf_ids = [ 0 ]
-# These PFs will be created and checked for management I/O only once a second so
-# that the host driver will be able to init the devices. These devices will
-# not be polled for I/O, so they cannot actually be mounted.
+# These PFs will be created and checked for (management) I/O only once a second so
+# that the host driver will be able to init the devices. These devices can
+# be mounted, but will perform horribly bad (1 IOPS).
 # This is usefull for PF (perf) testing without having to reboot the DPU for firmware
 # config changes all the time.
 mock_pf_ids = [ ]
