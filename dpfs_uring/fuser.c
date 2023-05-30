@@ -225,10 +225,12 @@ static void *fuser_io_poll_thread(void *arg) {
         cpu_set_t loop_cpu;
         CPU_ZERO(&loop_cpu);
         // Calculate our polling CPU
-        // with two threads and 8 total cores:
-        // thread 0 will occupy core 7
-        // thread 0 will occupy core 6
-        CPU_SET(num_cpus - dpfs_fuse_nthreads(f->fuse) - td->thread_id, &loop_cpu);
+        // with two DPFS threads, two CQ threads and 8 total cores:
+        // DPFS thread 0 will occupy core 7
+        // DPFS thread 1 will occupy core 6
+        // cq polling thread 0 will occupy core 5
+        // cq polling thread 1 will occupy core 4
+        CPU_SET(num_cpus-1 - dpfs_fuse_nthreads(f->fuse) - td->thread_id, &loop_cpu);
         int ret = sched_setaffinity(gettid(), sizeof(loop_cpu), &loop_cpu);
         if (ret == -1) {
             warn("Could not set the CPU affinity of polling thread %u. uring polling thread %u will continue not pinned.", td->thread_id, td->thread_id);
@@ -384,8 +386,14 @@ int fuser_main(bool debug, char *source, double metadata_timeout, const char *co
         // TODO drain the queue first
         io_uring_queue_exit(&f->rings[i]);
     }
-    for (uint16_t i = 0; i < nthreads; i++) {
-        pthread_join(td[i].t, NULL);
+    if (f->cq_polling) {
+        for (uint16_t i = 0; i < nthreads; i++) {
+            pthread_join(td[i].t, NULL);
+        }
+    } else {
+        for (uint16_t i = 0; i < nthreads; i++) {
+            pthread_cancel(td[i].t);
+        }
     }
     
     for (uint16_t i = 0; i < f->nrings; i++) {

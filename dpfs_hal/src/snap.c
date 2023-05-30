@@ -171,7 +171,7 @@ static void *dpfs_hal_loop_static_thread(void *arg)
     // Calculate our polling CPU
     // with two threads and 8 total cores:
     // thread 0 will occupy core 7
-    // thread 0 will occupy core 6
+    // thread 1 will occupy core 6
     CPU_SET(num_cpus - 1 - ht->thread_id, &loop_cpu);
     int ret = sched_setaffinity(gettid(), sizeof(loop_cpu), &loop_cpu);
     if (ret == -1) {
