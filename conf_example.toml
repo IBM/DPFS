@@ -48,3 +48,10 @@ metadata_timeout = 86400.0 # 24 hours
 # Enables userspace polling on the completion queue
 # This causes high CPU usage!
 uring_cq_polling = false
+# dpfs_uring creates a ring per DPFS thread (as io_uring rings should not be shared
+# across threads)
+# If `uring_cq_polling` is disabled, this value will be ignored and the number of
+# rings will be used to determine the number of cq threads (which will block)
+# If `uring_cq_polling` is enabled, this value will determine how many threads will
+# be used to poll on the rings
+uring_cq_polling_nthreads = 2
