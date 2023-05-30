@@ -286,8 +286,8 @@ struct inode *vnfs4_op_putfh_open(struct virtionfs *vnfs, nfs_argop4 *op, uint64
 }
 
 struct vnfs_conn* vnfs_get_conn(struct virtionfs *vnfs) {
-    size_t threadid = (size_t) pthread_getspecific(dpfs_hal_thread_id_key);
-    return &vnfs->conns[threadid];
+    uint16_t thread_id = dpfs_hal_thread_id();
+    return &vnfs->conns[thread_id];
 }
 
 // Only called from VirtioQ poller thread

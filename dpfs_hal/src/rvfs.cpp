@@ -23,8 +23,11 @@
 
 using namespace erpc;
 
-__attribute__((visibility("default")))
 pthread_key_t dpfs_hal_thread_id_key;
+__attribute__((visibility("default")))
+uint16_t dpfs_hal_thread_id(void) {
+    return (uint16_t) pthread_getspecific(dpfs_hal_thread_id_key);
+}
 __attribute__((visibility("default")))
 uint16_t dpfs_hal_nthreads(struct dpfs_hal *hal)
 {

@@ -635,15 +635,15 @@ static int do_fsync(struct fuse_session *se, void *user_data,
         void *completion_context)
 {
     struct fuser *f = user_data;
-        
-    struct fuser_cb_data *cb_data = mpool_alloc(f->cb_data_pool);
+
+    uint16_t thread_id = dpfs_hal_thread_id();
+    struct fuser_cb_data *cb_data = mpool_alloc(f->cb_data_pools[thread_id]);
     cb_data->cb = fuser_mirror_generic_cb;
     cb_data->completion_context = completion_context;
     cb_data->in_hdr = in_hdr;
     cb_data->out_hdr = out_hdr;
 
-    size_t threadid = (size_t) pthread_getspecific(dpfs_hal_thread_id_key);
-    struct io_uring_sqe *sqe = io_uring_get_sqe(&f->rings[threadid]);
+    struct io_uring_sqe *sqe = io_uring_get_sqe(&f->rings[thread_id]);
     if (!sqe) {
         fprintf(stderr, "ERROR: Not enough uring sqe elements avail.\n");
         out_hdr->error = -ENOMEM;
@@ -656,7 +656,7 @@ static int do_fsync(struct fuse_session *se, void *user_data,
     io_uring_prep_fsync(sqe, fd, flags);
     io_uring_sqe_set_data(sqe, cb_data);
 
-    int res = io_uring_submit(&f->rings[threadid]);
+    int res = io_uring_submit(&f->rings[thread_id]);
     if (res < 0) {
         out_hdr->error = res;
         return 0;
@@ -814,15 +814,15 @@ int fuser_mirror_read(struct fuse_session *se, void *user_data,
         void *completion_context, uint16_t device_id)
 {
     struct fuser *f = user_data;
-        
-    struct fuser_cb_data *cb_data = mpool_alloc(f->cb_data_pool);
+
+    size_t thread_id = dpfs_hal_thread_id();
+    struct fuser_cb_data *cb_data = mpool_alloc(f->cb_data_pools[thread_id]);
     cb_data->cb = fuser_mirror_read_cb;
     cb_data->completion_context = completion_context;
     cb_data->in_hdr = in_hdr;
     cb_data->out_hdr = out_hdr;
 
-    size_t threadid = (size_t) pthread_getspecific(dpfs_hal_thread_id_key);
-    struct io_uring_sqe *sqe = io_uring_get_sqe(&f->rings[threadid]);
+    struct io_uring_sqe *sqe = io_uring_get_sqe(&f->rings[thread_id]);
     if (!sqe) {
         fprintf(stderr, "ERROR: Not enough uring sqe elements avail.\n");
         out_hdr->error = -ENOMEM;
@@ -832,7 +832,7 @@ int fuser_mirror_read(struct fuse_session *se, void *user_data,
     io_uring_sqe_set_data(sqe, cb_data);
     // IOSQE_ASYNC doesn't work on file systems
 
-    int res = io_uring_submit(&f->rings[threadid]);
+    int res = io_uring_submit(&f->rings[thread_id]);
     if (res < 0) {
         out_hdr->error = res;
         return 0;
@@ -861,16 +861,16 @@ int fuser_mirror_write(struct fuse_session *se, void *user_data,
         void *completion_context, uint16_t device_id)
 {
     struct fuser *f = user_data;
-        
-    struct fuser_cb_data *rw_cb_data = mpool_alloc(f->cb_data_pool);
+
+    size_t thread_id = dpfs_hal_thread_id();
+    struct fuser_cb_data *rw_cb_data = mpool_alloc(f->cb_data_pools[thread_id]);
     rw_cb_data->cb = fuser_mirror_write_cb;
     rw_cb_data->completion_context = completion_context;
     rw_cb_data->in_hdr = in_hdr;
     rw_cb_data->out_hdr = out_hdr;
     rw_cb_data->write.out_write = out_write;
 
-    size_t threadid = (size_t) pthread_getspecific(dpfs_hal_thread_id_key);
-    struct io_uring_sqe *sqe = io_uring_get_sqe(&f->rings[threadid]);
+    struct io_uring_sqe *sqe = io_uring_get_sqe(&f->rings[thread_id]);
     if (!sqe) {
         fprintf(stderr, "ERROR: Not enough uring sqe elements avail.\n");
         out_hdr->error = -ENOMEM;
@@ -880,7 +880,7 @@ int fuser_mirror_write(struct fuse_session *se, void *user_data,
     io_uring_sqe_set_data(sqe, rw_cb_data);
     // IOSQE_ASYNC doesn't work on file systems
 
-    int res = io_uring_submit(&f->rings[threadid]);
+    int res = io_uring_submit(&f->rings[thread_id]);
     if (res < 0) {
         out_hdr->error = res;
         return 0;

@@ -13,7 +13,7 @@
 extern "C" {
 #endif
 
-void fuse_ll_debug_print_in_hdr(struct fuse_in_header *in) {
+inline void fuse_ll_debug_print_in_hdr(struct fuse_in_header *in) {
 	const char *op_name;
 	switch (in->opcode) {
 	case 1:
@@ -164,8 +164,8 @@ void fuse_ll_debug_print_in_hdr(struct fuse_in_header *in) {
 	      op_name = "UNKNOWN FUSE operation!";
 	      break;
 	}
-	size_t thread_id = (size_t) pthread_getspecific(dpfs_hal_thread_id_key);
-	printf("-- %s:%lu:%lu --\n", op_name, in->unique, thread_id);
+	uint16_t thread_id = dpfs_hal_thread_id();
+	printf("-- %s:%lu:%u --\n", op_name, in->unique, thread_id);
 	printf("* nodeid: %lu\n", in->nodeid);
 	printf("* uid, gid, pid: %u, %u, %u\n", in->uid, in->gid, in->pid);
 }

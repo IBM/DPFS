@@ -77,8 +77,11 @@ struct dpfs_hal {
 
 static volatile int keep_running = 1;
 
-__attribute__((visibility("default")))
 pthread_key_t dpfs_hal_thread_id_key;
+__attribute__((visibility("default")))
+uint16_t dpfs_hal_thread_id(void) {
+    return (uint16_t) (size_t) pthread_getspecific(dpfs_hal_thread_id_key);
+}
 __attribute__((visibility("default")))
 uint16_t dpfs_hal_nthreads(struct dpfs_hal *hal)
 {

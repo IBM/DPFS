@@ -54,7 +54,10 @@ enum dpfs_hal_completion_status {
 // Not user-accessible
 struct dpfs_hal;
 
-extern pthread_key_t dpfs_hal_thread_id_key;
+// Returns the current thread id
+// This should only be called from within the request handler context!!
+uint16_t dpfs_hal_thread_id(void);
+// Returns the total number of DPFS threads for request handling
 uint16_t dpfs_hal_nthreads(struct dpfs_hal *);
 
 struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params);

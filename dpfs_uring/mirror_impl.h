@@ -25,6 +25,7 @@ struct fuser_cb_data;
 typedef void (*fuser_uring_cb) (struct fuser_cb_data *, struct io_uring_cqe *);
 
 struct fuser_cb_data {
+    uint16_t thread_id;
     fuser_uring_cb cb;
     struct fuser *f;
     struct fuse_session *se;

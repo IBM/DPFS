@@ -180,21 +180,68 @@ static void maximize_fd_limit() {
         warn("WARNING: setrlimit() failed with");
 }
 
-static void *fuser_io_poll_thread(void *arg) {
-    struct fuser *f = arg;
+struct tdata {
+    pthread_t t;
+    uint16_t thread_id;
+    struct fuser *f;
+};
+
+// Blocks on a single ring
+static void *fuser_io_blocking_thread(void *arg) {
+    struct tdata *td = arg;
+    struct fuser *f = td->f;
+
     while(!f->io_poll_thread_stop){
-        for (uint16_t i = 0; i < f->dpfs_threads; i++) {
             struct io_uring_cqe *cqe;
-            int ret;
-            if (f->cq_polling)
-                 ret = io_uring_peek_cqe(&f->rings[i], &cqe);
-            else
-                 ret = io_uring_wait_cqe(&f->rings[i], &cqe);
+            int ret = io_uring_wait_cqe(&f->rings[td->thread_id], &cqe);
 
             if(ret == -EAGAIN || ret == -EINTR){
                 continue; // No event to process
             } else if(ret != 0) {
-                fprintf(stderr, "ERROR: uring cqe peek/wait ret = %d\n", ret);
+                fprintf(stderr, "ERROR: uring cqe wait ret = %d\n", ret);
+                fprintf(stderr, "ERROR: stopping uring cqe waiting\n");
+                return NULL;
+            } // else process the event
+
+            struct fuser_cb_data *cb_data = io_uring_cqe_get_data(cqe);
+
+            cb_data->cb(cb_data, cqe);
+
+            io_uring_cqe_seen(&f->rings[td->thread_id], cqe);
+            mpool_free(f->cb_data_pools[cb_data->thread_id], cb_data);
+    }
+    return NULL;
+}
+
+// Polls on a range of rings depending on the number of polling threads and rings
+static void *fuser_io_poll_thread(void *arg) {
+    struct tdata *td = arg;
+    struct fuser *f = td->f;
+
+    // Determine the window of rings we need to poll
+    size_t n = f->nrings / f->cq_polling_nthreads;
+    size_t remainder = f->nrings % f->cq_polling_nthreads;
+    size_t start = n * td->thread_id;
+    size_t end = start + n;
+    if (td->thread_id == 0 && remainder != 0) {
+        // Extend our window to the right with the remainder devices
+        end += remainder;
+        n += remainder;
+    } else if (remainder != 0) {
+        // Move our window to the right by the number of devices T0 has
+        start += remainder;
+        end += remainder;
+    }
+
+    while(!td->f->io_poll_thread_stop){
+        for (uint16_t i = start; i < end; i++) {
+            struct io_uring_cqe *cqe;
+            int ret = io_uring_peek_cqe(&td->f->rings[i], &cqe);
+
+            if(ret == -EAGAIN || ret == -EINTR){
+                continue; // No event to process
+            } else if(ret != 0) {
+                fprintf(stderr, "ERROR: uring cqe peek ret = %d\n", ret);
                 fprintf(stderr, "ERROR: stopping uring cqe polling\n");
                 return NULL;
             } // else process the event
@@ -203,8 +250,8 @@ static void *fuser_io_poll_thread(void *arg) {
 
             cb_data->cb(cb_data, cqe);
 
-            io_uring_cqe_seen(&f->rings[i], cqe);
-            mpool_free(f->cb_data_pool, cb_data);
+            io_uring_cqe_seen(&td->f->rings[i], cqe);
+            mpool_free(td->f->cb_data_pools[cb_data->thread_id], cb_data);
         }
     }
     return NULL;
@@ -212,7 +259,7 @@ static void *fuser_io_poll_thread(void *arg) {
 
 // todo proper error handling
 int fuser_main(bool debug, char *source, double metadata_timeout, const char *conf_path,
-        bool cq_polling, bool sq_polling) {
+        bool cq_polling, uint16_t cq_polling_nthreads, bool sq_polling) {
     struct fuser *f = calloc(1, sizeof(struct fuser));
     if (f == NULL)
         err(1, "ERROR: Could not allocate memory for struct fuser");
@@ -252,24 +299,26 @@ int fuser_main(bool debug, char *source, double metadata_timeout, const char *co
     fuser_mirror_assign_ops(&ops);
 
     struct dpfs_fuse *fuse = dpfs_fuse_new(&ops, conf_path, f, NULL, NULL);
-    f->dpfs_threads = dpfs_fuse_nthreads(fuse);
+    f->nrings = dpfs_fuse_nthreads(fuse);
+    if (f->nrings > 1 && f->cq_polling) {
+    }
 
     struct io_uring_params params;
 
     memset(&params, 0, sizeof(params));
     f->cq_polling = cq_polling;
     if (f->cq_polling) {
-        // Kernel-side polling can only be enabled with fixed buffers
-        // Which we don't implement because that's a big mess with SNAP
-        //params.flags |= IORING_SETUP_IOPOLL;
+        params.flags |= IORING_SETUP_IOPOLL;
     }
     if (sq_polling) {
-        params.flags |= IORING_SETUP_SQPOLL;
-        params.sq_thread_idle = 2000;
+        // Kernel-side polling can only be enabled with fixed files
+        // Which we don't implement because that's a big mess with SNAP
+        //params.flags |= IORING_SETUP_SQPOLL;
+        //params.sq_thread_idle = 2000;
     }
 
-    f->rings = calloc(sizeof(*f->rings), f->dpfs_threads);
-    for (uint16_t i = 0; i < f->dpfs_threads; i++) {
+    f->rings = calloc(f->nrings, sizeof(*f->rings));
+    for (uint16_t i = 0; i < f->nrings; i++) {
         ret = io_uring_queue_init_params(512, &f->rings[i], &params);
         if (ret) {
             fprintf(stderr, "ERROR: Unable to setup io_uring: %s\n", strerror(-ret));
@@ -277,24 +326,41 @@ int fuser_main(bool debug, char *source, double metadata_timeout, const char *co
         }
     }
 
-    mpool_init(&f->cb_data_pool, sizeof(struct fuser_cb_data), 256);
-    pthread_t poll_thread;
-    pthread_create(&poll_thread, NULL, fuser_io_poll_thread, f);
+    f->cb_data_pools = calloc(f->nrings, sizeof(*f->cb_data_pools));
+    for (uint16_t i = 0; i < f->nrings; i++) {
+        mpool_init(&f->cb_data_pools[i], sizeof(struct fuser_cb_data), 256);
+    }
+
+    uint16_t nthreads;
+    if (f->cq_polling) {
+        nthreads = cq_polling_nthreads; // user-defined
+    } else {
+        nthreads = f->nrings; // a blocking thread per ring
+    }
+    struct tdata td[nthreads];
+
+    for (uint16_t i = 0; i < nthreads; i++) {
+        if (f->cq_polling)
+            pthread_create(&td[i].t, NULL, fuser_io_poll_thread, &td[i]);
+        else
+            pthread_create(&td[i].t, NULL, fuser_io_blocking_thread, &td[i]);
+    }
 
     dpfs_fuse_loop(fuse);
     dpfs_fuse_destroy(fuse);
 
     f->io_poll_thread_stop = true;
-    for (uint16_t i = 0; i < f->dpfs_threads; i++) {
+    for (uint16_t i = 0; i < f->nrings; i++) {
         // TODO drain the queue first
         io_uring_queue_exit(&f->rings[i]);
     }
-    if (!f->cq_polling)
-        pthread_cancel(poll_thread);
-    else
-        pthread_join(poll_thread, NULL);
+    for (uint16_t i = 0; i < nthreads; i++) {
+        pthread_join(td[i].t, NULL);
+    }
     
-    mpool_destroy(f->cb_data_pool);
+    for (uint16_t i = 0; i < f->nrings; i++) {
+        mpool_destroy(f->cb_data_pools[i]);
+    }
     // destroy inode table
     free(f);
 

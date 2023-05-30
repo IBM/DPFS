@@ -74,14 +74,14 @@ struct fuser {
     dev_t src_dev; // gets set to the dev of the source
     // bool nocache;
 
-    uint16_t dpfs_threads;
+    uint16_t nrings;
+    uint16_t cq_polling_nthreads;
 
     volatile bool io_poll_thread_stop;
     struct io_uring *rings;
     bool cq_polling;
 
-
-    struct mpool *cb_data_pool;
+    struct mpool **cb_data_pools;
 };
 
 struct inode *ino_to_inodeptr(struct fuser *, fuse_ino_t);
@@ -89,6 +89,6 @@ int ino_to_fd(struct fuser *, fuse_ino_t);
 
 int fuser_main(bool debug, char *source, double metadata_timeout,
                const char *conf_path, bool cq_polling,
-               bool sq_polling);
+               uint16_t cq_polling_nthreads, bool sq_polling);
 
 #endif // FUSER_H
