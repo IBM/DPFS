@@ -470,7 +470,7 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params, bool start_mock_th
     }
     toml_array_t *mock_pf_ids = toml_array_in(snap_conf, "mock_pf_ids"); // optional
     if (mock_pf_ids && toml_array_kind(mock_pf_ids) != 'v') {
-        fprintf(stderr, "%s: the optional mock_pf_ids must not be larger than the pf_ids array and must be an array of integer values!"
+        fprintf(stderr, "%s: the optional mock_pf_ids must be an array of integer values!"
                 " Hint: use list_emulation_managers to find out the physical function id.\n", __func__);
         return NULL;
     }
@@ -493,6 +493,8 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params, bool start_mock_th
             return NULL;
         }
     }
+    if (toml_array_nelem(mock_pf_ids) == 0)
+        mock_pf_ids = NULL;
 
     struct dpfs_hal *hal = calloc(1, sizeof(struct dpfs_hal));
     hal->polling_interval_usec = polling_interval.u.i;
@@ -500,10 +502,10 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params, bool start_mock_th
     hal->ops = params->ops;
     hal->nthreads = nthreads.u.i;
     hal->ndevices = toml_array_nelem(pf_ids);
-    hal->devices = calloc(hal->ndevices, sizeof(struct dpfs_hal_device));
+    hal->devices = calloc(hal->ndevices, sizeof(*hal->devices));
     if (mock_pf_ids) {
         hal->nmock_devices = toml_array_nelem(mock_pf_ids);
-        hal->mock_devices = calloc(hal->nmock_devices, sizeof(struct dpfs_hal_device *));
+        hal->mock_devices = calloc(hal->nmock_devices, sizeof(*hal->mock_devices));
     }
 
     // Initialize the thread-local key we use to tell each of the Virtio
@@ -593,7 +595,8 @@ out:
 __attribute__((visibility("default")))
 void dpfs_hal_destroy(struct dpfs_hal *hal)
 {
-    printf("DPFS HAL destroying %d virtio-fs devices on SNAP RDMA device %s\n", hal->ndevices, hal->devices[0].snap_ctrl->sctx->context->device->name);
+    printf("DPFS HAL destroying %d virtio-fs devices on SNAP RDMA device %s\n", hal->ndevices + hal->nmock_devices,
+            hal->devices[0].snap_ctrl->sctx->context->device->name);
 
     if (hal->mock_thread_running) {
         keep_running = false;
