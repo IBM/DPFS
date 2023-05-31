@@ -1905,7 +1905,7 @@ struct dpfs_fuse *dpfs_fuse_new(struct fuse_ll_operations *ops, const char *hal_
     hal_params.ops.unregister_device = unregister_dpfs_device;
     hal_params.conf_path = hal_conf_path;
 
-    struct dpfs_hal *hal = dpfs_hal_new(&hal_params);
+    struct dpfs_hal *hal = dpfs_hal_new(&hal_params, false);
     if (hal == NULL) {
         fprintf(stderr, "Failed to initialize hal, exiting...\n");
         return NULL;

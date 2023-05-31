@@ -238,7 +238,7 @@ int main(int argc, char **argv)
     hal_params.ops.unregister_device = unregister_dpfs_device;
     hal_params.user_data = &state;
 
-    struct dpfs_hal *hal = dpfs_hal_new(&hal_params);
+    struct dpfs_hal *hal = dpfs_hal_new(&hal_params, true);
     if (hal == NULL) {
         fprintf(stderr, "Failed to initialize dpfs_hal, exiting...\n");
         return -1;

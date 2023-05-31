@@ -69,7 +69,10 @@ struct dpfs_hal {
     int ndevices;
     struct dpfs_hal_device *devices;
     int nmock_devices;
-    struct dpfs_hal_device **mock_devices;
+    struct dpfs_hal_device *mock_devices;
+    pthread_t mock_thread;
+    bool mock_thread_running;
+
     struct dpfs_hal_ops ops;
     void *user_data;
     useconds_t polling_interval_usec;
@@ -152,20 +155,23 @@ static bool all_devices_suspended(struct dpfs_hal *hal)
     return n == hal->ndevices;
 }
 
-struct dpfs_hal_mock_thread {
-    pthread_t thread;
-    struct dpfs_hal *hal;
-};
-
 // Checks for (management) I/O every second on all mock devices
 static void *dpfs_hal_mock_thread(void *arg)
 {
-    struct dpfs_hal_mock_thread *ht = arg;
-    struct dpfs_hal *hal = ht->hal;
+    struct dpfs_hal *hal = arg;
 
     while (keep_running || !all_devices_suspended(hal)) {
         for (size_t i = 0; i < hal->nmock_devices; i++) {
-            dpfs_hal_poll_device(hal->mock_devices[i]);
+            struct dpfs_hal_device *dev = &hal->mock_devices[i];
+            // actual io
+            virtio_fs_ctrl_progress_all_io(dev->snap_ctrl);
+            // This is for mmio (management io)
+            virtio_fs_ctrl_progress(dev->snap_ctrl);
+
+            if (unlikely(!keep_running && !dev->suspending)) {
+                virtio_fs_ctrl_suspend(dev->snap_ctrl);
+                dev->suspending = true;
+            }
         }
         sleep(1);
     }
@@ -248,24 +254,28 @@ static void dpfs_hal_loop_static(struct dpfs_hal *hal)
         }
     }
 
-    struct dpfs_hal_mock_thread mt;
-    if (hal->nmock_devices > 0) {
-        mt.hal = hal;
-        if (pthread_create(&mt.thread, NULL, dpfs_hal_mock_thread, &mt)) {
+    // Make sure the mock thread is not already running because of invalid usage of the HAL API 
+    if (!hal->mock_thread_running && hal->nmock_devices > 0) {
+        if (pthread_create(&hal->mock_thread, NULL, dpfs_hal_mock_thread, hal)) {
             warn("Failed to create thread for mock devices mmio");
             for (int i = 0; i < hal->nthreads; i++) {
                 pthread_cancel(tdatas[i].thread);
             }
             return;
         }
+        hal->mock_thread_running = true;
     }
+
+    printf("DPFS-HAL SNAP: All device pollers are up and running.\n");
 
     // Wait for all the polling threads to stop
     for (int i = 0; i < hal->nthreads; i++) {
         pthread_join(tdatas[i].thread, NULL);
     }
-    if (hal->nmock_devices > 0)
-        pthread_join(mt.thread, NULL);
+    if (hal->nmock_devices > 0) {
+        pthread_join(hal->mock_thread, NULL);
+        hal->mock_thread_running = false;
+    }
 }
 
 __attribute__((visibility("default")))
@@ -316,8 +326,73 @@ static int dpfs_hal_handle_req(struct virtio_fs_ctrl *ctrl,
     return hal->ops.request_handler(hal->user_data, in_iov, in_iovcnt, out_iov, out_iovcnt, done_ctx, dev->device_id);
 }
 
+static int dpfs_hal_init_dev(struct dpfs_hal *hal, struct dpfs_hal_device *dev, uint16_t device_id,
+        char *emu_manager, int pf_id, char *tag, int qd)
+{
+    char *full_tag;
+    int ret = asprintf(&full_tag, "%s-%u", tag, device_id);
+    if (ret == -1 || !full_tag) {
+        fprintf(stderr, "%s: couldn't allocate memory for virtio-fs tag", __func__);
+        return -1;
+    }
+
+    struct virtio_fs_ctrl_init_attr param;
+    param.emu_manager_name = emu_manager;
+    // A single device could be shared amongst multiple polling threads, but because of locking
+    // in SNAP, there is no point in doing this. So a device is owned by a single thread
+    param.nthreads = 1;
+    param.tag = full_tag;
+    param.pf_id = pf_id;
+    param.vf_id = -1;
+
+    param.dev_type = "virtiofs_emu";
+    // one for HiPrio and one for Requests
+    param.num_queues = 2;
+    // Must be an order of 2 or you will get err 121
+    // queue slots that are left unused significantly decrease performance because of the SNAP poller
+    param.queue_depth = qd;
+    param.force_in_order = false;
+    // See snap_virtio_fs_ctrl.c:811, if enabled this controller is
+    // supposed to be recovered from the dead
+    param.recover = false;
+    param.suspended = false;
+    param.virtiofs_emu_handle_req = dpfs_hal_handle_req;
+    param.vf_change_cb = NULL;
+    param.vf_change_cb_arg = NULL;
+    param.virtiofs_emu = dev;
+
+    struct virtio_fs_ctrl *snap_ctrl = virtio_fs_ctrl_init(&param);
+    if (!snap_ctrl) {
+        fprintf(stderr, "failed to initialize virtio-fs device using SNAP on PF %u\n", param.pf_id);
+        free(full_tag);
+        return -1;
+    }
+
+    dev->snap_ctrl = snap_ctrl;
+    dev->device_id = device_id;
+    dev->pf_id = pf_id;
+    dev->hal = hal;
+    dev->tag = full_tag;
+
+    if (hal->ops.register_device)
+        hal->ops.register_device(hal->user_data, device_id);
+
+    return 0;
+}
+
+static void dpfs_hal_destroy_dev(struct dpfs_hal_device *dev)
+{
+    struct dpfs_hal *hal = dev->hal;
+
+    if (hal->ops.unregister_device)
+        hal->ops.unregister_device(hal->user_data, dev->device_id);
+
+    virtio_fs_ctrl_destroy(hal->devices[dev->device_id].snap_ctrl);
+    free(hal->devices[dev->device_id].tag);
+}
+
 __attribute__((visibility("default")))
-struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params)
+struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params, bool start_mock_thread)
 {
     FILE *fp;
     char errbuf[200];
@@ -413,8 +488,8 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params)
                 break;
             }
         }
-        if (!found) {
-            fprintf(stderr, "%s: All mock physical function ids must also be present in pf_ids!", __func__);
+        if (found) {
+            fprintf(stderr, "%s: All mock physical function ids not also be present in `pf_ids`!", __func__);
             return NULL;
         }
     }
@@ -447,74 +522,47 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params)
         goto out;
     };
 
-    int mock_idx = 0;
     for (uint16_t i = 0; i < hal->ndevices; i++) {
         toml_datum_t pf = toml_int_at(pf_ids, i);
 
         struct dpfs_hal_device *dev = &hal->devices[i];
-        char *full_tag;
-        int ret = asprintf(&full_tag, "%s-%u", tag.u.s, i);
-        if (ret == -1 || !full_tag) {
-            fprintf(stderr, "%s: couldn't allocate memory for virtio-fs tag", __func__);
-            goto clear_pci_list;
-        }
-
-        struct virtio_fs_ctrl_init_attr param;
-        param.emu_manager_name = emu_manager.u.s;
-        // A single device could be shared amongst multiple polling threads, but because of locking
-        // in SNAP, there is no point in doing this. So a device is owned by a single thread
-        param.nthreads = 1;
-        param.tag = full_tag;
-        param.pf_id = pf.u.i;
-        param.vf_id = -1;
-
-        param.dev_type = "virtiofs_emu";
-        // one for HiPrio and one for Requests
-        param.num_queues = 2;
-        // Must be an order of 2 or you will get err 121
-        // queue slots that are left unused significantly decrease performance because of the SNAP poller
-        param.queue_depth = qd.u.i;
-        param.force_in_order = false;
-        // See snap_virtio_fs_ctrl.c:811, if enabled this controller is
-        // supposed to be recovered from the dead
-        param.recover = false;
-        param.suspended = false;
-        param.virtiofs_emu_handle_req = dpfs_hal_handle_req;
-        param.vf_change_cb = NULL;
-        param.vf_change_cb_arg = NULL;
-        param.virtiofs_emu = dev;
-
-        struct virtio_fs_ctrl *snap_ctrl = virtio_fs_ctrl_init(&param);
-        if (!snap_ctrl) {
-            fprintf(stderr, "failed to initialize virtio-fs device using SNAP on PF %u\n", param.pf_id);
+        int ret = dpfs_hal_init_dev(hal, dev, i, emu_manager.u.s, pf.u.i, tag.u.s, qd.u.i);
+        if (ret) {
             for (uint16_t j = 0; j < i; j++) {
-                if (hal->ops.unregister_device)
-                    hal->ops.unregister_device(hal->user_data, j);
-                virtio_fs_ctrl_destroy(hal->devices[j].snap_ctrl);
-                free(hal->devices[j].tag);
+                dpfs_hal_destroy_dev(&hal->devices[j]);
             }
             goto clear_pci_list;
         }
+    }
 
-        dev->snap_ctrl = snap_ctrl;
-        dev->device_id = i;
-        dev->pf_id = pf.u.i;
-        dev->hal = hal;
-        dev->tag = full_tag;
+    for (uint16_t i = 0; i < hal->nmock_devices; i++) {
+        toml_datum_t pf = toml_int_at(mock_pf_ids, i);
 
-        // If the PF is a mock PF, add it to the mock devices list
-        bool mock = false;
-        for (int j = 0; j < hal->nmock_devices; j++) {
-            if (pf.u.i == toml_int_at(mock_pf_ids, j).u.i) {
-                mock = true;
-                break;
+        struct dpfs_hal_device *dev = &hal->mock_devices[i];
+        int ret = dpfs_hal_init_dev(hal, dev, i, emu_manager.u.s, pf.u.i, tag.u.s, qd.u.i);
+        if (ret) {
+            for (uint16_t j = 0; j < i; j++) {
+                dpfs_hal_destroy_dev(&hal->mock_devices[j]);
             }
+            for (uint16_t j = 0; j < hal->ndevices; j++) {
+                dpfs_hal_destroy_dev(&hal->devices[j]);
+            }
+            goto clear_pci_list;
         }
-        if (mock)
-            hal->mock_devices[mock_idx++] = dev;
+    }
 
-        if (hal->ops.register_device)
-            hal->ops.register_device(hal->user_data, i);
+    if (start_mock_thread && hal->nmock_devices > 0) {
+        if (pthread_create(&hal->mock_thread, NULL, dpfs_hal_mock_thread, hal)) {
+            warn("Failed to create thread for mock devices\n");
+            for (uint16_t i = 0; i < hal->nmock_devices; i++) {
+                dpfs_hal_destroy_dev(&hal->mock_devices[i]);
+            }
+            for (uint16_t i = 0; i < hal->ndevices; i++) {
+                dpfs_hal_destroy_dev(&hal->devices[i]);
+            }
+            goto clear_pci_list;
+        }
+        hal->mock_thread_running = true;
     }
 
     printf("DPFS HAL with SNAP frontend online!\n");
@@ -544,11 +592,16 @@ void dpfs_hal_destroy(struct dpfs_hal *hal)
 {
     printf("DPFS HAL destroying %d virtio-fs devices on SNAP RDMA device %s\n", hal->ndevices, hal->devices[0].snap_ctrl->sctx->context->device->name);
 
+    if (hal->mock_thread_running) {
+        keep_running = false;
+        pthread_join(hal->mock_thread, NULL);
+    }
+
     for (uint16_t i = 0; i < hal->ndevices; i++) {
-        if (hal->ops.unregister_device)
-            hal->ops.unregister_device(hal->user_data, i);
-        virtio_fs_ctrl_destroy(hal->devices[i].snap_ctrl);
-        free(hal->devices[i].tag);
+        dpfs_hal_destroy_dev(&hal->devices[i]);
+    }
+    for (uint16_t i = 0; i < hal->nmock_devices; i++) {
+        dpfs_hal_destroy_dev(&hal->mock_devices[i]);
     }
     mlnx_snap_pci_manager_clear();
 

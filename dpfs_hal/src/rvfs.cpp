@@ -139,7 +139,7 @@ static void sm_handler(int, SmEventType event, SmErrType err, void *) {
 }
 
 __attribute__((visibility("default")))
-struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params) {
+struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params, bool start_mock_thread) {
     dpfs_hal *hal = new dpfs_hal(params->ops, params->user_data);
     auto res = toml::parseFile(params->conf_path);
     if (!res.table) {

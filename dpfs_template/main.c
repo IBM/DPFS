@@ -65,7 +65,7 @@ int main(int argc, char **argv)
 
     hal_params.ops.request_handler = fuse_handler;
 
-    struct dpfs_hal *hal = dpfs_hal_new(&hal_params);
+    struct dpfs_hal *hal = dpfs_hal_new(&hal_params, false);
     if (hal == NULL) {
         fprintf(stderr, "Failed to initialize dpfs_hal, exiting...\n");
         return -1;

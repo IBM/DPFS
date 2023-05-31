@@ -12,6 +12,7 @@
 #include <sys/uio.h>
 #include <unistd.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -60,8 +61,11 @@ uint16_t dpfs_hal_thread_id(void);
 // Returns the total number of DPFS threads for request handling
 uint16_t dpfs_hal_nthreads(struct dpfs_hal *);
 
-struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params);
-// DPFS will handle the polling for you, using the supplied interval in the params
+// Optionally starts a background thread that handles the mock virtio-fs devices,
+// which only get polled once a second. This should be set to true when not using
+// `dpfs_hal_loop`!
+struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params, bool start_mock_thread);
+// DPFS will handle the polling for you (including mock devices), using the supplied interval in the params
 void dpfs_hal_loop(struct dpfs_hal *hal);
 // DPFS backend takes control over the polling, make sure you also call poll_mmio
 // a few times a second to check for device management changes of the virtio-fs device
