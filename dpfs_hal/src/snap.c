@@ -388,8 +388,8 @@ static void dpfs_hal_destroy_dev(struct dpfs_hal_device *dev)
     if (hal->ops.unregister_device)
         hal->ops.unregister_device(hal->user_data, dev->device_id);
 
-    virtio_fs_ctrl_destroy(hal->devices[dev->device_id].snap_ctrl);
-    free(hal->devices[dev->device_id].tag);
+    virtio_fs_ctrl_destroy(dev->snap_ctrl);
+    free(dev->tag);
 }
 
 __attribute__((visibility("default")))
