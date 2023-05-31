@@ -29,7 +29,6 @@
 #include <sys/fcntl.h>
 #include <stddef.h>
 #include <unordered_map>
-#include <memory>
 #include <linux/fuse.h>
 #include <string.h>
 
