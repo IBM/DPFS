@@ -95,6 +95,7 @@ uint16_t dpfs_hal_nthreads(struct dpfs_hal *hal)
 static void signal_handler(int dummy)
 {
     keep_running = 0;
+    printf("DPFS-HAL SNAP: the HAL will exit when the host has suspended all the virtio-fs devices");
 }
 
 __attribute__((visibility("default")))

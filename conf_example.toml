@@ -8,6 +8,7 @@ pf_ids = [ 0 ]
 # These PFs will be created and checked for (management) I/O only once a second so
 # that the host driver will be able to init the devices. These devices can
 # be mounted, but will perform horribly bad (1 IOPS).
+# The PFs in `pf_ids` and `mock_pf_ids` should not overlap!
 # This is usefull for PF (perf) testing without having to reboot the DPU for firmware
 # config changes all the time.
 mock_pf_ids = [ ]
