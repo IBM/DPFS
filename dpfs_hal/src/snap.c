@@ -468,9 +468,8 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params, bool start_mock_th
                 "This is the name with which the host mounts the file system\n", __func__);
         return NULL;
     }
-    toml_array_t *mock_pf_ids = toml_array_in(snap_conf, "mock_pf_ids");
-    if (mock_pf_ids && (toml_array_nelem(mock_pf_ids) > toml_array_nelem(pf_ids)
-                || toml_array_kind(mock_pf_ids) != 'v')) {
+    toml_array_t *mock_pf_ids = toml_array_in(snap_conf, "mock_pf_ids"); // optional
+    if (mock_pf_ids && toml_array_kind(mock_pf_ids) != 'v') {
         fprintf(stderr, "%s: the optional mock_pf_ids must not be larger than the pf_ids array and must be an array of integer values!"
                 " Hint: use list_emulation_managers to find out the physical function id.\n", __func__);
         return NULL;
@@ -502,8 +501,10 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params, bool start_mock_th
     hal->nthreads = nthreads.u.i;
     hal->ndevices = toml_array_nelem(pf_ids);
     hal->devices = calloc(hal->ndevices, sizeof(struct dpfs_hal_device));
-    hal->nmock_devices = toml_array_nelem(mock_pf_ids);
-    hal->mock_devices = calloc(hal->nmock_devices, sizeof(struct dpfs_hal_device *));
+    if (mock_pf_ids) {
+        hal->nmock_devices = toml_array_nelem(mock_pf_ids);
+        hal->mock_devices = calloc(hal->nmock_devices, sizeof(struct dpfs_hal_device *));
+    }
 
     // Initialize the thread-local key we use to tell each of the Virtio
     // polling threads, which thread id it has
@@ -582,7 +583,8 @@ out:
     free(tag.u.s);
     free(emu_manager.u.s);
     free(hal->devices);
-    free(hal->mock_devices);
+    if (hal->mock_devices)
+        free(hal->mock_devices);
     free(hal);
     toml_free(conf);
     return NULL;
@@ -607,7 +609,8 @@ void dpfs_hal_destroy(struct dpfs_hal *hal)
     mlnx_snap_pci_manager_clear();
 
     free(hal->devices);
-    free(hal->mock_devices);
+    if (hal->mock_devices)
+        free(hal->mock_devices);
     free(hal);
 }
 
