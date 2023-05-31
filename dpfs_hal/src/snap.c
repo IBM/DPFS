@@ -526,24 +526,26 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params, bool start_mock_th
         goto out;
     };
 
+    uint16_t device_id = 0;
     for (uint16_t i = 0; i < hal->ndevices; i++) {
         toml_datum_t pf = toml_int_at(pf_ids, i);
 
         struct dpfs_hal_device *dev = &hal->devices[i];
-        int ret = dpfs_hal_init_dev(hal, dev, i, emu_manager.u.s, pf.u.i, tag.u.s, qd.u.i);
+        int ret = dpfs_hal_init_dev(hal, dev, device_id, emu_manager.u.s, pf.u.i, tag.u.s, qd.u.i);
         if (ret) {
             for (uint16_t j = 0; j < i; j++) {
                 dpfs_hal_destroy_dev(&hal->devices[j]);
             }
             goto clear_pci_list;
         }
+        device_id++;
     }
 
     for (uint16_t i = 0; i < hal->nmock_devices; i++) {
         toml_datum_t pf = toml_int_at(mock_pf_ids, i);
 
         struct dpfs_hal_device *dev = &hal->mock_devices[i];
-        int ret = dpfs_hal_init_dev(hal, dev, i, emu_manager.u.s, pf.u.i, tag.u.s, qd.u.i);
+        int ret = dpfs_hal_init_dev(hal, dev, device_id, emu_manager.u.s, pf.u.i, tag.u.s, qd.u.i);
         if (ret) {
             for (uint16_t j = 0; j < i; j++) {
                 dpfs_hal_destroy_dev(&hal->mock_devices[j]);
@@ -553,6 +555,7 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params, bool start_mock_th
             }
             goto clear_pci_list;
         }
+        device_id++;
     }
 
     if (start_mock_thread && hal->nmock_devices > 0) {
