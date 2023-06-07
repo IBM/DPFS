@@ -12,12 +12,20 @@ import os
 import seaborn as sns
 # matplotlib.use("pgf")
 matplotlib.rcParams.update({
-    "pgf.texsystem": "pdflatex",
-    'font.family': 'serif',
-    'text.usetex': False,
+    #"pgf.texsystem": "pdflatex",
+    "font.family": "serif",
+    #"font.serif": 'DejaVu Serif',
+    #'text.usetex': False,
 #     'pgf.rcfonts': False,
-    "font.size": 15,
+    "font.size": 18,
+    #"font.weight": "bold",
+    'ps.useafm': True,
+    "pdf.use14corefonts": True,
+    "text.usetex": True,
 })
+
+TARGET = "./systor23/"
+OUT = TARGET + "out/"
 
 fio_iops_avg_regex = "(?<=^\s*iops\s*: min=\s*\d*, max=\s*\d*, avg=\s*)\d+\.\d*"
 fio_iops_stdev_regex = "(?<=^\s*iops\s*: min=\s*\d*, max=\s*\d*, avg=\s*\d*\.*\d*, stdev=\s*)\d+\.\d*"
@@ -60,9 +68,9 @@ def get_dtlb_missrate(df):
 
 perf_stat_colnames = [ "val", "unit", "event", "time_measured", "perctage_measured", "metric_val", "metric_unit"]
 targets = {
-    "NFS": "./nfs/",
-    "Virtio-fs": "./vnfs/",
-    "nulldev": "./nulldev/"
+    "NFS": TARGET+"nfs/",
+    "Virtio-fs": TARGET+"vnfs/",
+    "nulldev": TARGET+"nulldev/"
 }
 metrics = ["Instructions/OP", "IPC", "Branch missrate", "L1 dCache missrate", "dTLB missrate"]
 # perf time_measured is in nsec
@@ -136,7 +144,7 @@ table['+/- % 2'] = (table['NFS'] - table['nulldev']) / table['NFS'] * 100 * -1
     
 table = table.round(2).applymap("{0:.2f}".format)
 print(table)
-table.style.to_latex("cpu_analysis.tex", hrules=True)
+table.style.to_latex(OUT+"cpu_analysis.tex", hrules=True)
 
 cols = ["conf", "RW", "BS", "QD", "P", "IOPS_avg", "IOPS_stdev", "clat_avg", "clat_stdev", "bw_avg", "bw_stdev"]
 
@@ -206,9 +214,9 @@ def parse_fio(RW, BS, QD, P, conf, folder):
     return df
 
 targets = {
-    "NFS": "./nfs/",
-    "VNFS": "./vnfs/batching/",
-    "nulldev": "./nulldev/batching/"
+    "NFS": TARGET+"nfs/",
+    "VNFS": TARGET+"vnfs/",
+    "nulldev": TARGET+"nulldev/"
 }
 
 s = pd.DataFrame(columns=cols)
@@ -237,7 +245,7 @@ for (conf, folder) in targets.items():
 # DPFS-NFS without XLIO latency
 df = parse_fio(["randread", "randwrite"], ["4k"],
                ["1"],
-               ["1"], "VNFS-", "./vnfs/no_xlio/")
+               ["1"], "VNFS-", TARGET+"vnfs/no_xlio/")
 s = pd.concat((s, df), ignore_index=True)
 
 # RAMCloud KV latency
@@ -313,10 +321,11 @@ def plot_tp(confs, BS, BS_colormap, conf_colormap, GiB, file):
         for (k, v) in conf_colormap.items():
             legend_dict[confs[k]] = Line2D([0], [0], color=v, lw=2)
     
-    ax.legend(legend_dict.values(), legend_dict.keys(), loc='best')
+    legend_names = [w.replace('k', ' KiB') for w in legend_dict.keys()]
+    ax.legend(legend_dict.values(), legend_names, loc='best')
 
     fig.show()
-    plt.savefig("./graphs/" + file + "_tp.pdf", bbox_inches="tight")
+    plt.savefig(OUT + file + "_tp.pdf", bbox_inches="tight")
     
 plot_tp({'NFS': 'Host NFS ', 'VNFS': 'DPFS-NFS '}, ['4k'], None,
         {'NFS': 'tab:blue', 'VNFS': 'tab:orange'}
@@ -381,7 +390,7 @@ def plot_latency(confs, P, conf_colormap, ylim, file):
     ax.legend(legend_dict.values(), legend_dict.keys(), loc='best')
 
     fig.show()
-    plt.savefig("./graphs/" + file + "_clat.pdf", bbox_inches="tight")
+    plt.savefig(OUT + file + "_clat.pdf", bbox_inches="tight")
 
 plot_latency({'NFS': 'Host NFS', 'VNFS': 'DPFS-NFS', 'nulldev': 'DPFS-null'}, '1', 
              {'NFS': 'tab:blue', 'VNFS': 'tab:orange', 'nulldev': 'tab:green'},
@@ -414,23 +423,27 @@ def plot_multicore(confs, BS, file):
     ax.set_xlabel("Threads")
 
     fig.show()
-    plt.savefig("./graphs/" + file + "_multicore.pdf", bbox_inches="tight")
-    
+    plt.savefig(OUT + file + "_multicore.pdf", bbox_inches="tight")
     
 plot_multicore({'NFS': 'Host NFS ', 'VNFS': 'DPFS-NFS '}, ['4k', '32k'], 'nfs_vnfs')
 
-d = s.loc[(s['QD'].isin(['16', '32', '64', '128'])) & (s['P'] == '2') & (s['BS'] == '4k') & (s['RW'] == 'randread')]
-nfs = d.loc[(d['conf'] == 'NFS'), 'bw_avg'].mean()
-vnfs = d.loc[(d['conf'] == 'VNFS'), 'bw_avg'].mean()
-read = (vnfs - nfs) / nfs * 100
+def confs_diff(a, b, qd, bs):
+    d = s.loc[(s['QD'].isin(qd)) & (s['P'] == '2') & (s['BS'] == bs) & (s['RW'] == 'randread')]
+    ad = d.loc[(d['conf'] == a), 'bw_avg'].mean()
+    bd = d.loc[(d['conf'] == b), 'bw_avg'].mean()
+    read = (ad - bd) / bd * 100
+    
+    d = s.loc[(s['QD'].isin(qd)) & (s['P'] == '2') & (s['BS'] == bs) & (s['RW'] == 'randwrite')]
+    ad = d.loc[(d['conf'] == a), 'bw_avg'].mean()
+    bd = d.loc[(d['conf'] == b), 'bw_avg'].mean()
+    write = (ad - bd) / bd * 100
+    
+    print("At QD=" + ','.join(qd) + ",BS=" + bs + " - " + a + " has " + str(round(read,2)) + "%" + " better read and " + str(round(write,2)) + "% write throughput than " + b)
 
-d = s.loc[(s['QD'].isin(['16', '32', '64', '128'])) & (s['P'] == '2') & (s['BS'] == '4k') & (s['RW'] == 'randwrite')]
-nfs = d.loc[(d['conf'] == 'NFS'), 'bw_avg'].mean()
-vnfs = d.loc[(d['conf'] == 'VNFS'), 'bw_avg'].mean()
-write = (vnfs - nfs) / nfs * 100
-print("At QD>=16,BS=4k, VNFS has " + str(round(read,2)) + "%" + " better read and " + str(round(write,2)) + "% write throughput")
+confs_diff("VNFS", "NFS", ['16', '32', '64', '128'], '4k')
+confs_diff("VNFS", "nulldev", ['32'], '4k')
+confs_diff("VNFS", "nulldev", ['32'], '64k')
 
-s.loc[(s['QD'] == '1') & (s['P'] == '1') & (s['BS'] == '4k') & (s['conf'].isin(['NFS', 'VNFS', 'VNFS-', "KV"])) & (s['RW'] == 'randread'), 'clat_avg']
 
 def advanced_latency_extra():
     a_avg = s.loc[(s['QD'] == '1') & (s['P'] == '1') & (s['BS'] == '4k') & (s['conf'].isin(['NFS', 'VNFS'])), 'clat_avg']
@@ -441,22 +454,24 @@ def advanced_latency_extra():
 
     fig, ax = plt.subplots()
 
-    confs = ["Host NFS", "DPFS-NFS\n(+XLIO)", "DPFS-NFS\n(-XLIO)", "DPFS-KV\n(RDMA)"]
+    confs = ["Host NFS", "DPFS-NFS\n(-XLIO)", "DPFS-NFS\n(+XLIO)", "DPFS-KV\n(RDMA)"]
     avg = {
-        "Read": s.loc[(s['QD'] == '1') & (s['P'] == '1') & (s['BS'] == '4k') & (s['conf'].isin(['NFS', 'VNFS', 'VNFS-', "KV"])) & (s['RW'] == 'randread'), 'clat_avg'],
-        "Write": s.loc[(s['QD'] == '1') & (s['P'] == '1') & (s['BS'] == '4k') & (s['conf'].isin(['NFS', 'VNFS', 'VNFS-', "KV"])) & (s['RW'] == 'randwrite'), 'clat_avg'],
+        "Read": s.loc[(s['QD'] == '1') & (s['P'] == '1') & (s['BS'] == '4k') & (s['conf'].isin(['NFS', 'VNFS-', 'VNFS', "KV"])) & (s['RW'] == 'randread'), 'clat_avg'],
+        "Write": s.loc[(s['QD'] == '1') & (s['P'] == '1') & (s['BS'] == '4k') & (s['conf'].isin(['NFS', 'VNFS-', 'VNFS', "KV"])) & (s['RW'] == 'randwrite'), 'clat_avg'],
     }
     stdev = {
-        "Read": s.loc[(s['QD'] == '1') & (s['P'] == '1') & (s['BS'] == '4k') & (s['conf'].isin(['NFS', 'VNFS', 'VNFS-', "KV"])) & (s['RW'] == 'randread'), 'clat_stdev'],
-        "Write": s.loc[(s['QD'] == '1') & (s['P'] == '1') & (s['BS'] == '4k') & (s['conf'].isin(['NFS', 'VNFS', 'VNFS-', "KV"])) & (s['RW'] == 'randwrite'), 'clat_stdev'],
+        "Read": s.loc[(s['QD'] == '1') & (s['P'] == '1') & (s['BS'] == '4k') & (s['conf'].isin(['NFS', 'VNFS-', 'VNFS', "KV"])) & (s['RW'] == 'randread'), 'clat_stdev'],
+        "Write": s.loc[(s['QD'] == '1') & (s['P'] == '1') & (s['BS'] == '4k') & (s['conf'].isin(['NFS', 'VNFS-', 'VNFS', "KV"])) & (s['RW'] == 'randwrite'), 'clat_stdev'],
     }
     x = np.arange(len(confs))
     width = 0.235
     multiplier = 0.3
     
-    for (rw, val) in avg.items():
+    avg_sorted = [ avg[0], avg[2], avg[1], avg[3] ]
+    stdev_sorted = [ stdev[0], stdev[2], stdev[1], stdev[3] ]
+    for (rw, val) in avg_sorted.items():
         offset = width * multiplier
-        rects = ax.bar(x + offset, val, width, label=rw, yerr=stdev[rw], capsize=5, edgecolor='black')
+        rects = ax.bar(x + offset, val, width, label=rw, yerr=stdev_sorted[rw], capsize=5, edgecolor='black')
         #ax.bar_label(rects, padding=-5, fmt='%.1fµs')
         multiplier += 1
         
@@ -489,7 +504,7 @@ def advanced_latency_extra():
     ax.set_ylabel("Latency (µs)")
     ax.set_xlabel("Configuration")
 
-    plt.savefig("./graphs/4k_clat_extra.pdf", bbox_inches="tight")
+    plt.savefig(OUT + "4k_clat_extra.pdf", bbox_inches="tight")
     fig.show()
     
 advanced_latency_extra()
@@ -539,15 +554,15 @@ def advanced_latency():
         rects = ax.bar(1 + offset, val, yerr=null_stdev[rw], width=width, bottom=0, capsize=5, color=colors[rw], edgecolor='black')
         ax.bar_label(rects, padding=-(val*2), fmt='%.1fµs') # put at bottom
         multiplier += 1
-    ax.annotate('DPFS-null', xy=(0.95,18.8), xytext=(0.53, 6.5), arrowprops=dict(arrowstyle="simple", connectionstyle="arc3,rad=-0.2", facecolor='red'))
-    ax.annotate('Userspace NFS\n(TCP offloaded)\n       latency', xy=(0.95,64), xytext=(0.445, 34.6), arrowprops=dict(arrowstyle="simple", connectionstyle="arc3,rad=-0.2", facecolor='red'))
+    ax.annotate('DPFS-null', xy=(0.95,18.8), xytext=(0.55, 6.5), arrowprops=dict(arrowstyle="simple", connectionstyle="arc3,rad=-0.2", facecolor='red'))
+    ax.annotate('Userspace NFS\n(TCP offloaded)\n       latency', xy=(0.95,64), xytext=(0.475, 34.57), arrowprops=dict(arrowstyle="simple", connectionstyle="arc3,rad=-0.2", facecolor='red'), multialignment="center")
     #ax.annotate('Total latency', xy=(0.87,113.5), xytext=(0.49, 93), arrowprops=dict(arrowstyle="simple", connectionstyle="arc3,rad=-0.2", facecolor='red'))
-    ax.annotate('52.9µs', xy=(0,0), xytext=(0.965, 62)) # libnfs
-    ax.annotate('52.2µs', xy=(0,0), xytext=(1.20, 66)) # libnfs
-    ax.annotate('79µs', xy=(0,0), xytext=(-0.01, 35)) # NFS
-    ax.annotate('71.2µs', xy=(0,0), xytext=(0.2, 35)) # NFS
-    ax.annotate('91.5µs', xy=(0,0), xytext=(0.85, 94)) # total DPFS
-    ax.annotate('95.5µs', xy=(0,0), xytext=(1.085, 98)) # total DPFS
+    ax.annotate('52.9µs', xy=(0,0), xytext=(0.985, 62)) # libnfs
+    ax.annotate('52.2µs', xy=(0,0), xytext=(1.22, 66)) # libnfs
+    ax.annotate('79µs', xy=(0,0), xytext=(0.01, 35)) # NFS
+    ax.annotate('71.2µs', xy=(0,0), xytext=(0.22, 35)) # NFS
+    ax.annotate('91.5µs', xy=(0,0), xytext=(0.87, 94.1)) # total DPFS
+    ax.annotate('95.5µs', xy=(0,0), xytext=(1.105, 98)) # total DPFS
     #ax.annotate('DPU', xy=(0,0), xytext=(1.2, 28))
     #ax.annotate('NFS', xy=(0,0), xytext=(0.95, 62))
     #ax.annotate('NFS', xy=(0,0), xytext=(1.2, 67))
@@ -561,7 +576,7 @@ def advanced_latency():
     ax.set_ylabel("Latency (µs)")
     ax.set_xlabel("Configuration")
 
-    plt.savefig("./graphs/4k_clat.pdf", bbox_inches="tight")
+    plt.savefig(OUT + "4k_clat.pdf", bbox_inches="tight")
     fig.show()
     
 advanced_latency()
