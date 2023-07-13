@@ -538,7 +538,7 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params, bool start_mock_th
         toml_datum_t pf = toml_int_at(mock_pf_ids, i);
 
         struct dpfs_hal_device *dev = &hal->mock_devices[i];
-        int ret = dpfs_hal_init_dev(hal, dev, device_id, emu_manager.u.s, pf.u.i, tag.u.s, qd.u.i);
+        int ret = dpfs_hal_init_dev(hal, dev, device_id, emu_manager.u.s, pf.u.i, tag.u.s, 1);
         if (ret) {
             for (uint16_t j = 0; j < i; j++) {
                 dpfs_hal_destroy_dev(&hal->mock_devices[j]);
