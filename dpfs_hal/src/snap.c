@@ -244,9 +244,6 @@ static void dpfs_hal_loop_static(struct dpfs_hal *hal)
     if (!hal->mock_thread_running && hal->nmock_devices > 0) {
         if (pthread_create(&hal->mock_thread, NULL, dpfs_hal_mock_thread, hal)) {
             warn("Failed to create thread for mock devices mmio");
-            for (int i = 0; i < hal->nthreads; i++) {
-                pthread_cancel(tdatas[i].thread);
-            }
             return;
         }
         hal->mock_thread_running = true;
