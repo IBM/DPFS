@@ -240,8 +240,19 @@ static void dpfs_hal_loop_static(struct dpfs_hal *hal)
     sigaction(SIGPIPE, &act, 0);
     sigaction(SIGTERM, &act, 0);
 
-    struct dpfs_hal_loop_thread tdatas[hal->nthreads];
+    // Make sure the mock thread is not already running because of invalid usage of the HAL API 
+    if (!hal->mock_thread_running && hal->nmock_devices > 0) {
+        if (pthread_create(&hal->mock_thread, NULL, dpfs_hal_mock_thread, hal)) {
+            warn("Failed to create thread for mock devices mmio");
+            for (int i = 0; i < hal->nthreads; i++) {
+                pthread_cancel(tdatas[i].thread);
+            }
+            return;
+        }
+        hal->mock_thread_running = true;
+    }
 
+    struct dpfs_hal_loop_thread tdatas[hal->nthreads];
     for (int i = 0; i < hal->nthreads; i++) {
         tdatas[i].thread_id = i;
         tdatas[i].hal = hal;
@@ -255,17 +266,7 @@ static void dpfs_hal_loop_static(struct dpfs_hal *hal)
         }
     }
 
-    // Make sure the mock thread is not already running because of invalid usage of the HAL API 
-    if (!hal->mock_thread_running && hal->nmock_devices > 0) {
-        if (pthread_create(&hal->mock_thread, NULL, dpfs_hal_mock_thread, hal)) {
-            warn("Failed to create thread for mock devices mmio");
-            for (int i = 0; i < hal->nthreads; i++) {
-                pthread_cancel(tdatas[i].thread);
-            }
-            return;
-        }
-        hal->mock_thread_running = true;
-    }
+
 
     printf("DPFS-HAL SNAP: All device pollers are up and running.\n");
 
@@ -469,11 +470,6 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params, bool start_mock_th
         return NULL;
     }
     toml_array_t *mock_pf_ids = toml_array_in(snap_conf, "mock_pf_ids"); // optional
-    if (mock_pf_ids && toml_array_kind(mock_pf_ids) != 'v') {
-        fprintf(stderr, "%s: the optional mock_pf_ids must be an array of integer values!"
-                " Hint: use list_emulation_managers to find out the physical function id.\n", __func__);
-        return NULL;
-    }
     for (int i = 0; i < toml_array_nelem(mock_pf_ids); i++) {
         toml_datum_t mock_pf = toml_int_at(mock_pf_ids, i);
         if (!mock_pf.ok || mock_pf.u.i < 0) {
@@ -493,7 +489,7 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params, bool start_mock_th
             return NULL;
         }
     }
-    if (toml_array_nelem(mock_pf_ids) == 0)
+    if (!mock_pf_ids || toml_array_nelem(mock_pf_ids) == 0)
         mock_pf_ids = NULL;
 
     struct dpfs_hal *hal = calloc(1, sizeof(struct dpfs_hal));

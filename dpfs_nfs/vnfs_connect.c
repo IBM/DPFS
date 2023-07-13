@@ -340,9 +340,9 @@ int vnfs_init_connections(struct virtionfs *vnfs)
 
     // We want to poll as fast as possible, MAX PERFORMANCE
     if (vnfs->cq_polling)
-        nfs_set_poll_timeout(nfs, -1);
+        nfs_set_poll_timeout(nfs, 0);
     else
-        nfs_set_poll_timeout(nfs, 100);
+        nfs_set_poll_timeout(nfs, -1);
 
     if (nfs_mt_service_thread_start(nfs)) {
         warn("Failed to start libnfs service thread for connection %u\n", conn->vnfs_conn_id);

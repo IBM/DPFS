@@ -35,6 +35,8 @@ server = "10.100.0.1"
 export = "/mnt/shared"
 # Enables userspace busy polling on the completion queue
 # This causes high CPU usage!
+# Note that when using XLIO (TCP offloading), and the run script in the dpfs_nfs folder,
+# then it already does busy polling.
 cq_polling = false
 
 # This is for dpfs_rvfs_dpu and the dpfs_hal implementation that uses RVFS

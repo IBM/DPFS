@@ -5,6 +5,7 @@ export XLIO_TRACELEVEL=DETAILS
 # Fixes the error on 'ibv_fork_init' (not sure if actually works)
 export IBV_FORK_SAFE=1
 # XLIO performance tuning
+# Poll the hardware on RX path for 100seconds before returning that there were no packets
 export XLIO_SELECT_POLL=100000000
 export XLIO_RX_POLL=-1
 export XLIO_RX_CQ_DRAIN_RATE_NSEC=100
@@ -17,4 +18,4 @@ export XLIO_MEM_ALLOC_TYPE=0
 echo 0 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
 # By default there are two threads: a Virtio polling and NFS sending thread + a NFS polling thread
 # We pin them to core 6 and 7
-LD_PRELOAD=/usr/lib/libxlio.so ./dpfs_nfs -c $1
+LD_PRELOAD=/usr/lib/libxlio.so numactl -C 6,7 ./dpfs_nfs -c $1

@@ -30,13 +30,6 @@ export OUT=./output/${COMMIT}_${HOST}_${TIMESTAMP}
 
 gcc setcpulatency.c -o setcpulatency
 
-TIME=$(python3 -c '
-import datetime
-t = 70 + 2*10*11*70 + 2*10*70 + 2*2*4*70 + 4*5*610
-print(datetime.timedelta(seconds=t))
-')
-echo "The output will be stored under $OUT"
-
 echo "STARTING in 10 seconds! quit the system now to reduce variability!"
 echo "This run.sh will take $TIME hours. Only log back in after that amount of time!"
 sleep 10
@@ -47,8 +40,7 @@ RW=randrw BS=4k IODEPTH=128 P=4 ./workloads/fio.sh > /dev/null
 
 mkdir -p $OUT
 
-./synthetic.sh
-./host_cpu_analysis.sh
+./synthetic_thesis.sh
 
 echo "DONE"
 
