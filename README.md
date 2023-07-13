@@ -44,7 +44,7 @@ The Nvidia SNAP library that is needed to run on BlueField-2 (only DPU currently
 Using `virtio-fs` in SNAP is currently only possible with a prototype firmware and some alterations to the SNAP library. You can reach out to us on how to integrate DPFS and SNAP.
 
 With the above in mind, the rough steps needed to run DPFS on the BlueField-2:
-* Install BFOS DOCA 3.9.3 (Ubuntu 20.04)
+* Install BFOS DOCA 3.9.3 (Ubuntu 20.04), newer versions might very well work. If you plan on using XLIO for TCP offloading using DPFS-NFS, then we discourage upgrading the software packages on your DPU, as we have found that this degrades performance.
 * Flash the prototype firmware using `mlxburn`
 * Install the following deps: `autoconf cmake binutils libtool libck-dev libboost-thread-dev liburing-dev`
 * Patch SNAP to add a virtio-fs device type called "virtiofs_emu"
