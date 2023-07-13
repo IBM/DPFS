@@ -46,7 +46,7 @@ Using `virtio-fs` in SNAP is currently only possible with a prototype firmware a
 With the above in mind, the rough steps needed to run DPFS on the BlueField-2:
 * Install BFOS DOCA 3.9.3 (Ubuntu 20.04), newer versions might very well work. If you plan on using XLIO for TCP offloading using DPFS-NFS, then we discourage upgrading the software packages on your DPU, as we have found that this degrades performance.
 * Flash the prototype firmware using `mlxburn`
-* Install the following deps: `autoconf cmake binutils libtool libck-dev libboost-thread-dev liburing-dev`
+* Install the following deps: `autoconf cmake binutils libtool libck-dev libboost-thread-dev liburing-dev numactl`
 * Patch SNAP to add a virtio-fs device type called "virtiofs_emu"
 * Patch SNAP to support asynchronous completion of virtio-fs requests (needs to be concurrency-safe)
 * Integrate DPFS into the build system of SNAP
