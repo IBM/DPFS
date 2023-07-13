@@ -46,7 +46,7 @@ Using `virtio-fs` in SNAP is currently only possible with a prototype firmware a
 With the above in mind, the rough steps needed to run DPFS on the BlueField-2:
 * Install BFOS DOCA 3.9.3 (Ubuntu 20.04)
 * Flash the prototype firmware using `mlxburn`
-* Install the following deps: `autoconf cmake binutils libtool libck-dev libboost-thread-dev`
+* Install the following deps: `autoconf cmake binutils libtool libck-dev libboost-thread-dev liburing-dev`
 * Patch SNAP to add a virtio-fs device type called "virtiofs_emu"
 * Patch SNAP to support asynchronous completion of virtio-fs requests (needs to be concurrency-safe)
 * Integrate DPFS into the build system of SNAP
@@ -57,6 +57,7 @@ With the above in mind, the rough steps needed to run DPFS on the BlueField-2:
 Setup steps for the extern dependencies:
 * Inside DPFS `git submodule init; git submodule update --init --recursive`
 * Inside extern/eRPC-arm `cmake . -DPERF=on -DTRANSPORT=infiniband -DROCE=on`
+* Inside extern/libnfs `./bootstrap; CFLAGS=-O3 ./configure --enable-pthread; make -j; sudo make install`
 
 # Project status
 See the Github issues and milestones.
