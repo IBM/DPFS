@@ -3,6 +3,16 @@
 # Copyright 2023- IBM Inc. All rights reserved
 # SPDX-License-Identifier: LGPL-2.1-or-later
 #
+# Original libfuse clause: much of the mirroring code is based on passthrough_hp.cc
+
+  FUSE: Filesystem in Userspace
+  Copyright (C) 2001-2007  Miklos Szeredi <miklos@szeredi.hu>
+  Copyright (C) 2017       Nikolaus Rath <Nikolaus@rath.org>
+  Copyright (C) 2018       Valve, Inc
+
+  This program can be distributed under the terms of the GNU GPLv2.
+  See the file COPYING.
+#
 */
 
 #define _LARGEFILE64_SOURCE
@@ -563,7 +573,7 @@ int fuser_mirror_open(struct fuse_session *se, void *user_data,
     struct fuser *f = user_data;
 
     struct fuse_file_info fi;
-    fi.flags = O_RDWR | O_DIRECT;
+    fi.flags = O_RDWR;
 
     struct inode *i = ino_to_inodeptr(f, in_hdr->nodeid);
     if (!i) {

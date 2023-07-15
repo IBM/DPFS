@@ -3,6 +3,12 @@
 # Copyright 2023- IBM Inc. All rights reserved
 # SPDX-License-Identifier: LGPL-2.1-or-later
 #
+# Original libfuse clause: 
+# FUSE: Filesystem in Userspace
+# Copyright (C) 2001-2007  Miklos Szeredi <miklos@szeredi.hu>
+# Copyright (C) 2017       Nikolaus Rath <Nikolaus@rath.org>
+# Copyright (C) 2018       Valve, Inc
+#
 */
 
 #define _LARGEFILE64_SOURCE

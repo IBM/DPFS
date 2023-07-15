@@ -14,12 +14,6 @@ if perf 2>&1 | grep "WARNING: perf not found for kernel"; then
 	exit 1
 fi
 
-export DEV=$1
-if [[ $DEV != "NFS" && $DEV !=  "VNFS" && $DEV != "nulldev" ]]; then
-	echo "You must supply this script with one of the following parameters: NFS, VNFS or nulldev"
-	exit 1
-fi
-
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 cd $SCRIPT_DIR
 
@@ -36,7 +30,7 @@ sleep 10
 echo "START"
 
 echo Running random r/w mix multicore fio workload for 70 seconds to warm up the system
-RW=randrw BS=4k IODEPTH=128 P=4 ./workloads/fio.sh > /dev/null
+sudo env MNT=$MNT RW=randrw BS=4k IODEPTH=128 P=4 ./workloads/fio.sh > /dev/null
 
 mkdir -p $OUT
 

@@ -1,9 +1,11 @@
 /*
- * This is only really useful if you do a single run, as then the number
- * is somewhat representativ
 #
 # Copyright 2022- IBM Inc. All rights reserved
 # SPDX-License-Identifier: LGPL-2.1-or-later
+#
+# Original libfuse clause: 
+# FUSE: Filesystem in Userspace
+# Copyright (C) 2001-2007  Miklos Szeredi <miklos@szeredi.hu>
 #
 */
 
