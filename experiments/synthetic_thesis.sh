@@ -11,7 +11,7 @@ for RW in "randread" "randwrite"; do
 		for IODEPTH in "${QD_LIST[@]}"; do
 			for P in 1 2 4 8; do
 				echo fio RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P
-				sudo env MNT=$MNT RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P ./workloads/fio.sh > $OUT/fio_${RW}_${BS}_${IODEPTH}_${P}.out
+				sudo env OUT=$OUT MNT=$MNT RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P ./workloads/fio.sh
 			done
 		done
 	done
@@ -25,7 +25,7 @@ for RW in "randread" "randwrite"; do
 		for IODEPTH in 1; do
 			for P in 1; do
 				echo fio RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P
-				sudo env MNT=$MNT RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P ./workloads/fio.sh > $OUT/fio_${RW}_${BS}_${IODEPTH}_${P}.out
+				sudo env OUT=$OUT MNT=$MNT RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P ./workloads/fio.sh
 			done
 		done
 	done

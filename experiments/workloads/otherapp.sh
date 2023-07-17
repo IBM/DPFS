@@ -2,7 +2,7 @@
 REPS=5
 
 echo "RUNNING: gitclone"
-RESULTS_GITCLONE=$MNT/results/gitclone
+RESULTS_GITCLONE=$OUT/gitclone
 sudo mkdir -p $RESULTS_GITCLONE
 
 for i in $(seq 1 $REPS); do

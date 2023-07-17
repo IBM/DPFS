@@ -22,7 +22,7 @@ for RW in "randread" "randwrite"; do
 		for IODEPTH in "${QD_LIST[@]}"; do
 			for P in 2; do
 				echo fio RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P
-				RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P ./workloads/fio.sh > $OUT/fio_${RW}_${BS}_${IODEPTH}_${P}.out
+				sudo env OUT=$OUT RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P ./workloads/fio.sh
 			done
 		done
 	done
@@ -36,7 +36,7 @@ for RW in "randread" "randwrite"; do
 		for IODEPTH in 1; do
 			for P in 1; do
 				echo fio RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P
-				RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P ./workloads/fio.sh > $OUT/fio_${RW}_${BS}_${IODEPTH}_${P}.out
+				sudo env OUT=$OUT RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P ./workloads/fio.sh
 			done
 		done
 	done
@@ -54,7 +54,7 @@ for RW in "randread" "randwrite"; do
 		for IODEPTH in 128; do
 			for P in 1 2 4 8; do
 				echo fio-multifile RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P
-				RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P ./workloads/fio-multifile.sh > $OUT/fio_${RW}_${BS}_${IODEPTH}_${P}.out
+				sudo env OUT=$OUT RW=$RW BS=$BS IODEPTH=$IODEPTH P=$P ./workloads/fio-multifile.sh
 			done
 		done
 	done
