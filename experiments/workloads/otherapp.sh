@@ -12,7 +12,6 @@ for i in $(seq 1 $REPS); do
 	sudo rm -rf $MNT/xv6$i
 done
 
-
 sudo sh -c "git clone https://github.com/torvalds/linux.git $MNT/linux"
 
 echo "RUNNING: grep"
@@ -25,13 +24,6 @@ for i in $(seq 1 $REPS); do
 	sleep 1
 	sudo rm -rf $MNT/grep$i $MNT/xv6fs$i $MNT/linux$i
 done
-
-# tar and untar are broken on Bento-user ¯\_(ツ)_/¯
-if [ $MNT == "/mnt/xv6fsll-user" ]; then
-	sudo rm -rf $MNT/linux
-	exit
-fi
-	
 
 echo "RUNNING: tar"
 RESULTS_TAR=$MNT/results/tar

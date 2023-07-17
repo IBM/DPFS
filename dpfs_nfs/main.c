@@ -80,8 +80,10 @@ int main(int argc, char **argv)
         return -1;
     }
 
-    printf("dpfs_nfs starting up!\n");
-    printf("Connecting to %s:%s\n", server.u.s, export.u.s);
+#ifdef VNFS_NULLDEV
+    printf("running in *NULLDEV* mode!\n");
+#endif
+    printf("DPFS-NFS will connect to %s:%s\n", server.u.s, export.u.s);
 
     dpfs_nfs_main(server.u.s, export.u.s, 0.0, cq_polling.u.b, conf_path);
 
