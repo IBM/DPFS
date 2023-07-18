@@ -35,7 +35,8 @@ for RW in "randread" "randwrite"; do
 		for QD in "${QD_LIST[@]}"; do
 			for P in "${P_LIST[@]}"; do
 				echo fio RW=$RW BS=$BS QD=$QD P=$P
-				sudo env OUT=$OUT MNT=$MNT BS=$BS QD=$QD P=$P RW=$RW ./workloads/fio.sh > $OUT/fio_${RW}_${BS}_${QD}_${P}.out
+				sudo env NUMA_NODE=$NUMA_NODE NUMA_CORE=$NUMA_CORE OUT=$OUT MNT=$MNT BS=$BS QD=$QD P=$P RW=$RW \
+					./workloads/fio.sh > $OUT/fio_${RW}_${BS}_${QD}_${P}.out
 			done
 		done
 	done
@@ -49,7 +50,8 @@ for RW in "randread" "randwrite"; do
 		for QD in 1; do
 			for P in 1; do
 				echo fio-cdf RW=$RW BS=$BS QD=$QD P=$P
-				sudo env OUT=$OUT MNT=$MNT BS=$BS QD=$QD P=$P RW=$RW ./workloads/fio-cdf.sh > $OUT/fio_${RW}_${BS}_${QD}_${P}.out
+				sudo env NUMA_NODE=$NUMA_NODE NUMA_CORE=$NUMA_CORE OUT=$OUT MNT=$MNT BS=$BS QD=$QD P=$P RW=$RW \
+					./workloads/fio-cdf.sh > $OUT/fio_${RW}_${BS}_${QD}_${P}.out
 			done
 		done
 	done

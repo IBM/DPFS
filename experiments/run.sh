@@ -1,7 +1,6 @@
 #!/bin/bash
 
 echo "Welcome to the dpu-virtio-fs workload runner! :)"
-echo "Please run this script with numactl to bind all the workloads to the NUMA node on which the device is located."
 echo "This script might bring up a sudo prompt after a long while, make sure you are ready to always enter your password or configure your system to not require a password!"
 echo "Furthermore please make sure that any resource hogs have been removed from the system."
 

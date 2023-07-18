@@ -15,7 +15,7 @@ done
 sudo sh -c "git clone https://github.com/torvalds/linux.git $MNT/linux"
 
 echo "RUNNING: grep"
-RESULTS_GREP=$OUT/results/grep
+RESULTS_GREP=$OUT/grep
 sudo mkdir -p $RESULTS_GREP
 
 for i in $(seq 1 $REPS); do
@@ -26,7 +26,7 @@ for i in $(seq 1 $REPS); do
 done
 
 echo "RUNNING: tar"
-RESULTS_TAR=$OUT/results/tar
+RESULTS_TAR=$OUT/tar
 sudo mkdir -p $RESULTS_TAR
 
 for i in $(seq 1 $REPS); do
@@ -38,7 +38,7 @@ done
 
 
 echo "RUNNING: untar"
-RESULTS_UNTAR=$OUT/results/untar
+RESULTS_UNTAR=$OUT/untar
 sudo mkdir -p $RESULTS_UNTAR
 
 sudo tar -cf $MNT/linuxTARR.tar $MNT/linux
