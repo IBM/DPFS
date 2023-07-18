@@ -10,6 +10,11 @@ if [ -z $MNT ]; then
 	exit 1
 fi
 
+if [[ -z $NUMA_NODE || -z $NUMA_CORE ]]; then
+	echo "You must set the NUMA_NODE and NUMA_CORE env variables to where you want to run the workloads!"
+	exit 1
+fi
+
 if perf 2>&1 | grep "WARNING: perf not found for kernel"; then
 	exit 1
 fi
