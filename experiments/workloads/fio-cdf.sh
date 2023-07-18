@@ -6,7 +6,7 @@ SIZE="${SIZE:-1g}"
 RUNTIME="${RUNTIME:-60s}"
 # NUMA defaults, based on ZRL:zac15
 NUMA_NODE="${NUMA_NODE:-1}"
-NUMA_CORE="${NUMA_NODE:-27}"
+NUMA_CORE="${NUMA_CORE:-27}"
 # Default log output folder is OUT, else the current folder
 LOG_OUT="${OUT:-"./"}"
 

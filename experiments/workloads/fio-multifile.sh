@@ -6,7 +6,7 @@ SIZE="${SIZE:-1g}"
 RUNTIME="${RUNTIME:-60s}"
 # NUMA defaults, based on ZRL:zac15
 NUMA_NODE="${NUMA_NODE:-1}"
-NUMA_CORE="${NUMA_NODE:-27}"
+NUMA_CORE="${NUMA_CORE:-27}"
 
 FIO_DEFAULTS="--ramp_time=10s --ioengine=io_uring --direct=1 --thread=1 \
   --group_reporting --time_based --random_generator=tausworthe64 --norandommap=1"
