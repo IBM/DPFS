@@ -30,11 +30,11 @@ sleep 10
 echo "START"
 
 echo Running random r/w mix multicore fio workload for 70 seconds to warm up the system
-sudo env MNT=$MNT RW=randrw BS=4k IODEPTH=128 P=4 ./workloads/fio.sh > /dev/null
+sudo env MNT=$MNT RW=randrw BS=4k QD=128 P=4 ./workloads/fio.sh > /dev/null
 
 mkdir -p $OUT
 
-./synthetic_thesis.sh
+eval $1
 
 echo "DONE"
 
