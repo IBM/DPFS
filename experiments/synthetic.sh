@@ -42,7 +42,7 @@ for RW in "randread" "randwrite"; do
 	done
 done
 
-sudo ./setcpulatency 0 &
+sudo sh -c "./setcpulatency 0 > /dev/null" &
 sleep 5
 echo "Running: fio latency experiments"
 for RW in "randread" "randwrite"; do
