@@ -26,7 +26,7 @@ BS_LIST=("4k" "16k" "64k")
 QD_LIST=("2" "4" "8" "16" "32" "64" "128")
 P_LIST=("1")
 if [ -n "$MP" ]; then
-	P_LIST=("1" "2" "4" "8" "10")
+	P_LIST=("1" "2" "4" "8")
 fi
 
 
@@ -48,7 +48,7 @@ echo "Running: fio latency experiments"
 for RW in "randread" "randwrite"; do
 	for BS in "${BS_LIST[@]}"; do
 		for QD in 1; do
-			for P in 1; do
+			for P in "${P_LIST[@]}"; do
 				echo fio-cdf RW=$RW BS=$BS QD=$QD P=$P
 				sudo env NUMA_NODE=$NUMA_NODE NUMA_CORE=$NUMA_CORE OUT=$OUT MNT=$MNT BS=$BS QD=$QD P=$P RW=$RW \
 					./workloads/fio-cdf.sh > $OUT/fio_${RW}_${BS}_${QD}_${P}.out
