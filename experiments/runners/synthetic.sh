@@ -57,4 +57,4 @@ for RW in "randread" "randwrite"; do
 	done
 done
 sudo pkill setcpulatency
-sleep 10
+sleep 5

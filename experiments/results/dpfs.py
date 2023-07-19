@@ -98,27 +98,30 @@ def parse_fio(RW, BS, QD, P, conf, folder):
     return df
 
 # Throughput
-def plot_tp(df, confs, P, BS_list, BS_colormap, conf_colormap, GiB, output):
+def plot_tp(df, confs, BS_list, P_list, conf_colormap, BS_colormap, P_colormap, GiB, output):
     fig, ax = plt.subplots()
 
-    x = df.loc[(df['RW'] == 'randread') & (df['BS'] == BS_list[0]) & (df['P'] == P) & (df['conf'] == list(confs.keys())[0]), 'QD']
+    x = df.loc[(df['RW'] == 'randread') & (df['BS'] == BS_list[0]) & (df['P'] == P_list[0]) & (df['conf'] == list(confs.keys())[0]), 'QD']
     for (conf, conf_name) in confs.items():
         for bs in BS_list:
-            tp_data = df.loc[(df['BS'] == bs) & (df['conf'] == conf) & (df['P'] == P)]
-            if GiB:
-                tp_data['bw_avg'] = tp_data['bw_avg'] / 1024.0
-                tp_data['bw_stdev'] = tp_data['bw_stdev'] / 1024.0
-                
-
-            color = None
-            if BS_colormap is not None:
-                color = BS_colormap[bs]
-            elif conf_colormap is not None:
-                color = conf_colormap[conf]
-            ax.errorbar(x, tp_data.loc[(tp_data['RW'] == 'randread'), 'bw_avg'], tp_data.loc[(tp_data['RW'] == 'randread'), 'bw_stdev'],
-                        markersize=4, linestyle='-', label=conf_name + "read " + bs, capsize=5, capthick=1, color=color)
-            ax.errorbar(x, tp_data.loc[(tp_data['RW'] == 'randwrite'), 'bw_avg'], tp_data.loc[(tp_data['RW'] == 'randwrite'), 'bw_stdev'],
-                        markersize=4, linestyle='--', label=conf_name + "write " + bs, capsize=5, capthick=1, color=color)
+            for p in P_list:
+                tp_data = df.loc[(df['BS'] == bs) & (df['conf'] == conf) & (df['P'] == p)]
+                if GiB:
+                    tp_data['bw_avg'] = tp_data['bw_avg'] / 1024.0
+                    tp_data['bw_stdev'] = tp_data['bw_stdev'] / 1024.0
+                    
+    
+                color = None
+                if BS_colormap is not None:
+                    color = BS_colormap[bs]
+                elif conf_colormap is not None:
+                    color = conf_colormap[conf]
+                elif P_colormap is not None:
+                    color = P_colormap[p]
+                ax.errorbar(x, tp_data.loc[(tp_data['RW'] == 'randread'), 'bw_avg'], tp_data.loc[(tp_data['RW'] == 'randread'), 'bw_stdev'],
+                            markersize=4, linestyle='-', label=conf_name + "read " + bs, capsize=5, capthick=1, color=color)
+                ax.errorbar(x, tp_data.loc[(tp_data['RW'] == 'randwrite'), 'bw_avg'], tp_data.loc[(tp_data['RW'] == 'randwrite'), 'bw_stdev'],
+                            markersize=4, linestyle='--', label=conf_name + "write " + bs, capsize=5, capthick=1, color=color)
 
     fig.tight_layout()
     ax.grid(which='major', linestyle='dashed', linewidth='1')
@@ -133,12 +136,15 @@ def plot_tp(df, confs, P, BS_list, BS_colormap, conf_colormap, GiB, output):
     
     legend_dict = {'Read': Line2D([0], [0], color='black', linestyle='-', lw=2),
                    'Write': Line2D([0], [0], color='black', linestyle='--', lw=2)}
-    if BS_colormap is not None:
-        for (k, v) in BS_colormap.items():
-            legend_dict[k] = Line2D([0], [0], color=v, lw=2)
     if conf_colormap is not None:
         for (k, v) in conf_colormap.items():
             legend_dict[confs[k]] = Line2D([0], [0], color=v, lw=2)
+    if BS_colormap is not None:
+        for (k, v) in BS_colormap.items():
+            legend_dict[k] = Line2D([0], [0], color=v, lw=2)
+    if P_colormap is not None:
+        for (k, v) in P_colormap.items():
+            legend_dict["P="+k] = Line2D([0], [0], color=v, lw=2)
     
     legend_names = [w.replace('k', ' KiB') for w in legend_dict.keys()]
     ax.legend(legend_dict.values(), legend_names, loc='best')
@@ -175,13 +181,13 @@ def parse_fio_clat(RW, BS, QD, P, conf, folder):
 def plot_cdf(df, confs, RW_list, BS, QD, P, conf_colormap, output):
     fig, ax = plt.subplots()
 
+    avg_y = 0.48
     for (conf, conf_name) in confs.items():
             data = df.loc[(df['BS'] == BS) & (df['conf'] == conf) & (df['P'] == P) & (df['QD'] == QD)]
                 
             c = None
             if conf_colormap is not None:
                 c = conf_colormap[conf]
-            avg_y = 0.48
             for rw in RW_list:
                 d = data.loc[(data['RW'] == rw), 'clat'].iloc[0]
             
