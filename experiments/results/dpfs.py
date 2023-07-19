@@ -172,7 +172,7 @@ def parse_fio_clat(RW, BS, QD, P, conf, folder):
     return df
 
 # CDF
-def plot_cdf(df, confs, P, QD, BS, RW_list, conf_colormap, output):
+def plot_cdf(df, confs, RW_list, BS, QD, P, conf_colormap, output):
     fig, ax = plt.subplots()
 
     for (conf, conf_name) in confs.items():
@@ -181,6 +181,7 @@ def plot_cdf(df, confs, P, QD, BS, RW_list, conf_colormap, output):
             c = None
             if conf_colormap is not None:
                 c = conf_colormap[conf]
+            avg_y = 0.48
             for rw in RW_list:
                 d = data.loc[(data['RW'] == rw), 'clat'].iloc[0]
             
@@ -188,6 +189,10 @@ def plot_cdf(df, confs, P, QD, BS, RW_list, conf_colormap, output):
                 y = np.arange(len(d)) / len(d)
                 style = '-' if rw == 'randread' else '--'
                 ax.plot(x, y, color=c, label=conf_name + " " + rw, linestyle=style)
+
+            avg = np.mean(data.loc[(), 'clat'].iloc[0])
+            ax.scatter(avg, avg_y, color=c, marker='o', s=50, label='Avg ' + rw)
+            avg_y = avg_y + 0.04
 
     fig.tight_layout()
     ax.set_xscale('log', base=2)

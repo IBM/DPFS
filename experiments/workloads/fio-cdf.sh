@@ -22,4 +22,8 @@ if [[ $P == 1 ]]; then
 else
   numactl -m $NUMA_NODE -N $NUMA_NODE $FIO
 fi
-  
+
+rm $LOG_OUT/fio_${RW}_${BS}_${QD}_${P}_slat.1.log
+rm $LOG_OUT/fio_${RW}_${BS}_${QD}_${P}_lat.1.log
+sudo chown $USER:$USER $LOG_OUT/fio_${RW}_${BS}_${QD}_${P}_clat.1.log
+sudo chmod 644 $LOG_OUT/fio_${RW}_${BS}_${QD}_${P}_clat.1.log
