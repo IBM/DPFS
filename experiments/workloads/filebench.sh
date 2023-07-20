@@ -12,7 +12,7 @@ REPS="${REPS:-5}"
 RESULTS=$OUT/filebench
 mkdir -p $RESULTS
 
-$FILEBENCHES=./workloads/filebenches
+FILEBENCHES=./workloads/filebenches
 sudo sh -c 'echo 0 > /proc/sys/kernel/randomize_va_space'
 
 for f in $FILEBENCHES/*.f; do
@@ -22,7 +22,7 @@ for f in $FILEBENCHES/*.f; do
 
 	for i in $(seq 1 $REPS); do
 		echo "i=$i"
-		sudo numactl -m $NUMA_NODE filebench -f $FILEBENCHES/$f > $RESULTS/$f/$i
+		sudo numactl -m $NUMA_NODE ~/filebench/filebench -f $FILEBENCHES/$f > $RESULTS/$f/$i
 	done
 done
 

@@ -15,9 +15,9 @@ mkdir -p $RESULTS
 PORT=3248
 
 for i in $(seq 1 $REPS); do
-	sudo numactl -m $NUMA_NODE redis-server --port $PORT --appendonly yes --appendfsync everysec --dir $MNT &
+	sudo numactl -m $NUMA_NODE ~/redis/src/redis-server --port $PORT --appendonly yes --appendfsync everysec --dir $MNT &
 	sleep 5
-	numactl -m $NUMA_NODE redis-benchmark -t set,get -d 100 -n 1000000 -p $PORT > $RESULTS/redis_$i
+	numactl -m $NUMA_NODE ~/redis/src/redis-benchmark -t set,get -d 100 -n 1000000 -p $PORT > $RESULTS/redis_$i
 	sudo pkill redis-server
 	sleep 5
 done
