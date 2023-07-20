@@ -1,5 +1,13 @@
 #!/bin/bash
-REPS=5
+
+if [[ -z $OUT || -z $MNT ]]; then
+	echo OUT and MNT must be defined!
+	exit 1
+fi
+# NUMA defaults, based on ZRL:zac15
+NUMA_NODE="${NUMA_NODE:-1}"
+NUMA_CORE="${NUMA_CORE:-27}"
+REPS="${REPS:-5}"
 
 echo "RUNNING: gitclone"
 RESULTS_GITCLONE=$OUT/gitclone
@@ -7,7 +15,7 @@ sudo mkdir -p $RESULTS_GITCLONE
 
 for i in $(seq 1 $REPS); do
 	sleep 1
-	sudo sh -c "time -o $RESULTS_GITCLONE/gitclone_$i git clone https://github.com/mit-pdos/xv6-riscv.git $MNT/xv6$i"
+	time -o $RESULTS_GITCLONE/gitclone_$i sudo git clone https://github.com/mit-pdos/xv6-riscv.git $MNT/xv6$i
 	sleep 1
 	sudo rm -rf $MNT/xv6$i
 done
@@ -20,7 +28,7 @@ sudo mkdir -p $RESULTS_GREP
 
 for i in $(seq 1 $REPS); do
 	sleep 1
-	sudo sh -c "time -o $RESULTS_GREP/grep_$i grep -r 'jbd2_journal_start' $MNT/linux > $MNT/grep$i"
+	time -o $RESULTS_GREP/grep_$i sudo sh -c "grep -r 'jbd2_journal_start' $MNT/linux > $MNT/grep$i"
 	sleep 1
 	sudo rm -rf $MNT/grep$i $MNT/xv6fs$i $MNT/linux$i
 done
@@ -31,7 +39,7 @@ sudo mkdir -p $RESULTS_TAR
 
 for i in $(seq 1 $REPS); do
 	sleep 1
-	sudo sh -c "time -o $RESULTS_TAR/tar_$i tar -cf $MNT/linux.tar $MNT/linux"
+	time -o $RESULTS_TAR/tar_$i sudo tar -cf $MNT/linux.tar $MNT/linux
 	sleep 1
 	sudo rm -rf $MNT/linux.tar
 done
@@ -47,7 +55,7 @@ sudo rm -rf $MNT/linux
 
 for i in $(seq 1 $REPS); do
 	sleep 1
-	sudo sh -c "time -o $RESULTS_UNTAR/untar_$i tar -xf $MNT/linuxTARR.tar --one-top-level -C $MNT"
+	time -o $RESULTS_UNTAR/untar_$i sudo tar -xf $MNT/linuxTARR.tar --one-top-level -C $MNT
 	sleep 1
 	sudo rm -rf $MNT/linuxTARR
 done

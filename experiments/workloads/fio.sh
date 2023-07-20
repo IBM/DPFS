@@ -1,5 +1,9 @@
 #!/bin/bash
 
+if [[ -z $MNT || -z $RW || -z $BS || -z $QD || -z $P]]; then
+	echo MNT, RW, BS, QD and P must be defined!
+	exit 1
+fi
 # Default size of file is
 SIZE="${SIZE:-1g}"
 # Default run time is

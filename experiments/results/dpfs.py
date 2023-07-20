@@ -63,7 +63,7 @@ def parse_fio(RW, BS, QD, P, conf, folder):
                         avg_matches = avg_matches / 1000.0 # convert to usec
                     if (len(avg_matches) == 0):
                         avg_matches = np.array(re.findall(fio_clat_msec_avg_regex, f_buf, re.MULTILINE)).astype(float)
-                        avg_matches = avg_matches / 1000.0 / 1000.0 # convert to msec
+                        avg_matches = avg_matches * 1000.0 # convert to usec
 
                     stdev_matches = np.array(re.findall(fio_clat_usec_stdev_regex, f_buf, re.MULTILINE)).astype(float)
                     if (len(stdev_matches) == 0):
@@ -71,7 +71,7 @@ def parse_fio(RW, BS, QD, P, conf, folder):
                         stdev_matches = stdev_matches / 1000.0 # convert to usec
                     if (len(stdev_matches) == 0):
                         stdev_matches = np.array(re.findall(fio_clat_msec_stdev_regex, f_buf, re.MULTILINE)).astype(float)
-                        stdev_matches = stdev_matches / 1000.0 / 1000.0 # convert to msec
+                        stdev_matches = stdev_matches * 1000.0 # convert to usec
 
                     row["clat_avg"] = np.array(avg_matches).astype(float)[0]
                     row["clat_stdev"] = np.array(stdev_matches).astype(float)[0]

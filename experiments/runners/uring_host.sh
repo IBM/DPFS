@@ -42,7 +42,7 @@ for URING in "${URING_LIST[@]}"; do
 			for QD in "${QD_LIST[@]}"; do
 				for P in "${P_LIST[@]}"; do
 					echo fio RW=$RW BS=$BS QD=$QD P=$P
-					sudo env FIO_CUSTOM_OPTIONS=$URING NUMA_NODE=$NUMA_NODE NUMA_CORE=$NUMA_CORE OUT=$OUT MNT=$MNT BS=$BS QD=$QD P=$P RW=$RW \
+					sudo -E env FIO_CUSTOM_OPTIONS=$URING BS=$BS QD=$QD P=$P RW=$RW \
 						./workloads/fio.sh > $OUT/fio_${RW}_${BS}_${QD}_${P}.out
 				done
 			done
@@ -57,7 +57,7 @@ for URING in "${URING_LIST[@]}"; do
 			for QD in 1; do
 				for P in "${P_LIST[@]}"; do
 					echo fio RW=$RW BS=$BS QD=$QD P=$P
-					sudo env NUMA_NODE=$NUMA_NODE NUMA_CORE=$NUMA_CORE OUT=$OUT MNT=$MNT BS=$BS QD=$QD P=$P RW=$RW \
+					sudo -E env FIO_CUSTOM_OPTIONS=$URING BS=$BS QD=$QD P=$P RW=$RW \
 						./workloads/fio.sh > $OUT/fio_${RW}_${BS}_${QD}_${P}.out
 				done
 			done
