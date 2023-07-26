@@ -14,5 +14,5 @@ mkdir -p $RESULTS
 
 for i in $(seq 1 $REPS); do
 	sudo numactl -m $NUMA_NODE ~/rocksdb/db_bench --benchmarks fillrandom,readrandom --num 1000000 --value_size 100 --threads 8 \
-	                --db=$MNT --disable_wal=0 --wal_dir=$MNT > $RESULTS/rocksdb_$i
+	                --seed 42 --db=$MNT --disable_wal=0 --wal_dir=$MNT > $RESULTS/rocksdb_$i
 done
