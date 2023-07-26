@@ -17,10 +17,19 @@
 #ifdef IORING_OP_STATX
 #define IORING_STATX_SUPPORTED
 #endif
-#ifdef IORING_OP_OPENAT
 #define IORING_OPENAT_SUPPORTED
-#endif
+#ifdef IORING_OP_FALLOCATE
 #define IORING_FALLOCATE_SUPPORTED
+#endif
+#ifdef IORING_OP_RENAMEAT
+#define IORING_RENAMEAT_SUPPORTED
+#endif
+#ifdef IORING_OP_CLOSE
+#define IORING_CLOSE_SUPPORTED
+#endif
+#ifdef IORING_OP_UNLINKAT
+#define IORING_UNLINKAT_SUPPORTED
+#endif
 
 #include <liburing.h>
 #include <linux/stat.h>
@@ -51,7 +60,13 @@ struct fuser_cb_data {
             struct inode *i;
             struct fuse_file_info fi;
             struct fuse_open_out *out_open;
-        } openat;
+        } open;
+        struct {
+            struct fuse_file_info fi;
+            struct fuse_entry_out *out_entry;
+            struct fuse_open_out *out_open;
+            const char *in_name;
+        } create;
 #endif
     };
     void *completion_context;

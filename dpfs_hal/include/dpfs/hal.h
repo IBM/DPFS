@@ -27,6 +27,7 @@ extern "C" {
 // will be used to indicate when the request is fully handled
 // return int 0 indicates that the request is fully handled and
 // can be sent to the host
+// the error field in the struct fuse_out_header should be 0 or a negative error value
 typedef int (*dpfs_hal_handler_t) (void *user_data,
                                    struct iovec *fuse_in_iov, int in_iovcnt,
                                    struct iovec *fuse_out_iov, int out_iovcnt,
