@@ -331,8 +331,8 @@ int fuser_mirror_setattr(struct fuse_session *se, void *user_data,
         if (fi) {
             res = fchmod(fi->fh, s->st_mode);
         } else {
-            char procname[64];
-            sprintf(procname, "/proc/self/fd/%i", ifd);
+            char procname[128];
+            sprintf(procname, "/proc/%i/fd/%i", getpid(), ifd);
             res = chmod(procname, s->st_mode);
         }
         if (res == -1)
@@ -350,8 +350,8 @@ int fuser_mirror_setattr(struct fuse_session *se, void *user_data,
         if (fi) {
             res = ftruncate(fi->fh, s->st_size);
         } else {
-            char procname[64];
-            sprintf(procname, "/proc/self/fd/%i", ifd);
+            char procname[128];
+            sprintf(procname, "/proc/%i/fd/%i", getpid(), ifd);
             res = truncate(procname, s->st_size);
         }
         if (res == -1)
@@ -378,8 +378,8 @@ int fuser_mirror_setattr(struct fuse_session *se, void *user_data,
         if (fi)
             res = futimens(fi->fh, tv);
         else {
-            char procname[64];
-            sprintf(procname, "/proc/self/fd/%i", ifd);
+            char procname[128];
+            sprintf(procname, "/proc/%i/fd/%i", getpid(), ifd);
             res = utimensat(AT_FDCWD, procname, tv, 0);
         }
         if (res == -1)
@@ -617,8 +617,8 @@ int fuser_mirror_open(struct fuse_session *se, void *user_data,
 
     /* Unfortunately we cannot use inode.fd, because this was opened
        with O_PATH (so it doesn't allow read/write access). */
-    char buf[64];
-    sprintf(buf, "/proc/self/fd/%i", i->fd);
+    char buf[128];
+    sprintf(buf, "/proc/%i/fd/%i", getpid(), i->fd);
 
 #ifdef IORING_OPENAT_SUPPORTED
     CB_DATA(fuser_mirror_open_cb);
