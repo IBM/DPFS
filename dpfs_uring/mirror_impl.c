@@ -37,6 +37,21 @@
 #include "mirror_impl.h"
 #include "aio.h"
 
+// After this macro, cb_data and thread_id will be defined
+// and mirror functions that need custom data in the cb_data, can set them.
+// Is this ugly? Yeah sure, but it does help reduce the redudancy and bug proneness of this all.
+#define CB_DATA(cb_func) \
+    size_t thread_id = dpfs_hal_thread_id(); \
+    struct fuser_cb_data *cb_data = mpool_alloc(f->cb_data_pools[thread_id]); \
+    cb_data->thread_id = thread_id; \
+    cb_data->cb = cb_func; \
+    cb_data->f = f; \
+    cb_data->se = se; \
+    cb_data->completion_context = completion_context; \
+    cb_data->in_hdr = in_hdr; \
+    cb_data->out_hdr = out_hdr; \
+    do {} while (0)
+
 static void fuser_mirror_generic_cb(struct fuser_cb_data *cb_data, struct io_uring_cqe *cqe)
 {
     if (cqe->res < 0) {
@@ -165,14 +180,7 @@ int fuser_mirror_getattr(struct fuse_session *se, void *user_data,
     }
 
 #ifdef IORING_STATX_SUPPORTED
-    uint16_t thread_id = dpfs_hal_thread_id();
-    struct fuser_cb_data *cb_data = mpool_alloc(f->cb_data_pools[thread_id]);
-    cb_data->thread_id = thread_id;
-    cb_data->cb = fuser_mirror_getattr_cb;
-    cb_data->f = f;
-    cb_data->se = se;
-    cb_data->out_hdr = out_hdr;
-    cb_data->completion_context = completion_context;
+    CB_DATA(fuser_mirror_getattr_cb);
     cb_data->getattr.out_attr = out_attr;
 
     struct io_uring_sqe *sqe = io_uring_get_sqe(&f->rings[thread_id]);
@@ -582,8 +590,6 @@ int fuser_mirror_open(struct fuse_session *se, void *user_data,
 {
     struct fuser *f = user_data;
 
-    size_t thread_id = dpfs_hal_thread_id();
-    struct fuser_cb_data *cb_data = mpool_alloc(f->cb_data_pools[thread_id]);
 
     struct fuse_file_info fi;
     fi.flags = O_RDWR;
@@ -616,11 +622,7 @@ int fuser_mirror_open(struct fuse_session *se, void *user_data,
     sprintf(buf, "/proc/self/fd/%i", i->fd);
 
 #ifdef IORING_OPENAT_SUPPORTED
-    cb_data->thread_id = thread_id;
-    cb_data->cb = fuser_mirror_open_cb;
-    cb_data->completion_context = completion_context;
-    cb_data->in_hdr = in_hdr;
-    cb_data->out_hdr = out_hdr;
+    CB_DATA(fuser_mirror_open_cb);
     cb_data->open.i = i;
     cb_data->open.fi = fi;
     cb_data->open.out_open = out_open;
@@ -680,13 +682,7 @@ int fuser_mirror_release(struct fuse_session *se, void *user_data,
     pthread_mutex_unlock(&i->m);
 
 #ifdef IORING_CLOSE_SUPPORTED
-    uint16_t thread_id = dpfs_hal_thread_id();
-    struct fuser_cb_data *cb_data = mpool_alloc(f->cb_data_pools[thread_id]);
-    cb_data->thread_id = thread_id;
-    cb_data->cb = fuser_mirror_generic_cb;
-    cb_data->completion_context = completion_context;
-    cb_data->in_hdr = in_hdr;
-    cb_data->out_hdr = out_hdr;
+    CB_DATA(fuser_mirror_generic_cb);
 
     struct io_uring_sqe *sqe = io_uring_get_sqe(&f->rings[thread_id]);
     if (!sqe) {
@@ -718,13 +714,7 @@ static int do_fsync(struct fuse_session *se, void *user_data,
 {
     struct fuser *f = user_data;
 
-    uint16_t thread_id = dpfs_hal_thread_id();
-    struct fuser_cb_data *cb_data = mpool_alloc(f->cb_data_pools[thread_id]);
-    cb_data->thread_id = thread_id;
-    cb_data->cb = fuser_mirror_generic_cb;
-    cb_data->completion_context = completion_context;
-    cb_data->in_hdr = in_hdr;
-    cb_data->out_hdr = out_hdr;
+    CB_DATA(fuser_mirror_generic_cb);
 
     struct io_uring_sqe *sqe = io_uring_get_sqe(&f->rings[thread_id]);
     if (!sqe) {
@@ -807,8 +797,7 @@ int fuser_mirror_create(struct fuse_session *se, void *user_data,
 {
     struct fuser *f = user_data;
 
-    size_t thread_id = dpfs_hal_thread_id();
-    struct fuser_cb_data *cb_data = mpool_alloc(f->cb_data_pools[thread_id]);
+    CB_DATA(fuser_mirror_generic_cb);
 
     memset(&cb_data->create.fi, 0, sizeof(cb_data->create.fi));
     cb_data->create.fi.flags = in_create.flags; // from fuse_lowlevel.c
@@ -818,11 +807,6 @@ int fuser_mirror_create(struct fuse_session *se, void *user_data,
         return 0;
     }
 
-    cb_data->thread_id = thread_id;
-    cb_data->cb = fuser_mirror_generic_cb;
-    cb_data->completion_context = completion_context;
-    cb_data->in_hdr = in_hdr;
-    cb_data->out_hdr = out_hdr;
     cb_data->create.out_entry = out_entry;
     cb_data->create.out_open = out_open;
     cb_data->create.in_name = in_name;
@@ -957,13 +941,7 @@ int fuser_mirror_rename(struct fuse_session *se, void *user_data,
     }
 
 #ifdef IORING_RENAMEAT_SUPPORTED
-    size_t thread_id = dpfs_hal_thread_id();
-    struct fuser_cb_data *cb_data = mpool_alloc(f->cb_data_pools[thread_id]);
-    cb_data->thread_id = thread_id;
-    cb_data->cb = fuser_mirror_generic_cb;
-    cb_data->completion_context = completion_context;
-    cb_data->in_hdr = in_hdr;
-    cb_data->out_hdr = out_hdr;
+    CB_DATA(fuser_mirror_generic_cb);
 
     struct io_uring_sqe *sqe = io_uring_get_sqe(&f->rings[thread_id]);
     if (!sqe) {
@@ -1010,13 +988,7 @@ int fuser_mirror_read(struct fuse_session *se, void *user_data,
 {
     struct fuser *f = user_data;
 
-    size_t thread_id = dpfs_hal_thread_id();
-    struct fuser_cb_data *cb_data = mpool_alloc(f->cb_data_pools[thread_id]);
-    cb_data->thread_id = thread_id;
-    cb_data->cb = fuser_mirror_read_cb;
-    cb_data->completion_context = completion_context;
-    cb_data->in_hdr = in_hdr;
-    cb_data->out_hdr = out_hdr;
+    CB_DATA(fuser_mirror_read_cb);
 
     struct io_uring_sqe *sqe = io_uring_get_sqe(&f->rings[thread_id]);
     if (!sqe) {
@@ -1058,13 +1030,7 @@ int fuser_mirror_write(struct fuse_session *se, void *user_data,
 {
     struct fuser *f = user_data;
 
-    size_t thread_id = dpfs_hal_thread_id();
-    struct fuser_cb_data *cb_data = mpool_alloc(f->cb_data_pools[thread_id]);
-    cb_data->thread_id = thread_id;
-    cb_data->cb = fuser_mirror_write_cb;
-    cb_data->completion_context = completion_context;
-    cb_data->in_hdr = in_hdr;
-    cb_data->out_hdr = out_hdr;
+    CB_DATA(fuser_mirror_write_cb);
     cb_data->write.out_write = out_write;
 
     struct io_uring_sqe *sqe = io_uring_get_sqe(&f->rings[thread_id]);
@@ -1230,15 +1196,7 @@ int fuser_mirror_unlink(struct fuse_session *se, void *user_data,
         forget_one(f, e.ino, 1);
     }
 #ifdef IORING_UNLINKAT_SUPPORTED
-    struct fuser *f = user_data;
-
-    size_t thread_id = dpfs_hal_thread_id();
-    struct fuser_cb_data *cb_data = mpool_alloc(f->cb_data_pools[thread_id]);
-    cb_data->thread_id = thread_id;
-    cb_data->cb = fuser_mirror_generic_cb;
-    cb_data->completion_context = completion_context;
-    cb_data->in_hdr = in_hdr;
-    cb_data->out_hdr = out_hdr;
+    CB_DATA(fuser_mirror_generic_cb);
 
     struct io_uring_sqe *sqe = io_uring_get_sqe(&f->rings[thread_id]);
     if (!sqe) {
@@ -1295,13 +1253,7 @@ int fuser_mirror_fallocate(struct fuse_session *se, void *user_data,
 #ifdef IORING_FALLOCATE_SUPPORTED
     struct fuser *f = user_data;
 
-    size_t thread_id = dpfs_hal_thread_id();
-    struct fuser_cb_data *cb_data = mpool_alloc(f->cb_data_pools[thread_id]);
-    cb_data->thread_id = thread_id;
-    cb_data->cb = fuser_mirror_generic_cb;
-    cb_data->completion_context = completion_context;
-    cb_data->in_hdr = in_hdr;
-    cb_data->out_hdr = out_hdr;
+    CB_DATA(fuser_mirror_generic_cb);
 
     struct io_uring_sqe *sqe = io_uring_get_sqe(&f->rings[thread_id]);
     if (!sqe) {
