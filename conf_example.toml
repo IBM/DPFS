@@ -56,6 +56,10 @@ dir = "/mnt/nfs_flex01"
 # If 0, then metadata cache is fully disabled
 # Value is in seconds, integers and doubles are accepted
 metadata_timeout = 86400.0 # 24 hours
+# The flags that the host uses to open a file, are directly passed onto the VFS on the DPU.
+# However some file systems (such as tmpfs) do not support direct I/O, or it might be undesireable
+# to have direct I/O. With this flag turned on, the direct I/O is always removed from the open flags.
+reject_directio = true
 # Enables userspace busy polling on the completion queue
 # This causes high CPU usage!
 uring_cq_polling = false

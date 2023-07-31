@@ -80,6 +80,11 @@ int main(int argc, char **argv)
         fprintf(stderr, "You must supply `metadata_timeout` in seconds under [local_mirror]\n");
         return -1;
     }
+    toml_datum_t reject_directio = toml_double_in(local_mirror_conf, "reject_directio");
+    if (!reject_directio.ok) {
+        fprintf(stderr, "You must supply `reject_directio` as a bool under [local_mirror]\n");
+        return -1;
+    }
     toml_datum_t cq_polling = toml_bool_in(local_mirror_conf, "uring_cq_polling");
     if (!cq_polling.ok) {
         fprintf(stderr, "You must supply a bool `uring_cq_polling` under [local_mirror]\n");
@@ -100,5 +105,5 @@ int main(int argc, char **argv)
     printf("dpfs_uring starting up!\n");
     printf("Mirroring %s\n", rp);
 
-    fuser_main(false, rp, metadata_timeout.u.d, conf_path, cq_polling.u.b, cq_polling_nthreads.u.i, false);
+    fuser_main(false, rp, metadata_timeout.u.d, reject_directio.u.b, conf_path, cq_polling.u.b, cq_polling_nthreads.u.i, false);
 }

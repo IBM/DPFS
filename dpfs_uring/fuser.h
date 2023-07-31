@@ -68,6 +68,7 @@ struct fuser {
     struct inode_table *inodes; // protected by m
     struct inode root;
     double timeout;
+    bool reject_directio;
     bool debug;
     char *source;
     // size_t blocksize;
@@ -91,7 +92,7 @@ struct inode *ino_to_inodeptr(struct fuser *, fuse_ino_t);
 int ino_to_fd(struct fuser *, fuse_ino_t);
 
 int fuser_main(bool debug, char *source, double metadata_timeout,
-               const char *conf_path, bool cq_polling,
+               bool reject_directio, const char *conf_path, bool cq_polling,
                uint16_t cq_polling_nthreads, bool sq_polling);
 
 #endif // FUSER_H
