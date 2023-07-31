@@ -379,6 +379,27 @@ int fuser_main(bool debug, char *source, double metadata_timeout, const char *co
             pthread_create(&td[i].t, NULL, fuser_io_blocking_thread, &td[i]);
     }
 
+    printf("The following operations are asynchrounous through io_uring: read, write, fsync");
+#ifdef IORING_STATX_SUPPORTED
+    printf(", statx");
+#endif
+#ifdef IORING_OPENAT_SUPPORTED
+    printf(", open, create");
+#endif
+#ifdef IORING_FALLOCATE_SUPPORTED
+    printf(", fallocate");
+#endif
+#ifdef IORING_RENAMEAT_SUPPORTED
+    printf(", rename");
+#endif
+#ifdef IORING_CLOSE_SUPPORTED
+    printf(", close");
+#endif
+#ifdef IORING_UNLINKAT_SUPPORTED
+    printf(", unlink");
+#endif
+    printf("\n");
+
     dpfs_fuse_loop(fuse);
     dpfs_fuse_destroy(fuse);
 
