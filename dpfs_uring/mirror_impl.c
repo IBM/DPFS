@@ -593,10 +593,6 @@ int fuser_mirror_open(struct fuse_session *se, void *user_data,
     struct fuse_file_info fi;
     fi.flags = in_open->flags;
 
-    // See the conf.toml
-    if (f->reject_directio)
-        fi.flags &= ~O_DIRECT;
-
     struct inode *i = ino_to_inodeptr(f, in_hdr->nodeid);
     if (!i) {
         out_hdr->error = -EINVAL;
@@ -636,7 +632,13 @@ int fuser_mirror_open(struct fuse_session *se, void *user_data,
         out_hdr->error = -ENOMEM;
         return 0;
     }
-    io_uring_prep_openat(sqe, -1, buf, fi.flags & ~O_NOFOLLOW, -1);
+    int flags = fi.flags & ~O_NOFOLLOW;
+    // See the conf.toml
+    // We don't change it inside of the fi.flags, because we want to lie to the host machine
+    // If you don't lie, the host's kernel will complain massively.
+    if (f->reject_directio)
+        flags &= ~O_DIRECT;
+    io_uring_prep_openat(sqe, -1, buf, flags, -1);
     io_uring_sqe_set_data(sqe, cb_data);
 
     int res = io_uring_submit(&f->rings[thread_id]);
@@ -804,8 +806,6 @@ int fuser_mirror_create(struct fuse_session *se, void *user_data,
 
     memset(&cb_data->create.fi, 0, sizeof(cb_data->create.fi));
     cb_data->create.fi.flags = in_create.flags; // from fuse_lowlevel.c
-    if (f->reject_directio)
-        cb_data->create.fi.flags &= ~O_DIRECT;
 
     struct inode *ip = ino_to_inodeptr(f, in_hdr->nodeid);
     if (!ip) {
@@ -823,8 +823,15 @@ int fuser_mirror_create(struct fuse_session *se, void *user_data,
         out_hdr->error = -ENOMEM;
         return 0;
     }
+
+    int flags = (cb_data->create.fi.flags | O_CREAT) & ~O_NOFOLLOW;
+    // See the conf.toml
+    // We don't change it inside of the fi.flags, because we want to lie to the host machine
+    // If you don't lie, the host's kernel will complain massively.
+    if (f->reject_directio)
+        flags &= ~O_DIRECT;
     io_uring_prep_openat(sqe, ip->fd, in_name,
-                     (cb_data->create.fi.flags | O_CREAT) & ~O_NOFOLLOW, in_create.mode);
+                     flags, in_create.mode);
     io_uring_sqe_set_data(sqe, cb_data);
 
     int res = io_uring_submit(&f->rings[thread_id]);
