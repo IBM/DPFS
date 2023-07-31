@@ -31,7 +31,7 @@ fi
 
 URING_A="--fixedbufs"
 URING_B="--fixedbufs --registerfiles"
-URING_SQ_THREAD_CPU=$(numactl --hardware) | grep -Po "(?<=node $NUMA_NODE cpus: )\d+"
+URING_SQ_THREAD_CPU=$(numactl --hardware | grep -Po "(?<=node $NUMA_NODE cpus: )\d+")
 URING_C="--fixedbufs --registerfiles --sqthread_poll=1 --sq_thread_cpu=$URING_SQ_THREAD_CPU"
 # NUMA_CORE runs the workload and polls on the device, the first core in the NUMA_NODE runs the submission queue poller in kernel space
 

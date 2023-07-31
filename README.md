@@ -43,10 +43,22 @@ Standalone program to find out which RDMA devices have emulation capabilities
 The Nvidia SNAP library that is needed to run on BlueField-2 (only DPU currently supported) is closed source and does require a patch to enable asynchronous request completion.
 Using `virtio-fs` in SNAP is currently only possible with a prototype firmware and some alterations to the SNAP library. You can reach out to us on how to integrate DPFS and SNAP.
 
-With the above in mind, the rough steps needed to run DPFS on the BlueField-2:
-* Install BFOS DOCA 3.9.3 (Ubuntu 20.04), newer versions might very well work. If you plan on using XLIO for TCP offloading using DPFS-NFS, then we discourage upgrading the software packages on your DPU, as we have found that this degrades performance.
+The steps to setup the DPU:
+* Install BFOS DOCA 3.9.3 (Ubuntu 20.04), newer versions might very well work. All the following steps are on the DPU.
+* Uncomment the first deb-src from `/etc/apt/sources.list` and execute `sudo apt update; sudo apt build-dep linux`.
+* Upgrade all the packages using apt, except for all the Open vSwitch packages via `apt hold` (currently the latest release is broken on the BF2).
+* Download MLNX OFED v23.04-1.1.3.0 (latest that we tested) on DPU, and add it as an apt repository (see [these docs](https://docs.nvidia.com/networking/display/MLNXOFEDv23041130/Installing+MLNX_OFED)).
+* Only install `mlnx-ofed-kernel-only` using apt.
+* Clone the Linux source and checkout to v6.2 (the latest stable tag).
+* Copy the /boot/config file of the most recent kernel to linux/.config, and enable all MLX drivers, and other drivers you might want (e.g. Ceph)
+* Compile Linux using `make bindeb-pkg -j 7` and install the image and headers using dpkg.
+* Reboot the DPU and confirm via `ip addr` that the ovs bridges are all there.
 * Flash the prototype firmware using `mlxburn`
-* Install the following deps: `autoconf cmake binutils libtool libck-dev libboost-thread-dev liburing-dev numactl`
+
+Why all this pain to upgrade the Linux kernel? Because by default the BlueField OS runs Linux 5.4 that was released on 24 November 2019.... Newer kernel versions (6.2 in this case) improve networking, io_uring, etc performance. And this allows you to get kernel modules that are not by default in BF OS, such as Ceph. But DPFS should fully work on Linux 5.4 as well
+
+With the above in mind, the steps needed to run DPFS on the BlueField-2:
+* Install the following deps on the DPU: `autoconf cmake binutils libtool libck-dev libboost-thread-dev numactl`
 * Patch SNAP to add a virtio-fs device type called "virtiofs_emu"
 * Patch SNAP to support asynchronous completion of virtio-fs requests (needs to be concurrency-safe)
 * Integrate DPFS into the build system of SNAP
@@ -56,8 +68,8 @@ With the above in mind, the rough steps needed to run DPFS on the BlueField-2:
 
 Setup steps for the extern dependencies:
 * Inside DPFS `git submodule init; git submodule update --init --recursive`
-* Inside extern/eRPC-arm `cmake . -DPERF=on -DTRANSPORT=infiniband -DROCE=on`
-* Inside extern/libnfs `./bootstrap; CFLAGS=-O3 ./configure --enable-pthread; make -j; sudo make install`
+* Inside extern/eRPC-arm `cmake . -DPERF=on -DTRANSPORT=infiniband -DROCE=on; make -j`
+* Inside extern/libnfs `./bootstrap; CFLAGS=-O3 ./configure --enable-pthread; make -j; sudo make install; sudo rm /etc/ld.so.cache; sudo ldconfig`
 
 # Project status
 See the Github issues and milestones.

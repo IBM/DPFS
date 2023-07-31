@@ -1,3 +1,3 @@
 #!/bin/bash
-./synthetic.sh
-./host_cpu_analysis.sh.sh
+./runners/synthetic.sh
+./runners/metadata.sh

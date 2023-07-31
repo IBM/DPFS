@@ -30,7 +30,11 @@ fio_clat_msec_stdev_regex = "(?<=^\s*clat \(msec\): min=\d+, max=\d+\.*\d*k*M*, 
 
 fio_log_regex = "(?<=^\d*, )\d*"
 
+redis_regex = "\d*.\d*(?= requests per second)"
+rocksdb_regex = "\d*(?= ops\/sec )"
+
 fio_cols = ["conf", "RW", "BS", "QD", "P", "IOPS_avg", "IOPS_stdev", "clat_avg", "clat_stdev", "bw_avg", "bw_stdev"]
+metadata_cols = ["conf", "workload", "type", "avg", "stdev"]
 
 def parse_fio(RW, BS, QD, P, conf, folder):
     df = pd.DataFrame(columns=fio_cols)
@@ -95,6 +99,68 @@ def parse_fio(RW, BS, QD, P, conf, folder):
 
                     df = pd.concat((df, pd.DataFrame([row])), ignore_index=True)
                 
+    return df
+
+def parse_metadata(conf, folder):
+    df = pd.DataFrame(columns=metadata_cols)
+    tmp_set = []
+    tmp_get = []
+    dir = folder + "/redis"
+    for f in os.listdir(dir):
+        i = int(f.split("_")[1])
+        fr = open(dir + "/" + f, 'r')
+        t = fr.read()
+        fr.close()
+        matches = re.findall(redis_regex, t)
+        tmp_set.append(float(matches[0]) * 0.001) # convert
+        tmp_get.append(float(matches[1]) * 0.001) # convert
+    
+    row = {
+        "conf": conf,
+        "workload": "redis",
+        "type": "get",
+        "avg": mean(tmp_get),
+        "stdev": mean(tmp_get),
+    }
+    df = pd.concat((df, pd.DataFrame([row])), ignore_index=True)
+    row = {
+        "conf": conf,
+        "workload": "redis",
+        "type": "set",
+        "avg": mean(tmp_set),
+        "stdev": mean(tmp_set),
+    }
+    df = pd.concat((df, pd.DataFrame([row])), ignore_index=True)
+    
+    tmp_fillrandom = []
+    tmp_readrandom = []
+    dir = folder + "/rocksdb"
+    for f in os.listdir(dir):
+        i = int(f.split("_")[1])
+        fr = open(dir + "/" + f, 'r')
+        t = fr.read()
+        fr.close()
+        matches = re.findall(rocksdb_regex, t)
+        tmp_fillrandom.append(float(matches[0]) * 0.001)
+        tmp_readrandom.append(float(matches[2]) * 0.001)
+    
+    row = {
+        "conf": conf,
+        "workload": "rocksdb",
+        "type": "fillrandom",
+        "avg": mean(tmp_fillrandom),
+        "stdev": stdev(tmp_fillrandom),
+    }
+    df = pd.concat((df, pd.DataFrame([row])), ignore_index=True)
+    row = {
+        "conf": conf,
+        "workload": "rocksdb",
+        "type": "readrandom",
+        "avg": mean(tmp_readrandom),
+        "stdev": stdev(tmp_readrandom),
+    }
+    df = pd.concat((df, pd.DataFrame([row])), ignore_index=True)
+    
     return df
 
 # Throughput
@@ -216,5 +282,39 @@ def plot_cdf(df, confs, RW_list, BS, QD, P, conf_colormap, output):
         for (k, v) in conf_colormap.items():
             legend_dict[confs[k]] = Line2D([0], [0], color=v, lw=2)
     ax.legend(legend_dict.values(), legend_dict.keys(), loc='best')
+    
+    plt.savefig(output, bbox_inches="tight")
+
+def plot_bar(ax, data, l, output, yerr=None, colors=None, total_width=0.8, single_width=1):
+    # Check if colors where provided, otherwhise use the default color cycle
+    if colors is None:
+        colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+
+    # Number of bars per group
+    n_bars = len(data)
+
+    # The width of a single bar
+    bar_width = total_width / n_bars
+
+    # List containing handles for the drawn bars, used for the legend
+    bars = []
+
+    # Iterate over all data
+    for i, (name, values) in enumerate(data.items()):
+        # The offset in x direction of that bar
+        x_offset = (i - n_bars / 2) * bar_width + bar_width / 2
+
+        # Draw a bar for every value of that type
+        for x, y in enumerate(values):
+            yerrr = None
+            if yerr is not None:
+                yerrr = yerr[name][x]
+            bar = ax.bar(x + x_offset, y, yerr=yerrr, width=bar_width * single_width, color=colors[i % len(colors)])
+
+        # Add a handle to the last drawn bar, which we'll need for the legend
+        bars.append(bar[0])
+    
+    if l is not None:
+        ax.legend(bars, l)
     
     plt.savefig(output, bbox_inches="tight")
