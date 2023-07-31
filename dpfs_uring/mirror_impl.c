@@ -804,6 +804,9 @@ int fuser_mirror_create(struct fuse_session *se, void *user_data,
 
     memset(&cb_data->create.fi, 0, sizeof(cb_data->create.fi));
     cb_data->create.fi.flags = in_create.flags; // from fuse_lowlevel.c
+    if (f->reject_directio)
+        cb_data->create.fi.flags &= ~O_DIRECT;
+
     struct inode *ip = ino_to_inodeptr(f, in_hdr->nodeid);
     if (!ip) {
         out_hdr->error = -EINVAL;

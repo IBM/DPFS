@@ -80,7 +80,7 @@ int main(int argc, char **argv)
         fprintf(stderr, "You must supply `metadata_timeout` in seconds under [local_mirror]\n");
         return -1;
     }
-    toml_datum_t reject_directio = toml_double_in(local_mirror_conf, "reject_directio");
+    toml_datum_t reject_directio = toml_bool_in(local_mirror_conf, "reject_directio");
     if (!reject_directio.ok) {
         fprintf(stderr, "You must supply `reject_directio` as a bool under [local_mirror]\n");
         return -1;
