@@ -19,10 +19,9 @@
 #include <limits.h>
 #include <pthread.h>
 #include <fcntl.h>
-#include <liburing.h>
 
-#include "fuser.h"
 #include "mirror_impl.h"
+#include "fuser.h"
 
 struct inode *inode_new(fuse_ino_t ino) {
     struct inode *i = calloc(1, sizeof(struct inode));
