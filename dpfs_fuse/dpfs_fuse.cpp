@@ -776,10 +776,8 @@ static int fuse_ll_create(struct dpfs_fuse *f_ll,
         in_create = &in_create_struct;
         struct fuse_open_in *in_open = (struct fuse_open_in *) fuse_in_iov[1].iov_base;
 
+        memset(in_create, 0, sizeof(*in_create));
         in_create->flags = in_open->flags;
-        in_create->mode = 0;
-        in_create->umask = 0;
-        in_create->padding = 0;
         name = ((char *) fuse_in_iov[1].iov_base) + sizeof(struct fuse_open_in);
     }
 
