@@ -704,7 +704,7 @@ static int fuse_ll_setattr(struct dpfs_fuse *f_ll,
 
 #ifdef DEBUG_ENABLED
     fuse_ll_debug_print_in_hdr(in_hdr);
-    printf("* fh: %lu", in_setattr->fh);
+    printf("* fh: %lu\n", in_setattr->fh);
 #endif
 
     if (!f_ll->se.at(device_id)->init_done) {
