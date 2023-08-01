@@ -380,23 +380,8 @@ int fuser_main(bool debug, char *source, double metadata_timeout, bool reject_di
     }
 
     printf("The following operations are asynchrounous through io_uring: read, write, fsync");
-#ifdef IORING_STATX_SUPPORTED
-    printf(", statx");
-#endif
-#ifdef IORING_OPENAT_SUPPORTED
-    printf(", open, create");
-#endif
-#ifdef IORING_FALLOCATE_SUPPORTED
-    printf(", fallocate");
-#endif
-#ifdef IORING_RENAMEAT_SUPPORTED
-    printf(", rename");
-#endif
-#ifdef IORING_CLOSE_SUPPORTED
-    printf(", close");
-#endif
-#ifdef IORING_UNLINKAT_SUPPORTED
-    printf(", unlink");
+#ifdef IORING_METADATA_DISABLED
+    printf(", statx, open, create, fallocate, rename, close, unlink, mkdir, symlink");
 #endif
     printf("\n");
 
