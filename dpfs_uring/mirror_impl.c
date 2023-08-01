@@ -827,7 +827,7 @@ int fuser_mirror_create(struct fuse_session *se, void *user_data,
 {
     struct fuser *f = user_data;
 
-    CB_DATA(fuser_mirror_generic_cb);
+    CB_DATA(fuser_mirror_create_cb);
 
     memset(&cb_data->create.fi, 0, sizeof(cb_data->create.fi));
     cb_data->create.fi.flags = in_create.flags; // from fuse_lowlevel.c
