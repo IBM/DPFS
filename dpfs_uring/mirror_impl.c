@@ -638,7 +638,7 @@ int fuser_mirror_open(struct fuse_session *se, void *user_data,
     // If you don't lie, the host's kernel will complain massively.
     if (f->reject_directio)
         flags &= ~O_DIRECT;
-    io_uring_prep_openat(sqe, -1, buf, flags, -1);
+    io_uring_prep_openat(sqe, -1, buf, flags, 0);
     io_uring_sqe_set_data(sqe, cb_data);
 
     int res = io_uring_submit(&f->rings[thread_id]);
@@ -649,7 +649,7 @@ int fuser_mirror_open(struct fuse_session *se, void *user_data,
 
     return EWOULDBLOCK;
 #else
-    int fd = open(buf, fi.flags & ~O_NOFOLLOW);
+    int fd = openat(0, buf, fi.flags & ~O_NOFOLLOW, 0);
     if (fd == -1) {
         int err = errno;
         if (err == ENFILE || err == EMFILE)
