@@ -837,6 +837,12 @@ int fuser_mirror_create(struct fuse_session *se, void *user_data,
     // If you don't lie, the host's kernel will complain massively.
     if (f->reject_directio)
         flags &= ~O_DIRECT;
+    // Somehow some hosts send the directory flag, just remove it
+    flags &= ~O_DIRECTORY;
+#ifdef DEBUG_ENABLED
+    fuse_ll_debug_print_open_flags(flags);
+#endif
+
     io_uring_prep_openat(sqe, ip->fd, in_name,
                      flags, in_create.mode);
     io_uring_sqe_set_data(sqe, cb_data);
