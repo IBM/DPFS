@@ -49,7 +49,7 @@ void inode_table_clear(struct inode_table *t) {
         while (next) {
             struct inode *i = next;
             next = i->next;
-            fprintf(stderr, "ERROR: a inode was not released by the host before destroying the file system");
+            fprintf(stderr, "WARNING: a inode was not released by the host before destroying the file system");
 
             if (i->fd != -1) {
                 fprintf(stderr, ", fd was not closed");
@@ -275,7 +275,7 @@ static void *fuser_io_poll_thread(void *arg) {
 }
 
 // TODO proper error handling
-int fuser_main(bool debug, char *source, double metadata_timeout, bool reject_directio,
+int fuser_main(bool debug, char *source, double metadata_timeout, enum fuser_directio_mode directio_mode,
         const char *conf_path, bool cq_polling, uint16_t cq_polling_nthreads, bool sq_polling) {
     struct fuser *f = calloc(1, sizeof(struct fuser));
     if (f == NULL)
@@ -284,7 +284,7 @@ int fuser_main(bool debug, char *source, double metadata_timeout, bool reject_di
     f->debug = debug;
     f->source = strdup(source);
     f->timeout = metadata_timeout;
-    f->reject_directio = reject_directio;
+    f->directio_mode = directio_mode;
 
     struct stat s;
     int ret = lstat(f->source, &s);

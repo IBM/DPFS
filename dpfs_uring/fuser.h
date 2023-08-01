@@ -62,12 +62,22 @@ struct directory {
 
 void directory_destroy(struct directory *);
 
+enum fuser_directio_mode {
+    // Do not modify the host's direct I/O whishes
+    FUSER_DIRECTIO_PASSTHROUGH = 0,
+    // Always turn off direct I/O even if the host says otherwise,
+    // useful with some FS backends that don't support direct I/O
+    FUSER_DIRECTIO_NEVER = 1,
+    // All files will be opened with direct I/O turned on
+    FUSER_DIRECTIO_ALWAYS = 2,
+};
+
 struct fuser {
     pthread_mutex_t m;
     struct inode_table *inodes; // protected by m
     struct inode root;
     double timeout;
-    bool reject_directio;
+    enum fuser_directio_mode directio_mode;
     bool debug;
     char *source;
     // size_t blocksize;
@@ -91,7 +101,7 @@ struct inode *ino_to_inodeptr(struct fuser *, fuse_ino_t);
 int ino_to_fd(struct fuser *, fuse_ino_t);
 
 int fuser_main(bool debug, char *source, double metadata_timeout,
-               bool reject_directio, const char *conf_path, bool cq_polling,
+               enum fuser_directio_mode directio_mode, const char *conf_path, bool cq_polling,
                uint16_t cq_polling_nthreads, bool sq_polling);
 
 #endif // FUSER_H

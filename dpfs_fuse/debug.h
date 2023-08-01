@@ -50,9 +50,10 @@ void fuse_ll_debug_print_open_flags(int val)
     printf("flags left = %o\n", val);
 }
 
-inline void fuse_ll_debug_print_in_hdr(struct fuse_in_header *in) {
+inline const char *fuse_ll_op_name(uint32_t opcode)
+{
 	const char *op_name;
-	switch (in->opcode) {
+	switch (opcode) {
 	case 1:
 	      op_name = "FUSE_LOOKUP";
 	      break;
@@ -201,6 +202,13 @@ inline void fuse_ll_debug_print_in_hdr(struct fuse_in_header *in) {
 	      op_name = "UNKNOWN FUSE operation!";
 	      break;
 	}
+
+	return op_name;
+}
+
+inline void fuse_ll_debug_print_in_hdr(struct fuse_in_header *in)
+{
+    const char *op_name = fuse_ll_op_name(in->opcode);
 	uint16_t thread_id = dpfs_hal_thread_id();
 	printf("-- %s:%lu:%u --\n", op_name, in->unique, thread_id);
 	printf("* nodeid: %lu\n", in->nodeid);

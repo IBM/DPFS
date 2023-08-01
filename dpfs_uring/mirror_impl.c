@@ -607,6 +607,10 @@ int fuser_mirror_open(struct fuse_session *se, void *user_data,
 
     struct fuse_file_info fi;
     fi.flags = in_open->flags;
+#ifdef DEBUG_ENABLED
+    printf("OPEN flags supplied:\n");
+    fuse_ll_debug_print_open_flags(fi.flags);
+#endif
 
     struct inode *i = ino_to_inodeptr(f, in_hdr->nodeid);
     if (!i) {
@@ -635,14 +639,16 @@ int fuser_mirror_open(struct fuse_session *se, void *user_data,
     char buf[128];
     sprintf(buf, "/proc/%i/fd/%i", getpid(), i->fd);
     int flags = fi.flags & ~O_NOFOLLOW;
-    // See the conf.toml
     // We don't change it inside of the fi.flags, because we want to lie to the host machine
-    // If you don't lie, the host's kernel will complain massively.
-    if (f->reject_directio)
+    // If you don't lie, the host's kernel will complain sometimes.
+    if (f->directio_mode == FUSER_DIRECTIO_NEVER)
         flags &= ~O_DIRECT;
+    else if (f->directio_mode == FUSER_DIRECTIO_ALWAYS)
+        flags |= O_DIRECT;
     // Somehow some hosts send the directory flag, just remove it
     flags &= ~O_DIRECTORY;
 #ifdef DEBUG_ENABLED
+    printf("OPEN flags used:\n");
     fuse_ll_debug_print_open_flags(flags);
 #endif
 
@@ -830,6 +836,10 @@ int fuser_mirror_create(struct fuse_session *se, void *user_data,
 
     memset(&cb_data->create.fi, 0, sizeof(cb_data->create.fi));
     cb_data->create.fi.flags = in_create.flags; // from fuse_lowlevel.c
+#ifdef DEBUG_ENABLED
+    printf("CREATE open flags supplied:\n");
+    fuse_ll_debug_print_open_flags(cb_data->create.fi.flags);
+#endif
 
     struct inode *ip = ino_to_inodeptr(f, in_hdr->nodeid);
     if (!ip) {
@@ -849,14 +859,16 @@ int fuser_mirror_create(struct fuse_session *se, void *user_data,
     }
 
     int flags = (cb_data->create.fi.flags | O_CREAT) & ~O_NOFOLLOW;
-    // See the conf.toml
     // We don't change it inside of the fi.flags, because we want to lie to the host machine
-    // If you don't lie, the host's kernel will complain massively.
-    if (f->reject_directio)
+    // If you don't lie, the host's kernel will complain sometimes.
+    if (f->directio_mode == FUSER_DIRECTIO_NEVER)
         flags &= ~O_DIRECT;
+    else if (f->directio_mode == FUSER_DIRECTIO_ALWAYS)
+        flags |= O_DIRECT;
     // Somehow some hosts send the directory flag, just remove it
     flags &= ~O_DIRECTORY;
 #ifdef DEBUG_ENABLED
+    printf("CREATE open flags used:\n");
     fuse_ll_debug_print_open_flags(flags);
 #endif
 

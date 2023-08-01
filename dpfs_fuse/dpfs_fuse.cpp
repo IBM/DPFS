@@ -1799,7 +1799,7 @@ static int fuse_unknown(struct dpfs_fuse *fuse_ll,
     out_hdr->len = sizeof(struct fuse_out_header);
     out_hdr->error = -ENOSYS;
 
-    printf("dpfs_fuse: fuse OP(%u) called, but not implemented\n", in_hdr->opcode);
+    printf("dpfs_fuse: fuse OP(%s=%u) called, but not implemented\n", fuse_ll_op_name(in_hdr->opcode), in_hdr->opcode);
 
     return 0;
 }
@@ -1834,8 +1834,8 @@ static int fuse_handle_req(void *u,
         {
             struct fuse_out_header *out_hdr = (struct fuse_out_header *) out_iov[0].iov_base;
             if (out_hdr->error != 0)
-                fprintf(stderr, "FUSE OP(%d) request ERROR=%d, %s\n", in_hdr->opcode,
-                    out_hdr->error, strerror(-out_hdr->error));
+                fprintf(stderr, "FUSE OP(%s=%u) request ERROR=%d, %s\n", fuse_ll_op_name(in_hdr->opname),
+                        in_hdr->opcode, out_hdr->error, strerror(-out_hdr->error));
         }
 #endif
         return ret;
