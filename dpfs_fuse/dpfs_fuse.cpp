@@ -1834,7 +1834,7 @@ static int fuse_handle_req(void *u,
         {
             struct fuse_out_header *out_hdr = (struct fuse_out_header *) out_iov[0].iov_base;
             if (out_hdr->error != 0)
-                fprintf(stderr, "FUSE OP(%s=%u) request ERROR=%d, %s\n", fuse_ll_op_name(in_hdr->opname),
+                fprintf(stderr, "FUSE OP(%s=%u) request ERROR=%d, %s\n", fuse_ll_op_name(in_hdr->opcode),
                         in_hdr->opcode, out_hdr->error, strerror(-out_hdr->error));
         }
 #endif

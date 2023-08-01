@@ -82,7 +82,7 @@ int main(int argc, char **argv)
     }
     toml_datum_t directio_mode = toml_int_in(local_mirror_conf, "directio_mode");
     if (!directio_mode.ok || directio_mode.u.i < FUSER_DIRECTIO_PASSTHROUGH || directio_mode.u.i > FUSER_DIRECTIO_ALWAYS) {
-        fprintf(stderr, "You must supply `reject_directio` as an int under [local_mirror] between %d and %d\n",
+        fprintf(stderr, "You must supply `directio_mode` as an int under [local_mirror] between %d and %d\n",
                 FUSER_DIRECTIO_PASSTHROUGH, FUSER_DIRECTIO_ALWAYS);
         return -1;
     }
