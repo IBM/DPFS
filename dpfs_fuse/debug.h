@@ -7,11 +7,34 @@
 
 #include <linux/fuse.h>
 #include <stdio.h>
+#include <fcntl.h>
 #include "dpfs/hal.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#define test(val, macro, macro_name) if (val & macro) { \
+    printf("%s\n", macro_name); \
+    val ^= macro; \
+}
+
+#define test_acc(val, macro, macro_name) if ((val & O_ACCMODE) & macro) { \
+    printf("%s\n", macro_name); \
+    val ^= macro; \
+}
+
+void fuse_ll_debug_print_open_flags(int val)
+{
+    test_acc(val, O_RDONLY, "O_RDONLY");
+    test_acc(val, O_WRONLY, "O_WRONLY");
+    test_acc(val, O_RDWR, "O_RDWR");
+    test(val, O_DIRECTORY, "O_DIRECTORY");
+    test(val, O_DIRECT, "O_DIRECT");
+    test(val, O_LARGEFILE, "O_LARGEFILE");
+
+    printf("flags left = %o\n", val);
+}
 
 inline void fuse_ll_debug_print_in_hdr(struct fuse_in_header *in) {
 	const char *op_name;

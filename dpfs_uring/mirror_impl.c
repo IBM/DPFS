@@ -32,6 +32,8 @@
 #include <sys/file.h>
 #include <string.h>
 #include "dpfs_fuse.h"
+#include "config.h"
+#include "debug.h"
 
 #include "fuser.h"
 #include "mirror_impl.h"
@@ -625,6 +627,9 @@ int fuser_mirror_open(struct fuse_session *se, void *user_data,
     // If you don't lie, the host's kernel will complain massively.
     if (f->reject_directio)
         flags &= ~O_DIRECT;
+#ifdef DEBUG_ENABLED
+    fuse_ll_debug_print_open_flags(flags);
+#endif
 
 #ifdef IORING_OPENAT_SUPPORTED
     CB_DATA(fuser_mirror_open_cb);
