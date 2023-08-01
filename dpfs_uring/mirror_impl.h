@@ -10,29 +10,6 @@
 
 #include "dpfs_fuse.h"
 #include <linux/io_uring.h>
-
-// This must be checked before liburing include because
-// liburing defines all the ops even if they aren't supported
-// by the local kernel
-#ifdef IORING_OP_STATX
-#define IORING_STATX_SUPPORTED
-#endif
-#ifdef IORING_OP_OPENAT
-#define IORING_OPENAT_SUPPORTED
-#endif
-#ifdef IORING_OP_FALLOCATE
-#define IORING_FALLOCATE_SUPPORTED
-#endif
-#ifdef IORING_OP_RENAMEAT
-#define IORING_RENAMEAT_SUPPORTED
-#endif
-#ifdef IORING_OP_CLOSE
-#define IORING_CLOSE_SUPPORTED
-#endif
-#ifdef IORING_OP_UNLINKAT
-#define IORING_UNLINKAT_SUPPORTED
-#endif
-
 #include <liburing.h>
 #include <linux/stat.h>
 
@@ -51,13 +28,11 @@ struct fuser_cb_data {
         struct {
             struct fuse_write_out *out_write;
         } write;
-#ifdef IORING_STATX_SUPPORTED
+#ifndef IORING_DISABLE_METADATA
         struct {
             struct statx s;
             struct fuse_attr_out *out_attr;
         } getattr;
-#endif
-#ifdef IORING_OPENAT_SUPPORTED
         struct {
             struct inode *i;
             struct fuse_file_info fi;
@@ -65,10 +40,16 @@ struct fuser_cb_data {
         } open;
         struct {
             struct fuse_file_info fi;
+            const char *in_name;
             struct fuse_entry_out *out_entry;
             struct fuse_open_out *out_open;
-            const char *in_name;
         } create;
+        struct {
+            struct fuse_entry_param e;
+            struct inode *parent;
+            const char *in_name;
+            struct fuse_entry_out *out_entry;
+        } mk;
 #endif
     };
     void *completion_context;

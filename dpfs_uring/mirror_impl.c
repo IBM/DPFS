@@ -37,7 +37,6 @@
 
 #include "fuser.h"
 #include "mirror_impl.h"
-#include "aio.h"
 
 // After this macro, cb_data and thread_id will be defined
 // and mirror functions that need custom data in the cb_data, can set them.
@@ -158,7 +157,7 @@ int fuser_mirror_destroy (struct fuse_session *se, void *user_data,
     return 0;
 }
 
-#ifdef IORING_STATX_SUPPORTED
+#ifndef IORING_METADATA_DISABLED
 static void fuser_mirror_getattr_cb(struct fuser_cb_data *cb_data, struct io_uring_cqe *cqe)
 {
     if (cqe->res < 0) {
@@ -191,7 +190,7 @@ int fuser_mirror_getattr(struct fuse_session *se, void *user_data,
         fd = i->fd;
     }
 
-#ifdef IORING_STATX_SUPPORTED
+#ifndef IORING_METADATA_DISABLED
     CB_DATA(fuser_mirror_getattr_cb);
     cb_data->getattr.out_attr = out_attr;
 
@@ -572,7 +571,7 @@ error:
     }
 }
 
-#ifdef IORING_OPENAT_SUPPORTED
+#ifndef IORING_METADATA_DISABLED
 void fuser_mirror_open_cb(struct fuser_cb_data *cb_data, struct io_uring_cqe *cqe)
 {
     if (cqe->res < 0) {
@@ -647,7 +646,7 @@ int fuser_mirror_open(struct fuse_session *se, void *user_data,
     fuse_ll_debug_print_open_flags(flags);
 #endif
 
-#ifdef IORING_OPENAT_SUPPORTED
+#ifndef IORING_METADATA_DISABLED
     CB_DATA(fuser_mirror_open_cb);
     cb_data->open.i = i;
     cb_data->open.fi = fi;
@@ -707,7 +706,7 @@ int fuser_mirror_release(struct fuse_session *se, void *user_data,
     i->nopen--;
     pthread_mutex_unlock(&i->m);
 
-#ifdef IORING_CLOSE_SUPPORTED
+#ifndef IORING_METADATA_DISABLED
     CB_DATA(fuser_mirror_generic_cb);
 
     struct io_uring_sqe *sqe = io_uring_get_sqe(&f->rings[thread_id]);
@@ -783,7 +782,7 @@ int fuser_mirror_fsyncdir(struct fuse_session *se, void *user_data,
     return do_fsync(se, user_data, in_hdr, fd, in_fsync->fsync_flags, out_hdr, completion_context);
 }
 
-#ifdef IORING_OPENAT_SUPPORTED
+#ifndef IORING_METADATA_DISABLED
 
 void fuser_mirror_create_cb(struct fuser_cb_data *cb_data, struct io_uring_cqe *cqe)
 {
@@ -984,7 +983,7 @@ int fuser_mirror_rename(struct fuse_session *se, void *user_data,
         return 0;
     }
 
-#ifdef IORING_RENAMEAT_SUPPORTED
+#ifndef IORING_METADATA_DISABLED
     CB_DATA(fuser_mirror_generic_cb);
 
     struct io_uring_sqe *sqe = io_uring_get_sqe(&f->rings[thread_id]);
@@ -1057,7 +1056,7 @@ int fuser_mirror_read(struct fuse_session *se, void *user_data,
     return EWOULDBLOCK; // We move async
 }
 
-void fuser_mirror_write_cb(struct fuser_cb_data *cb_data, struct io_uring_cqe *cqe)
+static void fuser_mirror_write_cb(struct fuser_cb_data *cb_data, struct io_uring_cqe *cqe)
 {
     if (cqe->res < 0) {
         cb_data->out_hdr->error = cqe->res;
@@ -1103,6 +1102,94 @@ int fuser_mirror_write(struct fuse_session *se, void *user_data,
 
     return EWOULDBLOCK; // We move async
 }
+
+#ifndef IORING_METADATA_DISABLED
+static void fuser_mirror_mk_cb(struct fuser_cb_data *cb_data, struct io_uring_cqe *cqe)
+{
+    int res = cqe->res;
+    if (res < 0)
+        goto out_err;
+
+    res = do_lookup(cb_data->f, cb_data->in_hdr->nodeid, cb_data->mk.in_name, &cb_data->mk.e);
+    if (res < 0) {
+        res = -res;
+        goto out_err;
+    }
+
+    fuse_ll_reply_entry(cb_data->se, cb_data->out_hdr, cb_data->mk.out_entry, &cb_data->mk.e);
+    dpfs_hal_async_complete(cb_data->completion_context, DPFS_HAL_COMPLETION_SUCCES);
+
+    return;
+
+out_err:
+    if (res == -ENFILE || res == -EMFILE)
+        fprintf(stderr, "ERROR: Reached maximum number of file descriptors.\n");
+
+    cb_data->out_hdr->error = res;
+#ifdef DEBUG_ENABLED
+    fprintf(stderr, "FUSE OP(%d) request ERROR=%d, %s\n", cb_data->in_hdr->opcode,
+        cb_data->out_hdr->error, strerror(-cb_data->out_hdr->error));
+#endif
+    dpfs_hal_async_complete(cb_data->completion_context, DPFS_HAL_COMPLETION_SUCCES);
+}
+
+int fuser_mirror_mkdir(struct fuse_session *se, void *user_data,
+                  struct fuse_in_header *in_hdr, struct fuse_mkdir_in *in_mkdir, const char *const in_name,
+                  struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry,
+                  void *completion_context, uint16_t device_id)
+{
+    struct fuser *f = user_data;
+    struct inode *parent = ino_to_inodeptr(f, in_hdr->nodeid);
+
+    CB_DATA(fuser_mirror_mk_cb);
+
+    struct io_uring_sqe *sqe = io_uring_get_sqe(&f->rings[thread_id]);
+    if (!sqe) {
+        fprintf(stderr, "ERROR: Not enough uring sqe elements avail.\n");
+        out_hdr->error = -ENOMEM;
+        return 0;
+    }
+    io_uring_prep_mkdirat(sqe, parent->fd, in_name, in_mkdir->mode | S_IFDIR);
+    io_uring_sqe_set_data(sqe, cb_data);
+
+    int res = io_uring_submit(&f->rings[thread_id]);
+    if (res < 0) {
+        out_hdr->error = res;
+        return 0;
+    }
+
+    return EWOULDBLOCK; // We move async
+}
+
+int fuser_mirror_symlink(struct fuse_session *se, void *user_data,
+                    struct fuse_in_header *in_hdr, const char *const in_name, const char *const in_link,
+                    struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry,
+                    void *completion_context, uint16_t device_id)
+{
+    struct fuser *f = user_data;
+    struct inode *parent = ino_to_inodeptr(f, in_hdr->nodeid);
+
+    CB_DATA(fuser_mirror_mk_cb);
+
+    struct io_uring_sqe *sqe = io_uring_get_sqe(&f->rings[thread_id]);
+    if (!sqe) {
+        fprintf(stderr, "ERROR: Not enough uring sqe elements avail.\n");
+        out_hdr->error = -ENOMEM;
+        return 0;
+    }
+    io_uring_prep_symlinkat(sqe, in_link, parent->fd, in_name);
+    io_uring_sqe_set_data(sqe, cb_data);
+
+    int res = io_uring_submit(&f->rings[thread_id]);
+    if (res < 0) {
+        out_hdr->error = res;
+        return 0;
+    }
+
+    return EWOULDBLOCK; // We move async
+}
+
+#else
 
 static int make_something(struct fuser *f, fuse_ino_t parent,
                               const char *name, mode_t mode, dev_t rdev,
@@ -1185,6 +1272,7 @@ int fuser_mirror_symlink(struct fuse_session *se, void *user_data,
 
     return fuse_ll_reply_entry(se, out_hdr, out_entry, &e);
 }
+#endif
 
 int fuser_mirror_statfs(struct fuse_session *se, void *user_data,
                    struct fuse_in_header *in_hdr,
@@ -1247,7 +1335,7 @@ int fuser_mirror_unlink(struct fuse_session *se, void *user_data,
         // decrease the ref which lookup above had increased
         forget_one(f, e.ino, 1);
     }
-#ifdef IORING_UNLINKAT_SUPPORTED
+#ifndef IORING_METADATA_DISABLED
     CB_DATA(fuser_mirror_generic_cb);
 
     struct io_uring_sqe *sqe = io_uring_get_sqe(&f->rings[thread_id]);
@@ -1302,7 +1390,7 @@ int fuser_mirror_fallocate(struct fuse_session *se, void *user_data,
                       struct fuse_out_header *out_hdr,
                       void *completion_context, uint16_t device_id)
 {
-#ifdef IORING_FALLOCATE_SUPPORTED
+#ifndef IORING_METADATA_DISABLED
     struct fuser *f = user_data;
 
     CB_DATA(fuser_mirror_generic_cb);
