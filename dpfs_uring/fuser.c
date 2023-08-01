@@ -35,7 +35,7 @@ struct inode *inode_new(fuse_ino_t ino) {
     return i;
 }
 
-void inode_destroy(struct inode *i) {
+static void inode_destroy(struct inode *i) {
     if (i->fd > 0)
         close(i->fd);
     pthread_mutex_destroy(&i->m);

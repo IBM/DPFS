@@ -619,6 +619,12 @@ int fuser_mirror_open(struct fuse_session *se, void *user_data,
        with O_PATH (so it doesn't allow read/write access). */
     char buf[128];
     sprintf(buf, "/proc/%i/fd/%i", getpid(), i->fd);
+    int flags = fi.flags & ~O_NOFOLLOW;
+    // See the conf.toml
+    // We don't change it inside of the fi.flags, because we want to lie to the host machine
+    // If you don't lie, the host's kernel will complain massively.
+    if (f->reject_directio)
+        flags &= ~O_DIRECT;
 
 #ifdef IORING_OPENAT_SUPPORTED
     CB_DATA(fuser_mirror_open_cb);
@@ -632,12 +638,6 @@ int fuser_mirror_open(struct fuse_session *se, void *user_data,
         out_hdr->error = -ENOMEM;
         return 0;
     }
-    int flags = fi.flags & ~O_NOFOLLOW;
-    // See the conf.toml
-    // We don't change it inside of the fi.flags, because we want to lie to the host machine
-    // If you don't lie, the host's kernel will complain massively.
-    if (f->reject_directio)
-        flags &= ~O_DIRECT;
     io_uring_prep_openat(sqe, -1, buf, flags, 0);
     io_uring_sqe_set_data(sqe, cb_data);
 
@@ -649,7 +649,7 @@ int fuser_mirror_open(struct fuse_session *se, void *user_data,
 
     return EWOULDBLOCK;
 #else
-    int fd = openat(0, buf, fi.flags & ~O_NOFOLLOW, 0);
+    int fd = openat(-1, buf, flags, 0);
     if (fd == -1) {
         int err = errno;
         if (err == ENFILE || err == EMFILE)

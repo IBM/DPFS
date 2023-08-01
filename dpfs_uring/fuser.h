@@ -37,7 +37,6 @@ struct inode {
 };
 
 struct inode *inode_new(fuse_ino_t ino);
-void inode_destroy(struct inode *);
 
 struct inode_table {
     struct inode **array;
