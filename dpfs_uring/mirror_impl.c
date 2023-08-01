@@ -1103,6 +1103,37 @@ int fuser_mirror_write(struct fuse_session *se, void *user_data,
     return EWOULDBLOCK; // We move async
 }
 
+static int make_something(struct fuser *f, fuse_ino_t parent,
+                              const char *name, mode_t mode, dev_t rdev,
+                              const char *link, struct fuse_entry_param *out_e) {
+    int res;
+    struct inode *ip = ino_to_inodeptr(f, parent);
+
+    if (S_ISDIR(mode)) {
+        res = mkdirat(ip->fd, name, mode);
+    } else if (S_ISLNK(mode)) {
+        if (!link)
+            return EINVAL;
+        res = symlinkat(link, ip->fd, name);
+    } else {
+        res = mknodat(ip->fd, name, mode, rdev);
+    }
+    int saverr = errno;
+    if (res == -1)
+        goto out_err;
+
+    saverr = do_lookup(f, parent, name, out_e);
+    if (saverr)
+        goto out_err;
+
+    return 0;
+
+out_err:
+    if (saverr == ENFILE || saverr == EMFILE)
+        fprintf(stderr, "ERROR: Reached maximum number of file descriptors.\n");
+    return saverr;
+}
+
 #ifndef IORING_METADATA_DISABLED
 static void fuser_mirror_mk_cb(struct fuser_cb_data *cb_data, struct io_uring_cqe *cqe)
 {
@@ -1191,54 +1222,6 @@ int fuser_mirror_symlink(struct fuse_session *se, void *user_data,
 
 #else
 
-static int make_something(struct fuser *f, fuse_ino_t parent,
-                              const char *name, mode_t mode, dev_t rdev,
-                              const char *link, struct fuse_entry_param *out_e) {
-    int res;
-    struct inode *ip = ino_to_inodeptr(f, parent);
-
-    if (S_ISDIR(mode)) {
-        res = mkdirat(ip->fd, name, mode);
-    } else if (S_ISLNK(mode)) {
-        if (!link)
-            return EINVAL;
-        res = symlinkat(link, ip->fd, name);
-    } else {
-        res = mknodat(ip->fd, name, mode, rdev);
-    }
-    int saverr = errno;
-    if (res == -1)
-        goto out_err;
-
-    saverr = do_lookup(f, parent, name, out_e);
-    if (saverr)
-        goto out_err;
-
-    return 0;
-
-out_err:
-    if (saverr == ENFILE || saverr == EMFILE)
-        fprintf(stderr, "ERROR: Reached maximum number of file descriptors.\n");
-    return saverr;
-}
-
-int fuser_mirror_mknod(struct fuse_session *se, void *user_data,
-                  struct fuse_in_header *in_hdr, struct fuse_mknod_in * in_mknod, const char *const in_name,
-                  struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry,
-                  void *completion_context, uint16_t device_id)
-{
-    struct fuser *f = user_data;
-
-    struct fuse_entry_param e;
-    int res = make_something(f, in_hdr->nodeid, in_name, in_mknod->mode, in_mknod->rdev, NULL, &e);
-    if (res) {
-        out_hdr->error = -res;
-        return 0;
-    }
-
-    return fuse_ll_reply_entry(se, out_hdr, out_entry, &e);
-}
-
 int fuser_mirror_mkdir(struct fuse_session *se, void *user_data,
                   struct fuse_in_header *in_hdr, struct fuse_mkdir_in *in_mkdir, const char *const in_name,
                   struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry,
@@ -1273,6 +1256,25 @@ int fuser_mirror_symlink(struct fuse_session *se, void *user_data,
     return fuse_ll_reply_entry(se, out_hdr, out_entry, &e);
 }
 #endif
+
+
+int fuser_mirror_mknod(struct fuse_session *se, void *user_data,
+                  struct fuse_in_header *in_hdr, struct fuse_mknod_in * in_mknod, const char *const in_name,
+                  struct fuse_out_header *out_hdr, struct fuse_entry_out *out_entry,
+                  void *completion_context, uint16_t device_id)
+{
+    struct fuser *f = user_data;
+
+    struct fuse_entry_param e;
+    int res = make_something(f, in_hdr->nodeid, in_name, in_mknod->mode, in_mknod->rdev, NULL, &e);
+    if (res) {
+        out_hdr->error = -res;
+        return 0;
+    }
+
+    return fuse_ll_reply_entry(se, out_hdr, out_entry, &e);
+}
+
 
 int fuser_mirror_statfs(struct fuse_session *se, void *user_data,
                    struct fuse_in_header *in_hdr,
