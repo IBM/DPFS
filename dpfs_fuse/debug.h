@@ -32,6 +32,20 @@ void fuse_ll_debug_print_open_flags(int val)
     test(val, O_DIRECTORY, "O_DIRECTORY");
     test(val, O_DIRECT, "O_DIRECT");
     test(val, O_LARGEFILE, "O_LARGEFILE");
+    test(val, O_CREAT, "O_CREAT");
+    test(val, O_EXCL, "O_EXCL");
+    test(val, O_NOCTTY, "O_NOCTTY");
+    test(val, O_TRUNC, "O_TRUNC");
+    test(val, O_APPEND, "O_APPEND");
+    test(val, O_NONBLOCK, "O_NONBLOCK");
+    test(val, O_SYNC, "O_SYNC");
+    test(val, O_ASYNC, "O_ASYNC");
+    test(val, O_NOFOLLOW, "O_NOFOLLOW");
+    test(val, O_CLOEXEC, "O_CLOEXEC");
+    test(val, O_NOATIME, "O_NOATIME");
+    test(val, O_PATH, "O_PATH");
+    test(val, O_DSYNC, "O_DSYNC");
+    test(val, O_TMPFILE, "O_TMPFILE");
 
     printf("flags left = %o\n", val);
 }
