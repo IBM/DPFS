@@ -50,8 +50,8 @@ The steps to setup the DPU:
 * Download MLNX OFED v23.04-1.1.3.0 (latest that we tested) on DPU, and add it as an apt repository (see [these docs](https://docs.nvidia.com/networking/display/MLNXOFEDv23041130/Installing+MLNX_OFED)).
 * Only install `mlnx-ofed-kernel-only` using apt.
 * Clone the Linux source and checkout to v6.2 (the latest stable tag).
-* Copy the /boot/config file of the most recent kernel to linux/.config, and enable all MLX drivers, and other drivers you might want (e.g. Ceph)
-* Compile Linux using `make bindeb-pkg -j 7` and install the image and headers using dpkg.
+* Copy the /boot/config file of the most recent kernel to linux/.config, and enable all MLX drivers, and other drivers you might want (e.g. Ceph). The config we used for the thesis experiments can be found in `linux_patches/`.
+* Compile Linux using `make bindeb-pkg -j 7` and install the image, headers and libc using dpkg.
 * Reboot the DPU and confirm via `ip addr` that the ovs bridges are all there.
 * Flash the prototype firmware using `mlxburn`
 
