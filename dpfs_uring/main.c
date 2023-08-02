@@ -106,5 +106,5 @@ int main(int argc, char **argv)
     printf("dpfs_uring starting up!\n");
     printf("Mirroring %s\n", rp);
 
-    fuser_main(false, rp, metadata_timeout.u.d, directio_mode.u.i, conf_path, cq_polling.u.b, cq_polling_nthreads.u.i, false);
+    fuser_main(rp, metadata_timeout.u.d, directio_mode.u.i, conf_path, cq_polling.u.b, cq_polling_nthreads.u.i, false);
 }

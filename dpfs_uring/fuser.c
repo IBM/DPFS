@@ -278,13 +278,12 @@ static void *fuser_io_poll_thread(void *arg) {
 }
 
 // TODO proper error handling
-int fuser_main(bool debug, char *source, double metadata_timeout, enum fuser_directio_mode directio_mode,
+int fuser_main(char *source, double metadata_timeout, enum fuser_directio_mode directio_mode,
         const char *conf_path, bool cq_polling, uint16_t cq_polling_nthreads, bool sq_polling) {
     struct fuser *f = calloc(1, sizeof(struct fuser));
     if (f == NULL)
         err(1, "ERROR: Could not allocate memory for struct fuser");
 
-    f->debug = debug;
     f->source = strdup(source);
     f->timeout = metadata_timeout;
     f->directio_mode = directio_mode;

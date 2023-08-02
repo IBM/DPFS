@@ -78,7 +78,6 @@ struct fuser {
     struct inode root;
     double timeout;
     enum fuser_directio_mode directio_mode;
-    bool debug;
     char *source;
     // size_t blocksize;
     dev_t src_dev; // gets set to the dev of the source
@@ -100,7 +99,7 @@ struct fuser {
 struct inode *ino_to_inodeptr(struct fuser *, fuse_ino_t);
 int ino_to_fd(struct fuser *, fuse_ino_t);
 
-int fuser_main(bool debug, char *source, double metadata_timeout,
+int fuser_main(char *source, double metadata_timeout,
                enum fuser_directio_mode directio_mode, const char *conf_path, bool cq_polling,
                uint16_t cq_polling_nthreads, bool sq_polling);
 

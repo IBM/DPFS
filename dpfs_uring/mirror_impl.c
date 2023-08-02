@@ -80,19 +80,24 @@ static void forget_one(struct fuser *f, fuse_ino_t ino, uint64_t n)
     }
     i->nlookup -= n;
 
-    if (f->debug)
-        printf("DEBUG: %s: inode %ld count %ld\n", __func__, i->src_ino, i->nlookup);
+#ifdef DEBUG_ENABLED
+    printf("DEBUG: %s: inode %ld count %ld\n", __func__, i->src_ino, i->nlookup);
+#endif
 
     if (!i->nlookup) {
-        if (f->debug)
-            printf("DEBUG: forget: cleaning up inode %ld\n", i->src_ino);
+#ifdef DEBUG_ENABLED
+        printf("DEBUG: forget: cleaning up inode %ld\n", i->src_ino);
+#endif
 
         pthread_mutex_lock(&f->m);
         pthread_mutex_unlock(&i->m);
         inode_table_erase(f->inodes, i->src_ino);
         pthread_mutex_unlock(&f->m);
-    } else if (f->debug)
+    } else {
+#ifdef DEBUG_ENABLED
         printf("DEBUG: forget: inode %ld lookup count now %ld\n", i->src_ino, i->nlookup);
+#endif
+    }
 
     if (i->nlookup)
         pthread_mutex_unlock(&i->m);
@@ -225,8 +230,6 @@ int fuser_mirror_getattr(struct fuse_session *se, void *user_data,
 
 static int do_lookup(struct fuser *f, fuse_ino_t parent, const char *name,
                      struct fuse_entry_param *e) {
-    if (f->debug)
-        printf("DEBUG: lookup(): name=%s, parent=%ld\n", name, parent);
     memset(e, 0, sizeof(*e));
     e->attr_timeout = f->timeout;
     e->entry_timeout = f->timeout;
@@ -239,8 +242,9 @@ static int do_lookup(struct fuser *f, fuse_ino_t parent, const char *name,
     if (res == -1) {
         int saveerr = errno;
         close(newfd);
-        if (f->debug)
-            printf("DEBUG: lookup(): fstatat failed\n");
+#ifdef DEBUG_ENABLED
+        printf("DEBUG: lookup(): fstatat failed\n");
+#endif
         return saveerr;
     }
 
@@ -262,20 +266,23 @@ static int do_lookup(struct fuser *f, fuse_ino_t parent, const char *name,
 
     // found unlinked inode, unlinking happens in the fuse unlink opcode, duhhh sherlock
     if (i->fd == -ENOENT) {
-        if (f->debug)
-            printf("DEBUG: lookup(): inode %ld recycled; generation=%d\n", e->attr.st_ino, i->generation);
+#ifdef DEBUG_ENABLED
+        printf("DEBUG: lookup(): inode %ld recycled; generation=%d\n", e->attr.st_ino, i->generation);
+#endif
     /* fallthrough to new inode but keep existing inode.nlookup */
     }
 
     if (i->fd > 0) { // found existing inode
         pthread_mutex_unlock(&f->m);
-        if (f->debug)
-            printf("DEBUG: lookup(): inode %ld (userspace) already known; fd = %d\n", e->attr.st_ino, i->fd);
+#ifdef DEBUG_ENABLED
+        printf("DEBUG: lookup(): inode %ld (userspace) already known; fd = %d\n", e->attr.st_ino, i->fd);
+#endif
         pthread_mutex_lock(&i->m);
 
         i->nlookup++;
-        if (f->debug)
-            printf("DEBUG:%s:%d inode %ld count %ld\n", __func__, __LINE__, i->src_ino, i->nlookup);
+#ifdef DEBUG_ENABLED
+        printf("DEBUG:%s:%d inode %ld count %ld\n", __func__, __LINE__, i->src_ino, i->nlookup);
+#endif
 
         close(newfd);
         pthread_mutex_unlock(&i->m);
@@ -289,15 +296,17 @@ static int do_lookup(struct fuser *f, fuse_ino_t parent, const char *name,
         i->src_dev = e->attr.st_dev;
 
         i->nlookup++;
-        if (f->debug)
-            printf("DEBUG:%s:%d inode %ld count %ld\n", __func__, __LINE__, i->src_ino, i->nlookup);
+#ifdef DEBUG_ENABLED
+        printf("DEBUG:%s:%d inode %ld count %ld\n", __func__, __LINE__, i->src_ino, i->nlookup);
+#endif
 
         i->fd = newfd;
         pthread_mutex_unlock(&f->m);
         pthread_mutex_unlock(&i->m);
 
-        if (f->debug)
-            printf("DEBUG: lookup(): created userspace inode %ld; fd = %d\n", e->attr.st_ino, i->fd);
+#ifdef DEBUG_ENABLED
+        printf("DEBUG: lookup(): created userspace inode %ld; fd = %d\n", e->attr.st_ino, i->fd);
+#endif
     }
 
     return 0;
@@ -492,12 +501,14 @@ int fuser_mirror_readdir(struct fuse_session *se, void *user_data,
     uint32_t rem = in_read->size; // remaining bytes to read from dir (user requested)
     int err = 0, count = 0; // count = dirents read
 
-    if (f->debug)
-        printf("DEBUG: readdir(): started with offset %ld\n", off);
+#ifdef DEBUG_ENABLED
+    printf("DEBUG: readdir(): started with offset %ld\n", off);
+#endif
 
     if (off != d->offset) {
-        if (f->debug)
-            printf("DEBUG: readdir(): seeking to %ld\n", off);
+#ifdef DEBUG_ENABLED
+        printf("DEBUG: readdir(): seeking to %ld\n", off);
+#endif
         seekdir(d->dp, off);
         d->offset = off;
     }
@@ -508,8 +519,9 @@ int fuser_mirror_readdir(struct fuse_session *se, void *user_data,
         if (!entry) {
             if(errno) {
                 err = errno;
-                if (f->debug)
-                    warn("DEBUG: readdir(): readdir failed with");
+#ifdef DEBUG_ENABLED
+                warn("DEBUG: readdir(): readdir failed with");
+#endif
                 goto error;
             }
             break; // End of stream
@@ -527,8 +539,9 @@ int fuser_mirror_readdir(struct fuse_session *se, void *user_data,
             written = fuse_add_direntry_plus(&read_iov, entry->d_name, &e, entry->d_off);
 
             if (written == 0) {
-                if (f->debug)
-                    printf("DEBUG: readdir(): buffer full, returning data.\n");
+#ifdef DEBUG_ENABLED
+                printf("DEBUG: readdir(): buffer full, returning data.\n");
+#endif
                 forget_one(f, e.ino, 1);
                 break;
             }
@@ -538,16 +551,18 @@ int fuser_mirror_readdir(struct fuse_session *se, void *user_data,
             written = fuse_add_direntry(&read_iov, entry->d_name, &e.attr, entry->d_off);
 
             if (written == 0) {
-                if (f->debug)
-                    printf("DEBUG: readdir(): buffer full, returning data.\n");
+#ifdef DEBUG_ENABLED
+                printf("DEBUG: readdir(): buffer full, returning data.\n");
+#endif
                 break;
             }
         }
 
         rem -= written;
         count++;
-        if (f->debug)
-            printf("DEBUG: readdir(): added to buffer: %s, ino %ld, offset %ld\n",
+#ifdef DEBUG_ENABLED
+        printf("DEBUG: readdir(): added to buffer: %s, ino %ld, offset %ld\n",
+#endif
                 entry->d_name, e.attr.st_ino, entry->d_off);
     }
     err = 0;
@@ -564,8 +579,9 @@ error:
         out_hdr->error = -err;
         return 0;
     } else {
-        if (f->debug)
-            printf("DEBUG: readdir(): returning %d entries, curr offset %ld\n", count, d->offset);
+#ifdef DEBUG_ENABLED
+        printf("DEBUG: readdir(): returning %d entries, curr offset %ld\n", count, d->offset);
+#endif
         out_hdr->len += in_read->size - rem;
         return 0;
     }
@@ -1347,8 +1363,9 @@ int fuser_mirror_unlink(struct fuse_session *se, void *user_data,
             }
             pthread_mutex_lock(&i->m);
             if (i->fd > 0 && !i->nopen) {
-                if (f->debug)
-                    fprintf(stderr, "DEBUG: unlink: release inode %ld; fd=%d\n", e.attr.st_ino, i->fd);
+#ifdef DEBUG_ENABLED
+                fprintf(stderr, "DEBUG: unlink: release inode %ld; fd=%d\n", e.attr.st_ino, i->fd);
+#endif
                 pthread_mutex_lock(&f->m);
                 close(i->fd);
                 i->fd = -ENOENT;
