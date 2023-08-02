@@ -1074,6 +1074,9 @@ static void fuser_mirror_write_cb(struct fuser_cb_data *cb_data, struct io_uring
         if (cqe->res == -EINTR) {
             // The write was interrupted for some reason on the backend,so we indicate to the host
             // that no bytes were written, which should result in the host retrying the write.
+#ifdef DEBUG_ENABLED
+            fprintf(stderr, "WARNING: io_uring write returned EINTR, sending OK with 0 bytes written to host.\n");
+#endif
             cqe->res = 0;
         } else {
             cb_data->out_hdr->error = cqe->res;
