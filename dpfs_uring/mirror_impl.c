@@ -562,8 +562,8 @@ int fuser_mirror_readdir(struct fuse_session *se, void *user_data,
         count++;
 #ifdef DEBUG_ENABLED
         printf("DEBUG: readdir(): added to buffer: %s, ino %ld, offset %ld\n",
-#endif
                 entry->d_name, e.attr.st_ino, entry->d_off);
+#endif
     }
     err = 0;
 error:
