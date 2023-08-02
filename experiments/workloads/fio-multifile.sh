@@ -19,8 +19,8 @@ FIO="fio $FIO_DEFAULTS $FIO_CUSTOM_OPTIONS --filename_format ${MNT}/fio-$SIZE-\$
   --iodepth=$QD --numjobs=$P --name=\"${RW}_${BS}_${QD}_${P}\""
 
 if [[ $P == 1 ]]; then
-  numactl -m $NUMA_NODE -C $NUMA_CORE $FIO
+  sudo numactl -m $NUMA_NODE -C $NUMA_CORE $FIO
 else
-  numactl -m $NUMA_NODE -N $NUMA_NODE $FIO
+  sudo numactl -m $NUMA_NODE -N $NUMA_NODE $FIO
 fi
   
