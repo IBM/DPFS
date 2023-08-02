@@ -6,10 +6,9 @@ DPFS provides a hardware abstraction layer, FUSE API implementation and several 
 > Warning: DPFS is currently a research project, its code is therefore not battle-tested, nor very clean. Use at your discretion.
 
 ## Research Publications
-* [ACM SYSTOR '23 conference (preprint)](DPFS_systor23_preprint.pdf)!
+* [ACM SYSTOR '23 conference](https://dl.acm.org/doi/10.1145/3579370.3594769)!
 * OpenFabrics Alliance Workshop '23 presentation ([slidedeck](https://www.openfabrics.org/wp-content/uploads/2023-workshop/2023-workshop-presentations/day-3/303_PGootzen.pdf), [presentation recording](https://youtu.be/2cTxELxCG_g))
-* CHEOPS Workshop at EuroSys '23 presentation (slides coming soon)
-
+* CHEOPS Workshop at EuroSys '23 presentation
 
 # Design and implementation
 ![DPU virtio-fs architecture diagram](arch.png "DPFS architecture diagram")
