@@ -49,7 +49,9 @@ struct dpfs_hal_params {
 };
 
 enum dpfs_hal_completion_status {
+    // Send the reply to the host, also when an error needs to be indicated to host
     DPFS_HAL_COMPLETION_SUCCES = 0,
+    // Fully abort the request and don't send a reply, this should probably not be used!
     DPFS_HAL_COMPLETION_ERROR
 };
 
@@ -74,6 +76,7 @@ int dpfs_hal_poll_io(struct dpfs_hal *hal, uint16_t device);
 // Poll on the management IO
 void dpfs_hal_poll_mmio(struct dpfs_hal *hal, uint16_t device);
 void dpfs_hal_destroy(struct dpfs_hal *hal);
+// Calling this twice for a single request is undefined behavior
 int dpfs_hal_async_complete(void *completion_context, enum dpfs_hal_completion_status);
 
 #ifdef __cplusplus

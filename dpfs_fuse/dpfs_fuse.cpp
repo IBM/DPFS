@@ -1799,8 +1799,6 @@ static int fuse_unknown(struct dpfs_fuse *fuse_ll,
     out_hdr->len = sizeof(struct fuse_out_header);
     out_hdr->error = -ENOSYS;
 
-    printf("dpfs_fuse: fuse OP(%s=%u) called, but not implemented\n", fuse_ll_op_name(in_hdr->opcode), in_hdr->opcode);
-
     return 0;
 }
 

@@ -58,7 +58,7 @@ static void fuser_mirror_generic_cb(struct fuser_cb_data *cb_data, struct io_uri
     if (cqe->res < 0) {
         cb_data->out_hdr->error = cqe->res;
 #ifdef DEBUG_ENABLED
-        fprintf(stderr, "FUSE OP(%d) request ERROR=%d, %s\n", cb_data->in_hdr->opcode,
+        fprintf(stderr, "FUSE OP(%d) request ERROR returned by io_uring=%d, %s\n", cb_data->in_hdr->opcode,
             cb_data->out_hdr->error, strerror(-cb_data->out_hdr->error));
 #endif
         dpfs_hal_async_complete(cb_data->completion_context, DPFS_HAL_COMPLETION_SUCCES);
@@ -163,7 +163,7 @@ static void fuser_mirror_getattr_cb(struct fuser_cb_data *cb_data, struct io_uri
     if (cqe->res < 0) {
         cb_data->out_hdr->error = cqe->res;
 #ifdef DEBUG_ENABLED
-        fprintf(stderr, "FUSE OP(%d) request ERROR=%d, %s\n", cb_data->in_hdr->opcode,
+        fprintf(stderr, "FUSE OP(%d) request ERROR returned by io_uring=%d, %s\n", cb_data->in_hdr->opcode,
             cb_data->out_hdr->error, strerror(-cb_data->out_hdr->error));
 #endif
         dpfs_hal_async_complete(cb_data->completion_context, DPFS_HAL_COMPLETION_SUCCES);
@@ -579,7 +579,7 @@ void fuser_mirror_open_cb(struct fuser_cb_data *cb_data, struct io_uring_cqe *cq
         if (cqe->res == -ENFILE || cqe->res == -EMFILE)
             fprintf(stderr, "ERROR: Reached maximum number of file descriptors.");
 #ifdef DEBUG_ENABLED
-        fprintf(stderr, "FUSE OP(%d) request ERROR=%d, %s\n", cb_data->in_hdr->opcode,
+        fprintf(stderr, "FUSE OP(%d) request ERROR returned by io_uring=%d, %s\n", cb_data->in_hdr->opcode,
             cb_data->out_hdr->error, strerror(-cb_data->out_hdr->error));
 #endif
         dpfs_hal_async_complete(cb_data->completion_context, DPFS_HAL_COMPLETION_SUCCES);
@@ -797,7 +797,7 @@ void fuser_mirror_create_cb(struct fuser_cb_data *cb_data, struct io_uring_cqe *
         if (cqe->res == -ENFILE || cqe->res == -EMFILE)
             fprintf(stderr, "ERROR: Reached maximum number of file descriptors.");
 #ifdef DEBUG_ENABLED
-        fprintf(stderr, "FUSE OP(%d) request ERROR=%d, %s\n", cb_data->in_hdr->opcode,
+        fprintf(stderr, "FUSE OP(%d) request ERROR returned by io_uring=%d, %s\n", cb_data->in_hdr->opcode,
             cb_data->out_hdr->error, strerror(-cb_data->out_hdr->error));
 #endif
         dpfs_hal_async_complete(cb_data->completion_context, DPFS_HAL_COMPLETION_SUCCES);
@@ -1028,7 +1028,7 @@ void fuser_mirror_read_cb(struct fuser_cb_data *cb_data, struct io_uring_cqe *cq
     if (cqe->res < 0) {
         cb_data->out_hdr->error = cqe->res;
 #ifdef DEBUG_ENABLED
-        fprintf(stderr, "FUSE OP(%d) request ERROR=%d, %s\n", cb_data->in_hdr->opcode,
+        fprintf(stderr, "FUSE OP(%d) request ERROR returned by io_uring=%d, %s\n", cb_data->in_hdr->opcode,
             cb_data->out_hdr->error, strerror(-cb_data->out_hdr->error));
 #endif
         dpfs_hal_async_complete(cb_data->completion_context, DPFS_HAL_COMPLETION_SUCCES);
@@ -1073,7 +1073,7 @@ static void fuser_mirror_write_cb(struct fuser_cb_data *cb_data, struct io_uring
     if (cqe->res < 0) {
         cb_data->out_hdr->error = cqe->res;
 #ifdef DEBUG_ENABLED
-        fprintf(stderr, "FUSE OP(%d) request ERROR=%d, %s\n", cb_data->in_hdr->opcode,
+        fprintf(stderr, "FUSE OP(%d) request ERROR returned by io_uring=%d, %s\n", cb_data->in_hdr->opcode,
             cb_data->out_hdr->error, strerror(-cb_data->out_hdr->error));
 #endif
         dpfs_hal_async_complete(cb_data->completion_context, DPFS_HAL_COMPLETION_SUCCES);
