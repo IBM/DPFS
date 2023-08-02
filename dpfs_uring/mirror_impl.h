@@ -45,8 +45,6 @@ struct fuser_cb_data {
             struct fuse_open_out *out_open;
         } create;
         struct {
-            struct fuse_entry_param e;
-            struct inode *parent;
             const char *in_name;
             struct fuse_entry_out *out_entry;
         } mk;

@@ -1162,13 +1162,14 @@ static void fuser_mirror_mk_cb(struct fuser_cb_data *cb_data, struct io_uring_cq
     if (res < 0)
         goto out_err;
 
-    res = do_lookup(cb_data->f, cb_data->in_hdr->nodeid, cb_data->mk.in_name, &cb_data->mk.e);
+    struct fuse_entry_param e;
+    res = do_lookup(cb_data->f, cb_data->in_hdr->nodeid, cb_data->mk.in_name, &e);
     if (res < 0) {
         res = -res;
         goto out_err;
     }
 
-    fuse_ll_reply_entry(cb_data->se, cb_data->out_hdr, cb_data->mk.out_entry, &cb_data->mk.e);
+    fuse_ll_reply_entry(cb_data->se, cb_data->out_hdr, cb_data->mk.out_entry, &e);
     dpfs_hal_async_complete(cb_data->completion_context, DPFS_HAL_COMPLETION_SUCCES);
 
     return;
@@ -1194,6 +1195,8 @@ int fuser_mirror_mkdir(struct fuse_session *se, void *user_data,
     struct inode *parent = ino_to_inodeptr(f, in_hdr->nodeid);
 
     CB_DATA(fuser_mirror_mk_cb);
+    cb_data->mk.in_name = in_name;
+    cb_data->mk.out_entry = out_entry;
 
     struct io_uring_sqe *sqe = io_uring_get_sqe(&f->rings[thread_id]);
     if (!sqe) {
