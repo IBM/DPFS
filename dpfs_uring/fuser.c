@@ -20,6 +20,7 @@
 #include <pthread.h>
 #include <fcntl.h>
 
+#include "config.h"
 #include "mirror_impl.h"
 #include "fuser.h"
 
@@ -49,6 +50,7 @@ void inode_table_clear(struct inode_table *t) {
         while (next) {
             struct inode *i = next;
             next = i->next;
+#ifdef DEBUG_ENABLED
             fprintf(stderr, "WARNING: a inode was not released by the host before destroying the file system");
 
             if (i->fd != -1) {
@@ -56,6 +58,7 @@ void inode_table_clear(struct inode_table *t) {
                 close(i->fd);
             }
             fprintf(stderr, "\n");
+#endif
             free(i);
         }
         t->array[i] = NULL;
