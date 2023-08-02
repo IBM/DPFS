@@ -1071,13 +1071,19 @@ int fuser_mirror_read(struct fuse_session *se, void *user_data,
 static void fuser_mirror_write_cb(struct fuser_cb_data *cb_data, struct io_uring_cqe *cqe)
 {
     if (cqe->res < 0) {
-        cb_data->out_hdr->error = cqe->res;
+        if (cqe->res == -EINTR) {
+            // The write was interrupted for some reason on the backend,so we indicate to the host
+            // that no bytes were written, which should result in the host retrying the write.
+            cqe->res = 0;
+        } else {
+            cb_data->out_hdr->error = cqe->res;
 #ifdef DEBUG_ENABLED
-        fprintf(stderr, "FUSE OP(%d) request ERROR returned by io_uring=%d, %s\n", cb_data->in_hdr->opcode,
-            cb_data->out_hdr->error, strerror(-cb_data->out_hdr->error));
+            fprintf(stderr, "FUSE OP(%d) request ERROR returned by io_uring=%d, %s\n", cb_data->in_hdr->opcode,
+                cb_data->out_hdr->error, strerror(-cb_data->out_hdr->error));
 #endif
-        dpfs_hal_async_complete(cb_data->completion_context, DPFS_HAL_COMPLETION_SUCCES);
-        return;
+            dpfs_hal_async_complete(cb_data->completion_context, DPFS_HAL_COMPLETION_SUCCES);
+            return;
+        }
     }
 
     cb_data->write.out_write->size = cqe->res;

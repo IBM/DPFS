@@ -205,16 +205,8 @@ static void *fuser_io_blocking_thread(void *arg) {
             } // else process the event
 
             struct fuser_cb_data *cb_data = io_uring_cqe_get_data(cqe);
-            // Tell the host to just try again if io_uring wasn't happy while handling the request
-            // We could also retry ourselves here, but that would result in some ugly code with all the different
-            // request types we use for io_uring and a lock around the submission queue would be needed.
-            if (cqe->res == -EINTR) {
-                fprintf(stderr, "WARNING: %u operation returned EINTR, sending EAGAIN to host!\n", cb_data->in_hdr->opcode);
-                cb_data->out_hdr->error = -EAGAIN;
-                dpfs_hal_async_complete(cb_data->completion_context, DPFS_HAL_COMPLETION_SUCCES);
-            } else {
-                cb_data->cb(cb_data, cqe);
-            }
+
+            cb_data->cb(cb_data, cqe);
 
             io_uring_cqe_seen(&f->rings[td->thread_id], cqe);
             mpool_free(f->cb_data_pools[cb_data->thread_id], cb_data);
