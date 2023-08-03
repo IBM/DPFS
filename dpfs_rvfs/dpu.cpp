@@ -65,12 +65,12 @@ void response_func(void *context, void *tag)
     }
 
 #ifdef DEBUG_ENABLED
-    printf("RECEIVE: eRPC reply for msg %p\n", tag);
     struct fuse_in_header *in_hdr = (struct fuse_in_header *) msg->in_iov[0].iov_base;
     struct fuse_out_header *out_hdr = (struct fuse_out_header *) msg->out_iov[0].iov_base;
+    printf("RECEIVE: FUSE OP(%u) request reply for id=%lu in eRPC msg %p\n", in_hdr->opcode, in_hdr->unique, tag);
     if (out_hdr->error != 0)
-        fprintf(stderr, "FUSE OP(%u) request ERROR=%d, %s\n",
-                in_hdr->opcode, out_hdr->error, strerror(-out_hdr->error));
+        fprintf(stderr, "FUSE OP(%u) request with id=%lu ERROR=%d, %s\n",
+                in_hdr->opcode, in_hdr->unique, out_hdr->error, strerror(-out_hdr->error));
 #endif
 
     dpfs_hal_async_complete(msg->completion_context, DPFS_HAL_COMPLETION_SUCCES);
@@ -101,8 +101,8 @@ static int fuse_handler(void *user_data,
 
 #ifdef DEBUG_ENABLED
     struct fuse_in_header *in_hdr = (struct fuse_in_header *) in_iov[0].iov_base;
-    printf("SEND: FUSE OP(%u) request with %d input iovecs and %d output iovecs. Sending in msg %p\n",
-            in_hdr->opcode, in_iovcnt, out_iovcnt, msg);
+    printf("SEND: FUSE OP(%u) request with id=%lu, %d input iovecs and %d output iovecs. Sending in eRPC msg %p\n",
+            in_hdr->opcode, in_hdr->unique, in_iovcnt, out_iovcnt, msg);
 #endif
 
     *((int *) req_buf) = in_iovcnt;

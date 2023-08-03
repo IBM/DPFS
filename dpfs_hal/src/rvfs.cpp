@@ -237,7 +237,7 @@ int dpfs_hal_async_complete(void *completion_context, enum dpfs_hal_completion_s
 #ifdef DEBUG_ENABLED
     struct fuse_in_header *in_hdr = (struct fuse_in_header *) msg->iov[0].iov_base;
     struct fuse_out_header *out_hdr = (struct fuse_out_header *) msg->iov[msg->out_iovcnt].iov_base;
-    printf("DPFS_HAL_RVFS %s: replying to FUSE OP(%u) request id=%u, eRPC msg=%p\n", __func__,
+    printf("DPFS_HAL_RVFS %s: replying to FUSE OP(%u) request id=%lu, eRPC msg=%p\n", __func__,
             in_hdr->opcode, in_hdr->unique, msg);
 #endif
 
