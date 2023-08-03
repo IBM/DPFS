@@ -64,7 +64,8 @@ struct dpfs_hal {
     dpfs_hal(dpfs_hal_ops o, void *ud) :
         ops(o), user_data(ud), avail() {}
 };
-    
+
+// When we receive a FUSE request from the DPU, aka the virtio-fs device
 static void req_handler(ReqHandle *reqh, void *context)
 {
     dpfs_hal *hal = static_cast<dpfs_hal *>(context);
@@ -234,7 +235,10 @@ int dpfs_hal_async_complete(void *completion_context, enum dpfs_hal_completion_s
     dpfs_hal *hal = msg->hal;
 
 #ifdef DEBUG_ENABLED
-    printf("DPFS_HAL_RVFS %s: replying to msg %p\n", __func__, msg);
+    struct fuse_in_header *in_hdr = (struct fuse_in_header *) msg->iov[0].iov_base;
+    struct fuse_out_header *out_hdr = (struct fuse_out_header *) msg->iov[msg->out_iovcnt].iov_base;
+    printf("DPFS_HAL_RVFS %s: replying to FUSE OP(%u) request id=%u, eRPC msg=%p\n", __func__,
+            in_hdr->opcode, in_hdr->unique, msg);
 #endif
 
     if (!hal->nexus->tls_registry_.is_init()) {

@@ -208,6 +208,9 @@ static void *fuser_io_blocking_thread(void *arg) {
             } // else process the event
 
             struct fuser_cb_data *cb_data = io_uring_cqe_get_data(cqe);
+#ifdef DEBUG_ENABLED
+            printf("Uring: got cqe for FUSE OP(%u) with id=%u\n", cb_data->in_hdr->opcode, cb_data->in_hdr->unique);
+#endif
 
             cb_data->cb(cb_data, cqe);
 
@@ -267,6 +270,9 @@ static void *fuser_io_poll_thread(void *arg) {
             } // else process the event
 
             struct fuser_cb_data *cb_data = io_uring_cqe_get_data(cqe);
+#ifdef DEBUG_ENABLED
+            printf("Uring: got cqe for FUSE OP(%u) with id=%u\n", cb_data->in_hdr->opcode, cb_data->in_hdr->unique);
+#endif
 
             cb_data->cb(cb_data, cqe);
 
