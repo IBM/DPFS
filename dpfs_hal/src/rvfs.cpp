@@ -12,6 +12,7 @@
 #include <iostream>
 #include <memory>
 #include <linux/fuse.h>
+#include <boost/lockfree/spsc_queue.hpp>
 #include "hal.h"
 #include "rvfs.h"
 #include "rpc.h"
@@ -52,9 +53,14 @@ struct rpc_msg {
     {}
 };
 
+// We support max virtio queue depth of 512, and min req size is 4 elements, so 128 requests, this is really large
+#define QUEUE_SIZE 512
+
 struct dpfs_hal {
     dpfs_hal_ops ops;
     void *user_data;
+
+    boost::lockfree::spsc_queue<rpc_msg *, boost::lockfree::capacity<QUEUE_SIZE>> avail;
 
     // eRPC
     std::vector<rpc_msg *> avail;
@@ -62,7 +68,12 @@ struct dpfs_hal {
     std::unique_ptr<Rpc<CTransport>> rpc;
 
     dpfs_hal(dpfs_hal_ops o, void *ud) :
-        ops(o), user_data(ud), avail() {}
+        ops(o), user_data(ud), avail() 
+    {
+        for (int i = 0; i < QUEUE_SIZE; i++) {
+            avail.push(new rpc_msg(this));
+        }
+    }
 };
 
 // When we receive a FUSE request from the DPU, aka the virtio-fs device
@@ -73,11 +84,10 @@ static void req_handler(ReqHandle *reqh, void *context)
     // The queue_depth of the virtio-fs device is static, so this wont infinitely allocate memory
     // Just be sure to warm up the system before evaulating performance
     rpc_msg *msg;
-    if (hal->avail.empty()) {
-        msg = new rpc_msg(hal);
-    } else {
-        msg = hal->avail.back();
-        hal->avail.pop_back();
+    if (!hal->avail.pop(msg)) {
+        fprintf(stderr, "ERROR in %s: There were no free message from avail. This means that the statically configured queue size is not working!\n"
+                "This will crash soon.\n", __func__);
+        return;
     }
 
 #ifdef DEBUG_ENABLED
@@ -99,6 +109,7 @@ static void req_handler(ReqHandle *reqh, void *context)
         req_buf += sizeof(iov_len);
 
         // Directly map into the NIC buffer for zero copy
+        // (zero copy-ish, as eRPC also does a copy and to the backend we are probably not zero copy)
         msg->iov[i].iov_base = req_buf;
         msg->iov[i].iov_len = iov_len;
 
@@ -234,9 +245,9 @@ int dpfs_hal_async_complete(void *completion_context, enum dpfs_hal_completion_s
     rpc_msg *msg = (rpc_msg *) completion_context;
     dpfs_hal *hal = msg->hal;
 
+    struct fuse_out_header *out_hdr = (struct fuse_out_header *) msg->iov[msg->out_iovcnt].iov_base;
 #ifdef DEBUG_ENABLED
     struct fuse_in_header *in_hdr = (struct fuse_in_header *) msg->iov[0].iov_base;
-    struct fuse_out_header *out_hdr = (struct fuse_out_header *) msg->iov[msg->out_iovcnt].iov_base;
     printf("DPFS_HAL_RVFS %s: replying to FUSE OP(%u) request id=%lu, eRPC msg=%p\n", __func__,
             in_hdr->opcode, in_hdr->unique, msg);
 #endif
@@ -245,11 +256,10 @@ int dpfs_hal_async_complete(void *completion_context, enum dpfs_hal_completion_s
         hal->nexus->tls_registry_.init();
     }
 
-    struct fuse_out_header *fuse_out_header = static_cast<struct fuse_out_header *>(msg->iov[msg->in_iovcnt].iov_base);
-    Rpc<CTransport>::resize_msg_buffer(&msg->reqh->pre_resp_msgbuf_, fuse_out_header->len);
+    Rpc<CTransport>::resize_msg_buffer(&msg->reqh->pre_resp_msgbuf_, out_hdr->len);
 
     hal->rpc->enqueue_response(msg->reqh, &msg->reqh->pre_resp_msgbuf_);
-    hal->avail.push_back(msg);
+    hal->avail.push(msg);
     return 0;
 }
 
