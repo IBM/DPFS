@@ -31,6 +31,9 @@ using namespace erpc;
 struct rpc_msg {
     MsgBuffer req;
     MsgBuffer resp;
+#ifdef DEBUG_ENABLED
+    struct iovec *in_iov;
+#endif
     // Virtio-fs req output stuff
     struct iovec *out_iov;
     int out_iovcnt;
@@ -52,7 +55,6 @@ struct rpc_state {
 
 void response_func(void *context, void *tag)
 {
-
     rpc_state *state = (rpc_state *) context;
     rpc_msg *msg = (rpc_msg *) tag;
     uint8_t *resp_buf = msg->resp.buf_;
@@ -64,10 +66,10 @@ void response_func(void *context, void *tag)
 
 #ifdef DEBUG_ENABLED
     printf("RECEIVE: eRPC reply for msg %p\n", tag);
-    struct fuse_in_header *out_hdr = (struct fuse_in_header *) msg->in_iov[0].iov_base;
+    struct fuse_in_header *in_hdr = (struct fuse_in_header *) msg->in_iov[0].iov_base;
     struct fuse_out_header *out_hdr = (struct fuse_out_header *) msg->out_iov[0].iov_base;
     if (out_hdr->error != 0)
-        fprintf(stderr, "FUSE OP(%s=%u) request ERROR=%d, %s\n", fuse_ll_op_name(in_hdr->opcode),
+        fprintf(stderr, "FUSE OP(%u) request ERROR=%d, %s\n",
                 in_hdr->opcode, out_hdr->error, strerror(-out_hdr->error));
 #endif
 
@@ -98,8 +100,9 @@ static int fuse_handler(void *user_data,
     uint8_t *req_buf = msg->req.buf_;
 
 #ifdef DEBUG_ENABLED
-    printf("SEND: FUSE OP(%s=%u) request with %d input iovecs and %d output iovecs. Sending in msg %p\n",
-            fuse_ll_op_name(in_hdr->opcode), in_hdr->opcode, in_iovcnt, out_iovcnt, msg);
+    struct fuse_in_header *in_hdr = (struct fuse_in_header *) in_iov[0].iov_base;
+    printf("SEND: FUSE OP(%u) request with %d input iovecs and %d output iovecs. Sending in msg %p\n",
+            in_hdr->opcode, in_iovcnt, out_iovcnt, msg);
 #endif
 
     *((int *) req_buf) = in_iovcnt;
@@ -128,6 +131,9 @@ static int fuse_handler(void *user_data,
     state->rpc->enqueue_request(state->session_num, DPFS_RVFS_REQTYPE_FUSE, &msg->req, &msg->resp, response_func, (void *) msg, kInvalidBgETid);
 
     msg->completion_context = completion_context;
+#ifdef DEBUG_ENABLED
+    msg->in_iov = in_iov;
+#endif
     msg->out_iov = out_iov;
     msg->out_iovcnt = out_iovcnt;
 
