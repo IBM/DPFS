@@ -1,4 +1,6 @@
 #!/bin/bash
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+
 ulimit -l unlimited
 # This will report if something goes wrong.
 export XLIO_TRACELEVEL=DETAILS
@@ -16,6 +18,6 @@ export XLIO_MEM_ALLOC_TYPE=0
 # XLIO needs tons of hugepage memory, the number 1750 was determined through trial and error to be the lower limit, if the number is too low the read perform will crash HARD
 # Because we cannot use >64 queue depth anyway, lets just give it a ton of memory
 echo 0 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
-# By default there are two threads: a Virtio polling and NFS sending thread + a NFS polling thread
-# We pin them to core 6 and 7
-LD_PRELOAD=/usr/lib/libxlio.so numactl -C 6,7 ./dpfs_nfs -c $1
+
+sed -i -e "s#queue_depth\s*=\s*\d+#queue_depth = 64#g" $1
+LD_PRELOAD=/usr/lib/libxlio.so $SCRIPT_DIR/dpfs_nfs -c $1

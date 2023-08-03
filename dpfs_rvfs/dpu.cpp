@@ -52,10 +52,7 @@ struct rpc_state {
 
 void response_func(void *context, void *tag)
 {
-#ifdef DEBUG_ENABLED
-    printf("DPFS_RVFS_dpu %s: received eRPC reply for msg %p\n",
-            __func__, tag);
-#endif
+
     rpc_state *state = (rpc_state *) context;
     rpc_msg *msg = (rpc_msg *) tag;
     uint8_t *resp_buf = msg->resp.buf_;
@@ -64,6 +61,15 @@ void response_func(void *context, void *tag)
         memcpy(msg->out_iov[i].iov_base, (void *) resp_buf, msg->out_iov[i].iov_len);
         resp_buf += msg->out_iov[i].iov_len;
     }
+
+#ifdef DEBUG_ENABLED
+    printf("RECEIVE: eRPC reply for msg %p\n", tag);
+    struct fuse_in_header *out_hdr = (struct fuse_in_header *) msg->in_iov[0].iov_base;
+    struct fuse_out_header *out_hdr = (struct fuse_out_header *) msg->out_iov[0].iov_base;
+    if (out_hdr->error != 0)
+        fprintf(stderr, "FUSE OP(%s=%u) request ERROR=%d, %s\n", fuse_ll_op_name(in_hdr->opcode),
+                in_hdr->opcode, out_hdr->error, strerror(-out_hdr->error));
+#endif
 
     dpfs_hal_async_complete(msg->completion_context, DPFS_HAL_COMPLETION_SUCCES);
 
@@ -92,8 +98,8 @@ static int fuse_handler(void *user_data,
     uint8_t *req_buf = msg->req.buf_;
 
 #ifdef DEBUG_ENABLED
-    printf("DPFS_RVFS_dpu %s: FUSE request with %d input iovecs and %d output iovecs. Sending in msg %p\n",
-            __func__, in_iovcnt, out_iovcnt, msg);
+    printf("SEND: FUSE OP(%s=%u) request with %d input iovecs and %d output iovecs. Sending in msg %p\n",
+            fuse_ll_op_name(in_hdr->opcode), in_hdr->opcode, in_iovcnt, out_iovcnt, msg);
 #endif
 
     *((int *) req_buf) = in_iovcnt;

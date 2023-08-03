@@ -382,7 +382,7 @@ int fuser_main(char *source, double metadata_timeout, enum fuser_directio_mode d
     }
 
     printf("The following operations are asynchrounous through io_uring: read, write, fsync");
-#ifdef IORING_METADATA_DISABLED
+#ifndef IORING_METADATA_DISABLED
     printf(", statx, open, create, fallocate, rename, close, unlink, mkdir, symlink");
 #endif
     printf("\n");

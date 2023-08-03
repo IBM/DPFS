@@ -26,7 +26,7 @@ using namespace erpc;
 pthread_key_t dpfs_hal_thread_id_key;
 __attribute__((visibility("default")))
 uint16_t dpfs_hal_thread_id(void) {
-    return (uint16_t) pthread_getspecific(dpfs_hal_thread_id_key);
+    return (uint16_t) (size_t) pthread_getspecific(dpfs_hal_thread_id_key);
 }
 __attribute__((visibility("default")))
 uint16_t dpfs_hal_nthreads(struct dpfs_hal *hal)
@@ -41,9 +41,9 @@ struct rpc_msg {
     // Only filled if the msg is in use, if so it will point to req internally
     ReqHandle *reqh;
 
-    // Based on the max block size of 1MiB (4k pages, so 256 descriptors) and 3 page overhead per request.
+    // Based on the max block size of 1MiB (4k pages, so 256 descriptors) and 4 page overhead per request (in case of the largest request, a write).
     // These will point into the req and resp buffers.
-    iovec iov[256+3];
+    iovec iov[256+4];
     int in_iovcnt;
     int out_iovcnt;
 
