@@ -201,6 +201,12 @@ void unregister_dpfs_device(void *user_data, uint16_t device_id) {
 
 int main(int argc, char **argv)
 {
+#ifdef DPFS_RVFS
+    fprintf(stderr, "You are running the RVFS DPU client on top of the RVFS HAL (meant for the gateway) instead of a real DPU HAL (such as snap)!\n"
+            "This is not supported (actually broken) and doesn't make sense, quiting!\n");
+    return 0;
+#endif
+
     const char *config_path = NULL;
 
     int opt;

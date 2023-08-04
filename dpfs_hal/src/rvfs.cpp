@@ -192,7 +192,7 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params, bool start_mock_th
 
     hal->ops.register_device(hal->user_data, 0);
 
-    std::cout << "DPFS HAL with RVFS frontend online at " << remote_uri << "!" << std::endl;
+    std::cout << "RVFS gateway online at " << remote_uri << "!" << std::endl;
 
     return hal;
 }

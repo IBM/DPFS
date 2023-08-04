@@ -565,7 +565,6 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params, bool start_mock_th
         hal->mock_thread_running = true;
     }
 
-    printf("DPFS HAL with SNAP frontend online!\n");
     printf("The virtio-fs device with tag \"%s\" is running on emulation manager \"%s\" (",
         tag.u.s, emu_manager.u.s);
     printf("PF%u", hal->devices[0].pf_id);
