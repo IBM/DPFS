@@ -66,13 +66,19 @@ void response_func(void *context, void *tag)
     // but the HAL does need to register the completion (e.g. FUSE_FORGET).
     struct fuse_out_header *out_hdr = NULL;
     if (msg->out_iov && msg->out_iovcnt >= 1) {
+        // If there are output iovs, then there must be the out_hdr.
+        memcpy(msg->out_iov[0].iov_base, (void *) resp_buf, msg->out_iov[0].iov_len);
         out_hdr = static_cast<struct fuse_out_header *>(msg->out_iov[0].iov_base);
-        size_t bytes_left = out_hdr->len;
-        size_t i = 0;
-        while (bytes_left < out_hdr->len && i < msg->out_iovcnt) {
+
+        // Now we copy the other iovs to our HAL buffers, making sure not to go overboard.
+        size_t extra_out_iovs_len = out_hdr->len - msg->out_iov[0].iov_len;
+        size_t bytes_left = extra_out_iovs_len;
+        size_t i = 1;
+        while (bytes_left < extra_out_iovs_len && i < msg->out_iovcnt) {
             size_t to_copy = std::min(msg->out_iov[i].iov_len, bytes_left);
             memcpy(msg->out_iov[i].iov_base, (void *) resp_buf, to_copy);
             resp_buf += to_copy;
+            bytes_left -= to_copy;
             i++;
         }
     }
