@@ -13,16 +13,12 @@
 #include <memory>
 #include <linux/fuse.h>
 #include <boost/lockfree/spsc_queue.hpp>
+#include "cpu_latency.h"
 #include "hal.h"
 #include "rvfs.h"
 #include "rpc.h"
 #include "util/tls_registry.h"
 #include "tomlcpp.hpp"
-
-// Each virtio-fs uses at least 3 descriptors (aka queue entries) for each request
-#define VIRTIO_FS_MIN_DESCS 3
-// We support max virtio queue depth of 512, and min req size is 4 elements, so 128 requests, this is really large
-#define QUEUE_SIZE 512
 
 using namespace erpc;
 
@@ -214,9 +210,13 @@ void dpfs_hal_loop(struct dpfs_hal *hal) {
     sigaction(SIGPIPE, &act, 0);
     sigaction(SIGTERM, &act, 0);
 
+    start_low_latency();
+
     while(keep_running) {
         hal->rpc->run_event_loop_once();
     }
+
+    stop_low_latency();
 }
 
 __attribute__((visibility("default")))

@@ -18,15 +18,11 @@
 #include <thread>
 #include <boost/lockfree/spsc_queue.hpp>
 #include "config.h"
+#include "cpu_latency.h"
 #include "rvfs.h"
 #include "dpfs/hal.h"
 #include "rpc.h"
 #include "tomlcpp.hpp"
-
-// Each virtio-fs uses at least 3 descriptors (aka queue entries) for each request
-#define VIRTIO_FS_MIN_DESCS 3
-// We support max virtio queue depth of 512, and min req size is 4 elements, so 128 requests, this is really large
-#define QUEUE_SIZE 512
 
 using namespace erpc;
 
@@ -178,6 +174,7 @@ static volatile uint16_t ndevices;
 void hal_polling(struct dpfs_hal *hal, Nexus *nexus) {
     // We need to register ourself in eRPC so that we can send requests in the fuse_handler
     nexus->tls_registry_.init();
+    start_low_latency();
 
     uint32_t count = 0;
     while(keep_running) {
@@ -190,6 +187,8 @@ void hal_polling(struct dpfs_hal *hal, Nexus *nexus) {
             dpfs_hal_poll_io(hal, i);
         }
     }
+
+    stop_low_latency();
 }
 
 void register_dpfs_device(void *user_data, uint16_t device_id) {
@@ -305,6 +304,8 @@ int main(int argc, char **argv)
         keep_running = 0;
         hal_thread.join();
     } else {
+        start_low_latency();
+
         uint32_t count = 0;
         while(keep_running && state.rpc->is_connected(state.session_num)) {
             for (uint16_t i = 0; i < ndevices; i++) {
@@ -317,6 +318,8 @@ int main(int argc, char **argv)
                 state.rpc->run_event_loop_once();
             }
         }
+
+        stop_low_latency();
     }
 
     dpfs_hal_destroy(hal);
