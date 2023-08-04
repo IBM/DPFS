@@ -105,6 +105,7 @@ static int fuse_handler(void *user_data,
             in_hdr->opcode, in_hdr->unique, in_iovcnt, out_iovcnt, msg);
 #endif
 
+    // WARNING: This code assumes that the two communicating nodes are either x86_64 or ARM64
     *((int *) req_buf) = in_iovcnt;
     req_buf += sizeof(in_iovcnt);
 

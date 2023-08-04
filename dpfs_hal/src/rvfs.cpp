@@ -63,7 +63,6 @@ struct dpfs_hal {
     boost::lockfree::spsc_queue<rpc_msg *, boost::lockfree::capacity<QUEUE_SIZE>> avail;
 
     // eRPC
-    std::vector<rpc_msg *> avail;
     std::unique_ptr<Nexus> nexus;
     std::unique_ptr<Rpc<CTransport>> rpc;
 
@@ -99,6 +98,7 @@ static void req_handler(ReqHandle *reqh, void *context)
     uint8_t *req_buf = reqh->get_req_msgbuf()->buf_;
     uint8_t *resp_buf = reqh->pre_resp_msgbuf_.buf_;
 
+    // WARNING: This code assumes that the two communicating nodes are either x86_64 or ARM64
     // Load the input io vectors
     msg->in_iovcnt = *((int *) req_buf);
     req_buf += sizeof(msg->in_iovcnt);
@@ -117,6 +117,7 @@ static void req_handler(ReqHandle *reqh, void *context)
     }
 
     // Load the output io vectors
+    // req_buf contains the sizes and we point the iovs to the resp_buf
     msg->out_iovcnt = *((int *) req_buf);
     req_buf += sizeof(msg->out_iovcnt);
     
@@ -229,9 +230,8 @@ void dpfs_hal_poll_mmio(struct dpfs_hal *, uint16_t) {}
 
 __attribute__((visibility("default")))
 void dpfs_hal_destroy(struct dpfs_hal *hal) {
-    while (hal->avail.size()) {
-        rpc_msg *msg = hal->avail.back();
-        hal->avail.pop_back();
+    rpc_msg *msg;
+    while (hal->avail.pop(msg)) {
         delete msg;
     }
 
@@ -242,12 +242,12 @@ void dpfs_hal_destroy(struct dpfs_hal *hal) {
 __attribute__((visibility("default")))
 int dpfs_hal_async_complete(void *completion_context, enum dpfs_hal_completion_status)
 {
-    rpc_msg *msg = (rpc_msg *) completion_context;
+    rpc_msg *msg = static_cast<rpc_msg *>(completion_context);
     dpfs_hal *hal = msg->hal;
 
-    struct fuse_out_header *out_hdr = (struct fuse_out_header *) msg->iov[msg->out_iovcnt].iov_base;
+    struct fuse_out_header *out_hdr = static_cast<struct fuse_out_header *>(msg->iov[msg->in_iovcnt].iov_base);
 #ifdef DEBUG_ENABLED
-    struct fuse_in_header *in_hdr = (struct fuse_in_header *) msg->iov[0].iov_base;
+    struct fuse_in_header *in_hdr = static_cast<struct fuse_in_header *>(msg->iov[0].iov_base);
     printf("DPFS_HAL_RVFS %s: replying to FUSE OP(%u) request id=%lu, eRPC msg=%p\n", __func__,
             in_hdr->opcode, in_hdr->unique, msg);
 #endif
