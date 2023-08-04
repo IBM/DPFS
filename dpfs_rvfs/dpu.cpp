@@ -114,6 +114,7 @@ static int fuse_handler(void *user_data,
     uint8_t *req_buf = msg->req.buf_;
 
 #ifdef DEBUG_ENABLED
+    struct fuse_in_header *in_hdr = static_cast<struct fuse_in_header *>(in_iov[0].iov_base);
     printf("SEND: FUSE OP(%u) request with id=%lu, %d input iovecs and %d output iovecs. Sending in eRPC msg %p\n",
             in_hdr->opcode, in_hdr->unique, in_iovcnt, out_iovcnt, msg);
 #endif
