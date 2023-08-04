@@ -25,6 +25,8 @@
 
 // Each virtio-fs uses at least 3 descriptors (aka queue entries) for each request
 #define VIRTIO_FS_MIN_DESCS 3
+// We support max virtio queue depth of 512, and min req size is 4 elements, so 128 requests, this is really large
+#define QUEUE_SIZE 512
 
 using namespace erpc;
 
@@ -47,32 +49,43 @@ struct rpc_msg {
 };
 
 struct rpc_state {
-    boost::lockfree::spsc_queue<struct rpc_msg *, boost::lockfree::capacity<1024>> avail;
+    boost::lockfree::spsc_queue<struct rpc_msg *, boost::lockfree::capacity<QUEUE_SIZE>> avail;
     std::unique_ptr<Nexus> nexus;
     std::unique_ptr<Rpc<CTransport>> rpc;
     int session_num;
 };
 
+// When we receive a FUSE request reply from the remote gateway
 void response_func(void *context, void *tag)
 {
     rpc_state *state = (rpc_state *) context;
     rpc_msg *msg = (rpc_msg *) tag;
     uint8_t *resp_buf = msg->resp.buf_;
 
-    for (size_t i = 0; i < msg->out_iovcnt; i++) {
-        memcpy(msg->out_iov[i].iov_base, (void *) resp_buf, msg->out_iov[i].iov_len);
-        resp_buf += msg->out_iov[i].iov_len;
+    // if there are no output iovs and thus no out_hdr, then the host does not need to be notified of the completion
+    // but the HAL does need to register the completion (e.g. FUSE_FORGET).
+    struct fuse_out_header *out_hdr = NULL;
+    if (msg->out_iov && msg->out_iovcnt >= 1) {
+        out_hdr = static_cast<struct fuse_out_header *>(msg->out_iov[0].iov_base);
+        size_t bytes_left = out_hdr->len;
+        size_t i = 0;
+        while (bytes_left < out_hdr->len && i < msg->out_iovcnt) {
+            size_t to_copy = std::min(msg->out_iov[i].iov_len, bytes_left);
+            memcpy(msg->out_iov[i].iov_base, (void *) resp_buf, to_copy);
+            resp_buf += to_copy;
+            i++;
+        }
     }
 
 #ifdef DEBUG_ENABLED
-    struct fuse_in_header *in_hdr = (struct fuse_in_header *) msg->in_iov[0].iov_base;
-    struct fuse_out_header *out_hdr = (struct fuse_out_header *) msg->out_iov[0].iov_base;
+    struct fuse_in_header *in_hdr = static_cast<struct fuse_in_header *>(msg->in_iov[0].iov_base);
     printf("RECEIVE: FUSE OP(%u) request reply for id=%lu in eRPC msg %p\n", in_hdr->opcode, in_hdr->unique, tag);
-    if (out_hdr->error != 0)
+    if (out_hdr && out_hdr->error != 0)
         fprintf(stderr, "FUSE OP(%u) request with id=%lu ERROR=%d, %s\n",
                 in_hdr->opcode, in_hdr->unique, out_hdr->error, strerror(-out_hdr->error));
 #endif
 
+    // Send the reply to the host via the HAL
     dpfs_hal_async_complete(msg->completion_context, DPFS_HAL_COMPLETION_SUCCES);
 
     state->avail.push(msg);
@@ -90,6 +103,7 @@ static int fuse_handler(void *user_data,
                         void *completion_context, uint16_t device_id)
 {
     rpc_state *state = (rpc_state *) user_data;
+
     // Messages and their buffers are dynamically allocated
     // The queue_depth of the virtio-fs device is static, so this wont infinitely allocate memory
     // Just be sure to warm up the system before evaulating performance
@@ -100,7 +114,6 @@ static int fuse_handler(void *user_data,
     uint8_t *req_buf = msg->req.buf_;
 
 #ifdef DEBUG_ENABLED
-    struct fuse_in_header *in_hdr = (struct fuse_in_header *) in_iov[0].iov_base;
     printf("SEND: FUSE OP(%u) request with id=%lu, %d input iovecs and %d output iovecs. Sending in eRPC msg %p\n",
             in_hdr->opcode, in_hdr->unique, in_iovcnt, out_iovcnt, msg);
 #endif

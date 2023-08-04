@@ -21,6 +21,8 @@
 
 // Each virtio-fs uses at least 3 descriptors (aka queue entries) for each request
 #define VIRTIO_FS_MIN_DESCS 3
+// We support max virtio queue depth of 512, and min req size is 4 elements, so 128 requests, this is really large
+#define QUEUE_SIZE 512
 
 using namespace erpc;
 
@@ -53,8 +55,7 @@ struct rpc_msg {
     {}
 };
 
-// We support max virtio queue depth of 512, and min req size is 4 elements, so 128 requests, this is really large
-#define QUEUE_SIZE 512
+
 
 struct dpfs_hal {
     dpfs_hal_ops ops;
@@ -245,7 +246,6 @@ int dpfs_hal_async_complete(void *completion_context, enum dpfs_hal_completion_s
     rpc_msg *msg = static_cast<rpc_msg *>(completion_context);
     dpfs_hal *hal = msg->hal;
 
-    struct fuse_out_header *out_hdr = static_cast<struct fuse_out_header *>(msg->iov[msg->in_iovcnt].iov_base);
 #ifdef DEBUG_ENABLED
     struct fuse_in_header *in_hdr = static_cast<struct fuse_in_header *>(msg->iov[0].iov_base);
     printf("DPFS_HAL_RVFS %s: replying to FUSE OP(%u) request id=%lu, eRPC msg=%p\n", __func__,
@@ -256,7 +256,15 @@ int dpfs_hal_async_complete(void *completion_context, enum dpfs_hal_completion_s
         hal->nexus->tls_registry_.init();
     }
 
-    Rpc<CTransport>::resize_msg_buffer(&msg->reqh->pre_resp_msgbuf_, out_hdr->len);
+    if (msg->out_iovcnt >= 1) {
+        struct fuse_out_header *out_hdr = static_cast<struct fuse_out_header *>(msg->iov[msg->in_iovcnt].iov_base);
+        Rpc<CTransport>::resize_msg_buffer(&msg->reqh->pre_resp_msgbuf_, out_hdr->len);
+    } else {
+        // In this case there are no output iovs, we do need to send the eRPC reply for the HAL on the DPU to register
+        // the completion, but no need to send actual output data.
+        // The DPU can identify the FUSE request through the eRPC reply, so np that we don't send the FUSE request unique value
+        Rpc<CTransport>::resize_msg_buffer(&msg->reqh->pre_resp_msgbuf_, 0);
+    }
 
     hal->rpc->enqueue_response(msg->reqh, &msg->reqh->pre_resp_msgbuf_);
     hal->avail.push(msg);
