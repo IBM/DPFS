@@ -54,6 +54,7 @@ libdpfs_hal_la_CPPFLAGS += $(BASE_CPPFLAGS) $(libdpfs_hal_la_CFLAGS) \
 libdpfs_hal_la_CPPFLAGS += -I$(builddir)/../extern/tomlcpp
 
 libdpfs_hal_la_SOURCES += src/rvfs.cpp \
+	$(builddir)/../lib/cpu_latency.c \
 	$(builddir)/../extern/tomlcpp/tomlcpp.cpp
 
 endif DPFS_RVFS

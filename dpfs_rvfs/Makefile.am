@@ -21,6 +21,8 @@ dpfs_rvfs_dpu_CPPFLAGS  = $(BASE_CPPFLAGS) \
 	-I$(srcdir)/../extern/tomlcpp \
 	-DERPC_INFINIBAND -Wno-address-of-packed-member # eRPC required flags for its headers
 
-dpfs_rvfs_dpu_SOURCES = dpu.cpp ../extern/tomlcpp/toml.c ../extern/tomlcpp/tomlcpp.cpp
+dpfs_rvfs_dpu_SOURCES = dpu.cpp \
+	../lib/cpu_latency.c \
+	../extern/tomlcpp/toml.c ../extern/tomlcpp/tomlcpp.cpp
 
 endif
