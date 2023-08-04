@@ -11,8 +11,7 @@ libdpfs_hal_la_HEADERS = include/dpfs/hal.h
 libdpfs_hal_la_CFLAGS = -I$(builddir)/include/dpfs \
 	-fPIC -fvisibility=hidden
 
-libdpfs_hal_la_SOURCES = src/cpu_latency.c \
-	$(builddir)/../extern/tomlcpp/toml.c
+libdpfs_hal_la_SOURCES = $(builddir)/../extern/tomlcpp/toml.c
 
 libdpfs_hal_la_LDFLAGS = $(IBVERBS_LDFLAGS)
 
