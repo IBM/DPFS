@@ -44,7 +44,7 @@ libdpfs_hal_la_LIBADD = $(srcdir)/../extern/eRPC-arm/build/liberpc.a \
 
 # For the common RVFS definitions
 libdpfs_hal_la_CPPFLAGS = -I$(builddir)/../dpfs_rvfs
-libdpfs_hal_la_CPPFLAGS += -I$(srcdir)/../lib
+libdpfs_hal_la_CPPFLAGS += -I$(builddir)/../lib
 # eRPC required flags for its headers
 libdpfs_hal_la_CPPFLAGS += $(BASE_CPPFLAGS) $(libdpfs_hal_la_CFLAGS) \
 	-I$(builddir)/../extern/eRPC-arm/third_party/asio/include \
