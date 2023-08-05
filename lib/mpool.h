@@ -11,6 +11,10 @@
 #include <stdint.h>
 #include <ck_ring.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*
     mpool is a minimal thread-safe memory pool that can NOT increase in size,
     specialized for Single-Producer Single-Consumer. It is basically a glorified concurrencykit fifo
@@ -34,5 +38,9 @@ void mpool_free(struct mpool *p, void *e);
  */
 int mpool_init(struct mpool **p, uint64_t chunk_size, uint64_t chunks);
 void mpool_destroy(struct mpool *p);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // MPOOL_H
