@@ -1,3 +1,9 @@
+[dpfs]
+# Must be a power of 2 and >= 1! The virtio-fs specification requires this
+# This value is used in the SNAP HAL implementation, the Gateway HAL implementation
+# and the DPU Gateway client implementation.
+queue_depth = 512
+
 [snap_hal]
 # Time between every poll
 polling_interval_usec = 0
@@ -14,8 +20,6 @@ pf_ids = [ 0 ]
 mock_pf_ids = [ ]
 # Emulation manager, DPU specific
 emu_manager = "mlx5_0"
-# Must be a power of 2 and >= 1! The virtio-fs specification requires this
-queue_depth = 64
 # Filesystem tag (i.e. the name of the virtiofs device to mount for the host)
 # The PF ID will be prepended to this tag e.g. "dpfs-0"
 tag = "dpfs"
@@ -46,6 +50,8 @@ dpu_uri = "10.100.0.115:31850"
 # If enabled then rvfs_dpu will do RVFS and hal polling on two seperate threads
 # TODO make this work for the RVFS version of hal as well?
 two_threads = true
+# Used for the eRPC stuff
+nic_numa_node = 0
 
 [kv]
 # The remote RAMCloud server that KV will connect to

@@ -396,7 +396,6 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params, bool start_mock_th
     FILE *fp;
     char errbuf[200];
     
-    // 1. Read and parse toml file
     fp = fopen(params->conf_path, "r");
     if (!fp) {
         fprintf(stderr, "%s: cannot open %s - %s", __func__,
@@ -412,10 +411,14 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params, bool start_mock_th
         return NULL;
     }
     
-    // 2. Traverse to a table.
     toml_table_t *snap_conf = toml_table_in(conf, "snap_hal");
     if (!snap_conf) {
-        fprintf(stderr, "%s: missing [snap_hal] in hal config", __func__);
+        fprintf(stderr, "%s: missing [snap_hal] in config", __func__);
+        return NULL;
+    }
+    toml_table_t *dpfs_conf = toml_table_in(conf, "dpfs");
+    if (!dpfs_conf) {
+        fprintf(stderr, "%s: missing [dpfs] in config", __func__);
         return NULL;
     }
     
@@ -441,9 +444,9 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params, bool start_mock_th
             return NULL;
         }
     }
-    toml_datum_t qd = toml_int_in(snap_conf, "queue_depth");
+    toml_datum_t qd = toml_int_in(dpfs_conf, "queue_depth");
     if (!qd.ok || qd.u.i < 1|| (qd.u.i & (qd.u.i - 1))) {
-        fprintf(stderr, "%s: queue_depth must be a power of 2 and >= 1\n!", __func__);
+        fprintf(stderr, "%s: queue_depth must be a power of 2 and >= 1 and put under [dpfs]\n!", __func__);
         return NULL;
     }
     toml_datum_t nthreads = toml_int_in(snap_conf, "nthreads");

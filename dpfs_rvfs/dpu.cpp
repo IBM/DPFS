@@ -239,17 +239,22 @@ int main(int argc, char **argv)
     
     auto [ok, remote_uri] = conf->getString("remote_uri");
     if (!ok) {
-        std::cerr << "The config must contain a `remote_uri` [hostname/ip:UDP_PORT]" << std::endl;
+        std::cerr << "The config must contain a `remote_uri` with the format `hostname/ip:UDP_PORT` under [rvfs]" << std::endl;
         return -1;
     }
     auto [okc, dpu_uri] = conf->getString("dpu_uri");
     if (!okc) {
-        std::cerr << "The config must contain a `dpu_uri` [hostname/ip:UDP_PORT]" << std::endl;
+        std::cerr << "The config must contain a `dpu_uri` with the format `hostname/ip:UDP_PORT` under [rvfs]" << std::endl;
         return -1;
     }
     auto [okd, two_threads] = conf->getBool("two_threads");
     if (!okd) {
-        std::cerr << "The config must contain a boolean `two_threads`" << std::endl;
+        std::cerr << "The config must contain a boolean `two_threads` under [rvfs]" << std::endl;
+        return -1;
+    }
+    auto [oke, nic_numa_node] = conf->getInt("nic_numa_node");
+    if (!oke || nic_numa_node < 0) {
+        std::cerr << "The config must contain a positive integer `nic_numa_node` under [rvfs]" << std::endl;
         return -1;
     }
 
@@ -257,10 +262,9 @@ int main(int argc, char **argv)
     std::cout << "Connecting to " << remote_uri << ". The virtio-fs device will only be up after the connection is established!" << std::endl;
 
     rpc_state state {};
-    size_t numa_node = 0;
     // 1 background thread, which is unused but created to enable multithreading in eRPC
     size_t erpc_bg_threads = two_threads;
-    state.nexus = std::unique_ptr<Nexus>(new Nexus(dpu_uri, numa_node, erpc_bg_threads));
+    state.nexus = std::unique_ptr<Nexus>(new Nexus(dpu_uri, nic_numa_node, erpc_bg_threads));
     state.rpc = std::unique_ptr<Rpc<CTransport>>(new Rpc<CTransport>(state.nexus.get(), &state, 0, sm_handler));
     state.session_num = state.rpc->create_session(remote_uri, 0);
 

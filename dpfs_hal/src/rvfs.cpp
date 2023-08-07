@@ -57,19 +57,15 @@ struct dpfs_hal {
     dpfs_hal_ops ops;
     void *user_data;
 
-    boost::lockfree::spsc_queue<rpc_msg *, boost::lockfree::capacity<QUEUE_SIZE>> avail;
+    // We can't use the spsc queue because we call async_complete from the Virtio thread if the FUSE implementation is synchronous
+    boost::lockfree::queue<rpc_msg *> avail;
 
     // eRPC
     std::unique_ptr<Nexus> nexus;
     std::unique_ptr<Rpc<CTransport>> rpc;
 
-    dpfs_hal(dpfs_hal_ops o, void *ud) :
-        ops(o), user_data(ud), avail() 
-    {
-        for (int i = 0; i < QUEUE_SIZE; i++) {
-            avail.push(new rpc_msg(this));
-        }
-    }
+    dpfs_hal(dpfs_hal_ops o, void *ud, size_t queue_size) :
+        ops(o), user_data(ud), avail(queue_size) {}
 };
 
 // When we receive a FUSE request from the DPU, aka the virtio-fs device
@@ -80,11 +76,8 @@ static void req_handler(ReqHandle *reqh, void *context)
     // The queue_depth of the virtio-fs device is static, so this wont infinitely allocate memory
     // Just be sure to warm up the system before evaulating performance
     rpc_msg *msg;
-    if (!hal->avail.pop(msg)) {
-        fprintf(stderr, "ERROR in %s: There were no free message from avail. This means that the statically configured queue size is not working!\n"
-                "This will crash soon.\n", __func__);
-        return;
-    }
+    if (!hal->avail.pop(msg))
+        msg = new rpc_msg(hal);
 
 #ifdef DEBUG_ENABLED
     printf("DPFS_HAL_RVFS %s: received eRPC in msg %p\n", __func__, msg);
@@ -150,36 +143,47 @@ static void sm_handler(int, SmEventType event, SmErrType err, void *) {
 
 __attribute__((visibility("default")))
 struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params, bool start_mock_thread) {
-    dpfs_hal *hal = new dpfs_hal(params->ops, params->user_data);
     auto res = toml::parseFile(params->conf_path);
     if (!res.table) {
         std::cerr << "cannot parse file: " << res.errmsg << std::endl;
-        delete hal;
         return nullptr;
     }
-    auto conf = res.table->getTable("rvfs");
-    if (!conf) {
+    auto rvfs_conf = res.table->getTable("rvfs");
+    if (!rvfs_conf) {
         std::cerr << "missing [rvfs]" << std::endl;
-        delete hal;
         return nullptr;
     }
-    auto [ok, remote_uri] = conf->getString("remote_uri");
+    auto [ok, remote_uri] = rvfs_conf->getString("remote_uri");
     if (!ok) {
-        std::cerr << "The config must contain a `remote_uri` [hostname/ip:UDP_PORT]" << std::endl;
-        delete hal;
+        std::cerr << "The config must contain a `remote_uri` with the format `hostname/ip:UDP_PORT`" << std::endl;
+        return nullptr;
+    }
+    auto dpfs_conf = res.table->getTable("dpfs");
+    if (!dpfs_conf) {
+        std::cerr << "missing [dpfs]" << std::endl;
+        return nullptr;
+    }
+    auto [okb, queue_depth] = dpfs_conf->getString("queue_depth");
+    if (!okb) {
+        std::cerr << "The config must contain a `queue_depth` under [dpfs]" << std::endl;
+        return nullptr;
+    }
+    auto [okc, nic_numa_node] = rvfs_conf->getInt("nic_numa_node");
+    if (!okc || nic_numa_node < 0) {
+        std::cerr << "The config must contain a positive integer `nic_numa_node` under [rvfs]" << std::endl;
         return nullptr;
     }
     if (pthread_key_create(&dpfs_hal_thread_id_key, NULL)) {
         std::cerr << "Failed to create thread-local key for dpfs_hal threadid" << std::endl;
-        delete hal;
         return nullptr;
     }
+    dpfs_hal *hal = new dpfs_hal(params->ops, params->user_data, queue_depth);
     // Only one thread, thread_id=0
     pthread_setspecific(dpfs_hal_thread_id_key, (void *) 0);
 
     // NUMA node 0
     // 1 background thread, which is unused but created to enable multithreading in eRPC
-    hal->nexus = std::unique_ptr<Nexus>(new Nexus(remote_uri, 0, 1));
+    hal->nexus = std::unique_ptr<Nexus>(new Nexus(remote_uri, nic_numa_node, 1));
     hal->nexus->register_req_func(DPFS_RVFS_REQTYPE_FUSE, req_handler);
     
     hal->rpc = std::unique_ptr<Rpc<CTransport>>(new Rpc<CTransport>(hal->nexus.get(), hal, 0, sm_handler));
@@ -252,9 +256,8 @@ int dpfs_hal_async_complete(void *completion_context, enum dpfs_hal_completion_s
             in_hdr->opcode, in_hdr->unique, msg);
 #endif
 
-    if (!hal->nexus->tls_registry_.is_init()) {
+    if (!hal->nexus->tls_registry_.is_init())
         hal->nexus->tls_registry_.init();
-    }
 
     if (msg->out_iovcnt >= 1) {
         struct fuse_out_header *out_hdr = static_cast<struct fuse_out_header *>(msg->iov[msg->in_iovcnt].iov_base);
