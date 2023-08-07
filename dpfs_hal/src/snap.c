@@ -445,7 +445,7 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params, bool start_mock_th
         }
     }
     toml_datum_t qd = toml_int_in(dpfs_conf, "queue_depth");
-    if (!qd.ok || qd.u.i < 1|| (qd.u.i & (qd.u.i - 1))) {
+    if (!qd.ok || qd.u.i < 1 || (qd.u.i & (qd.u.i - 1))) {
         fprintf(stderr, "%s: queue_depth must be a power of 2 and >= 1 and put under [dpfs]\n!", __func__);
         return NULL;
     }

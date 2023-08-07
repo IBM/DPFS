@@ -12,7 +12,7 @@
 #include <iostream>
 #include <memory>
 #include <linux/fuse.h>
-#include <boost/lockfree/spsc_queue.hpp>
+#include <boost/lockfree/queue.hpp>
 #include "cpu_latency.h"
 #include "hal.h"
 #include "rvfs.h"
@@ -50,8 +50,6 @@ struct rpc_msg {
         iov{{0}}, in_iovcnt(0), out_iovcnt(0)
     {}
 };
-
-
 
 struct dpfs_hal {
     dpfs_hal_ops ops;
@@ -163,9 +161,9 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params, bool start_mock_th
         std::cerr << "missing [dpfs]" << std::endl;
         return nullptr;
     }
-    auto [okb, queue_depth] = dpfs_conf->getString("queue_depth");
-    if (!okb) {
-        std::cerr << "The config must contain a `queue_depth` under [dpfs]" << std::endl;
+    auto [okb, qd] = dpfs_conf->getInt("queue_depth");
+    if (!okb || qd < 1 || (qd & (qd - 1))) {
+        std::cerr << "The config must contain a `queue_depth` under [dpfs] and must be a power of 2 and >= 1" << std::endl;
         return nullptr;
     }
     auto [okc, nic_numa_node] = rvfs_conf->getInt("nic_numa_node");
@@ -177,7 +175,7 @@ struct dpfs_hal *dpfs_hal_new(struct dpfs_hal_params *params, bool start_mock_th
         std::cerr << "Failed to create thread-local key for dpfs_hal threadid" << std::endl;
         return nullptr;
     }
-    dpfs_hal *hal = new dpfs_hal(params->ops, params->user_data, queue_depth);
+    dpfs_hal *hal = new dpfs_hal(params->ops, params->user_data, qd);
     // Only one thread, thread_id=0
     pthread_setspecific(dpfs_hal_thread_id_key, (void *) 0);
 
