@@ -50,7 +50,8 @@ struct rpc_state {
     std::unique_ptr<Rpc<CTransport>> rpc;
     int session_num;
 
-    rpc_state(size_t queue_size) : avail(queue_size) {}
+    rpc_state(size_t queue_depth) : avail(queue_depth) {
+    }
 };
 
 // When we receive a FUSE request reply from the remote gateway
@@ -108,12 +109,11 @@ static int fuse_handler(void *user_data,
 {
     rpc_state *state = (rpc_state *) user_data;
 
-    // Messages and their buffers are dynamically allocated
-    // The queue_depth of the virtio-fs device is static, so this wont infinitely allocate memory
-    // Just be sure to warm up the system before evaulating performance
     rpc_msg *msg;
-    if (!state->avail.pop(msg))
-        msg = new rpc_msg(*state->rpc.get());
+    if (!state->avail.pop(msg)) {
+        fprintf(stderr, "ERROR %s: The Gateway DPU client did not have enough messages allocated!", __func__);
+        return -ENOMEM;
+    }
 
     uint8_t *req_buf = msg->req.buf_;
 
@@ -280,6 +280,11 @@ int main(int argc, char **argv)
     state.nexus = std::unique_ptr<Nexus>(new Nexus(dpu_uri, nic_numa_node, erpc_bg_threads));
     state.rpc = std::unique_ptr<Rpc<CTransport>>(new Rpc<CTransport>(state.nexus.get(), &state, 0, sm_handler));
     state.session_num = state.rpc->create_session(remote_uri, 0);
+
+    // Pre-allocate all the messages (for safety and speed)
+    for (size_t i = 0; i < qd; i++) {
+        state.avail.push(new rpc_msg(*state.rpc.get()));
+    }
 
     // Run till we are connected
     while (!state.rpc->is_connected(state.session_num)) state.rpc->run_event_loop_once();
