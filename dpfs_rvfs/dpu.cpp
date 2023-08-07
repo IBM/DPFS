@@ -16,7 +16,7 @@
 #include <memory>
 #include <iostream>
 #include <thread>
-#include <boost/lockfree/spsc_queue.hpp>
+#include <boost/lockfree/queue.hpp>
 #include "config.h"
 #include "cpu_latency.h"
 #include "rvfs.h"
@@ -45,10 +45,12 @@ struct rpc_msg {
 };
 
 struct rpc_state {
-    boost::lockfree::spsc_queue<struct rpc_msg *, boost::lockfree::capacity<QUEUE_SIZE>> avail;
+    boost::lockfree::queue<struct rpc_msg *> avail;
     std::unique_ptr<Nexus> nexus;
     std::unique_ptr<Rpc<CTransport>> rpc;
     int session_num;
+
+    rpc_state(size_t queue_size) : avail(queue_size) {}
 };
 
 // When we receive a FUSE request reply from the remote gateway
@@ -110,9 +112,9 @@ static int fuse_handler(void *user_data,
     // The queue_depth of the virtio-fs device is static, so this wont infinitely allocate memory
     // Just be sure to warm up the system before evaulating performance
     rpc_msg *msg;
-    if (!state->avail.pop(msg)) {
+    if (!state->avail.pop(msg))
         msg = new rpc_msg(*state->rpc.get());
-    }
+
     uint8_t *req_buf = msg->req.buf_;
 
 #ifdef DEBUG_ENABLED
@@ -236,6 +238,12 @@ int main(int argc, char **argv)
         std::cerr << "The config must contain a [rvfs] table" << std::endl;
         return -1;
     }
+
+    auto dpfs_conf = res.table->getTable("dpfs");
+    if (!dpfs_conf) {
+        std::cerr << "The config must contain a [dpfs] table" << std::endl;
+        return -1;
+    }
     
     auto [ok, remote_uri] = conf->getString("remote_uri");
     if (!ok) {
@@ -257,11 +265,16 @@ int main(int argc, char **argv)
         std::cerr << "The config must contain a positive integer `nic_numa_node` under [rvfs]" << std::endl;
         return -1;
     }
+    auto [okf, qd] = dpfs_conf->getInt("queue_depth");
+    if (!okf || qd < 1 || (qd & (qd - 1))) {
+        std::cerr << "The config must contain a `queue_depth` under [dpfs] and must be a power of 2 and >= 1" << std::endl;
+        return -1;
+    }
 
     std::cout << "dpfs_rvfs_dpu starting up!" << std::endl;
     std::cout << "Connecting to " << remote_uri << ". The virtio-fs device will only be up after the connection is established!" << std::endl;
 
-    rpc_state state {};
+    rpc_state state { qd };
     // 1 background thread, which is unused but created to enable multithreading in eRPC
     size_t erpc_bg_threads = two_threads;
     state.nexus = std::unique_ptr<Nexus>(new Nexus(dpu_uri, nic_numa_node, erpc_bg_threads));
