@@ -64,7 +64,7 @@ for MT in "${MT_LIST[@]}"; do
 		done
 	done
 	
-	sudo sh -c "./setcpulatency 0 > /dev/null" &
+	sudo sh -c "./setcpulatency 0 > /dev/null" & disown
 	sleep 5
 	echo "Running: fio latency experiments"
 	for RW in "randread" "randwrite"; do
