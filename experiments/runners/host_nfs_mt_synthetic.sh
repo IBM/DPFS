@@ -5,6 +5,15 @@ if [ -z $NFS_URI ]; then
 	exit 1
 fi
 
+if [[ -z $OUT || -z $MNT ]]; then
+	echo OUT and MNT must be defined!
+	exit 1
+fi
+
+# NUMA defaults, based on ZRL:zac15
+NUMA_NODE="${NUMA_NODE:-1}"
+NUMA_CORE="${NUMA_CORE:-27}"
+
 BASE_MNT=$MNT
 BASE_OUT=$OUT
 
@@ -66,8 +75,6 @@ for MT in "${MT_LIST[@]}"; do
 					echo fio RW=$RW BS=$BS QD=$QD P=$P
 					for T in $(seq 1 $MT); do
 						export MNT=$BASE_MNT\_$T
-						export OUT=$BASE_OUT\_$T
-						mkdir -p $OUT
 
 						sudo -E env BS=$BS QD=$QD P=$P RW=$RW \
 							./workloads/fio.sh > $OUT/fio_${RW}_${BS}_${QD}_${P}_${T}.out &
