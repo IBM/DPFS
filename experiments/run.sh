@@ -32,7 +32,7 @@ cd $SCRIPT_DIR
 TIMESTAMP=$(date +"%Y-%m-%d_%T")
 HOST=$(uname -n)
 COMMIT=$(git rev-parse --short HEAD)
-export OUT=./output/${COMMIT}_${HOST}_${TIMESTAMP}
+export OUT=./output/${TIMESTAMP}_${HOST}_${COMMIT}
 
 gcc setcpulatency.c -o setcpulatency
 
