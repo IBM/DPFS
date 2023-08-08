@@ -40,8 +40,10 @@ echo "STARTING WARMUP in 10 seconds! quit the system now to reduce variability!"
 echo "This run.sh will take $TIME hours. Only log back in after that amount of time!"
 sleep 10
 
-echo WARMUP: Running random r/w mix multicore fio workload for 70 seconds to warm up the system
-sudo -E RW=randrw BS=4k QD=128 P=4 ./workloads/fio.sh > /dev/null
+if [ -z $SKIP_WARMUP ]; then
+	echo WARMUP: Running random r/w mix multicore fio workload for 70 seconds to warm up the system
+	sudo -E RW=randrw BS=4k QD=128 P=4 ./workloads/fio.sh > /dev/null
+fi
 
 echo START: experiment, results will be stored in $OUT
 mkdir -p $OUT

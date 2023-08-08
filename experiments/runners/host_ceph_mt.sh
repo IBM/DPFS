@@ -5,14 +5,16 @@ BASE_OUT=$OUT/MT_$MT/
 
 MT_LIST=("2" "4" "8" "10")
 for MT in "${MT_LIST[@]}"; do
+	echo MT=$MT
 	mkdir -p $OUT
 
 	# Mount
 	for T in $(seq 1 $MT); do
 		MNT=$BASE_MNT\_$T
-		sudo mkdir -p $MNT
-		sudo umount -A $MNT
+		sudo mkdir -p $MNT > /dev/null
+		sudo umount -A $MNT > /dev/null
 		sudo mount -t nfs -o wsize=1048576,rsize=1048576,async 10.100.0.19:/pj $MNT
+		echo mounted $MNT
 	done
 
 	# Synthetic
