@@ -3,6 +3,13 @@
 BASE_MNT=$MNT/
 BASE_OUT=$OUT/MT_$MT/
 
+BS_LIST=("4k" "16k" "64k")
+QD_LIST=("2" "4" "8" "16" "32" "64" "128")
+P_LIST=("1")
+if [ -n "$MP" ]; then
+	P_LIST=("1" "2" "4" "8")
+fi
+
 MT_LIST=("2" "4" "8" "10")
 for MT in "${MT_LIST[@]}"; do
 	echo MT=$MT
