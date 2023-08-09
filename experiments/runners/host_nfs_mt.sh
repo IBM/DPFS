@@ -11,11 +11,14 @@ if [[ -z $OUT || -z $MNT ]]; then
 fi
 
 # NUMA defaults, based on ZRL:zac15
-NUMA_NODE="${NUMA_NODE:-1}"
-NUMA_CORE="${NUMA_CORE:-27}"
+export NUMA_NODE="${NUMA_NODE:-1}"
+export FIO_DISABLE_NUMA_CORE_PINNING=1
 
 BASE_MNT=$MNT
 BASE_OUT=$OUT
+
+FILEBENCHES=("fileserver" "varmail" "webserver")
+FILEBENCHES_FOLDER=./workloads/filebenches
 
 BS_LIST=("4k" "16k" "64k")
 QD_LIST=("2" "4" "8" "16" "32" "64" "128")
@@ -47,7 +50,7 @@ for MT in "${MT_LIST[@]}"; do
 		echo mounted and warmed up $MNT
 	done
 
-	# Synthetic
+	echo Synthetic
 	for RW in "randread" "randwrite"; do
 		for BS in "${BS_LIST[@]}"; do
 			for QD in "${QD_LIST[@]}"; do
@@ -90,5 +93,34 @@ for MT in "${MT_LIST[@]}"; do
 	done
 	sudo pkill setcpulatency
 	sleep 5
+
+	echo Metadata
+	export OUT=$BASE_OUT/MT_$MT/filebench
+	mkdir -p $OUT
+
+	sudo sh -c 'echo 0 > /proc/sys/kernel/randomize_va_space'
+	for f in "${FILEBENCHES[@]}"; do
+		echo "Running $f"
+		for i in $(seq 1 $REPS); do
+			echo "i=$i"
+
+		# First prepare the filebench files for all the tenants
+		for T in $(seq 1 $MT); do
+			export MNT=$BASE_MNT\_$T/$T
+			sudo cp $FILEBENCHES_FOLDER/$f.f $FILEBENCHES_FOLDER/$f\_$T.f
+			sudo sed -i -e "s#set \$dir=.*#set \$dir=$MNT#g" $FILEBENCHES_FOLDER/$f\_$T.f
+		done
+
+		for T in $(seq 1 $MT); do
+			export MNT=$BASE_MNT\_$T/$T
+			sudo numactl -m $NUMA_NODE ~/filebench/filebench -f $MNT/$f.f > $OUT/$f\_$T\_$i &
+		done
+		wait
+
+		done
+	done
+	sudo sh -c 'echo 1 > /proc/sys/kernel/randomize_va_space'
+
+fi
 
 done

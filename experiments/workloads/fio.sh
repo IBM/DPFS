@@ -18,7 +18,7 @@ FIO_DEFAULTS="--ramp_time=10s --ioengine=io_uring --direct=1 --thread=1 \
 FIO="fio $FIO_DEFAULTS $FIO_CUSTOM_OPTIONS --filename ${MNT}/fio-$SIZE --size=$SIZE --runtime=$RUNTIME --bs=$BS --rw=$RW \
   --iodepth=$QD --numjobs=$P --name=\"${RW}_${BS}_${QD}_${P}\""
 
-if [[ $P == 1 ]]; then
+if [[ $P == 1 && -z $FIO_DISABLE_NUMA_CORE_PINNING ]]; then
   sudo numactl -m $NUMA_NODE -C $NUMA_CORE $FIO
 else
   sudo numactl -m $NUMA_NODE -N $NUMA_NODE $FIO

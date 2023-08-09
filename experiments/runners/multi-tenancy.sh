@@ -11,9 +11,9 @@ if [[ -z $MT ]]; then
 fi
 
 # NUMA defaults, based on ZRL:zac15
-NUMA_NODE="${NUMA_NODE:-1}"
-NUMA_CORE="${NUMA_CORE:-27}"
-REPS="${REPS:-5}"
+export NUMA_NODE="${NUMA_NODE:-1}"
+export FIO_DISABLE_NUMA_CORE_PINNING=1
+export REPS="${REPS:-5}"
 
 BASE_MNT=$MNT
 BASE_OUT=$OUT
@@ -44,13 +44,17 @@ mkdir -p $OUT
 
 sudo modprobe virtio_pci
 
+# sudo mount -t virtiofs dpfs-@T @MNT
+# eval $MOUNT_COMMAND
 # Mount
 sudo umount -A $BASE_MNT* 2&> /dev/null
 for T in $(seq 0 $MT); do
 	# Each tenant has their own mount point
 	MNT=$BASE_MNT\_$T
+	MOUNT_COMMAND="${MOUNT_COMMAND//\@T/$T}"
+	MOUNT_COMMAND="${MOUNT_COMMAND//\@MNT/$MNT}"
 	sudo mkdir -p $MNT 2&> /dev/null
-	sudo mount -t virtiofs dpfs-$T $MNT
+	eval $MOUNT_COMMAND
 	export MNT=$BASE_MNT\_$T/$T
 	sudo -E RUNTIME="10s" RW=randrw BS=4k QD=128 P=4 ./workloads/fio.sh > /dev/null
 	# Each tenant works on their own subtree
@@ -120,7 +124,6 @@ if [ -n "$METADATA" ]; then
 			export MNT=$BASE_MNT\_$T/$T
 			sudo cp $FILEBENCHES_FOLDER/$f.f $FILEBENCHES_FOLDER/$f\_$T.f
 			sudo sed -i -e "s#set \$dir=.*#set \$dir=$MNT#g" $FILEBENCHES_FOLDER/$f\_$T.f
-
 		done
 
 		for T in $(seq 1 $MT); do
