@@ -61,13 +61,13 @@ for MT in "${MT_LIST[@]}"; do
 			# First prepare the filebench files for all the tenants
 			for T in $(seq 1 $MT); do
 				export MNT=$BASE_MNT\_$T/$T
-  	    cp $FILEBENCHES_FOLDER/$f.f $MNT/
-  	    sed -i -e "s#set \$dir=.*#set \$dir=$MNT#g" $MNT/$f.f
+  				sudo cp $FILEBENCHES_FOLDER/$f.f $MNT/
+  				sudo sed -i -e "s#set \$dir=.*#set \$dir=$MNT#g" $MNT/$f.f
 			done
 
 			for T in $(seq 1 $MT); do
 				export MNT=$BASE_MNT\_$T/$T
-  		  sudo numactl -m $NUMA_NODE ~/filebench/filebench -f $MNT/$f.f > $OUT/$f\_$T\_$i &
+  		  		sudo numactl -m $NUMA_NODE ~/filebench/filebench -f $MNT/$f.f > $OUT/$f\_$T\_$i &
 			done
 			wait
 
