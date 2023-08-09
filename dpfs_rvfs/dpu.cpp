@@ -265,11 +265,12 @@ int main(int argc, char **argv)
         std::cerr << "The config must contain a positive integer `nic_numa_node` under [rvfs]" << std::endl;
         return -1;
     }
-    auto [okf, qd] = dpfs_conf->getInt("queue_depth");
-    if (!okf || qd < 1 || (qd & (qd - 1))) {
+    auto [okf, qd_int] = dpfs_conf->getInt("queue_depth");
+    if (!okf || qd_int < 1 || (qd_int & (qd_int - 1))) {
         std::cerr << "The config must contain a `queue_depth` under [dpfs] and must be a power of 2 and >= 1" << std::endl;
         return -1;
     }
+    size_t qd = (size_t) qd_int;
 
     std::cout << "dpfs_rvfs_dpu starting up!" << std::endl;
     std::cout << "Connecting to " << remote_uri << ". The virtio-fs device will only be up after the connection is established!" << std::endl;
