@@ -37,10 +37,13 @@ for MT in "${MT_LIST[@]}"; do
 	# Mount
 	sudo umount -A $BASE_MNT\_* 2&> /dev/null
 	for T in $(seq 1 $MT); do
+		# Each tenant has their own mount point
 		export MNT=$BASE_MNT\_$T
 		sudo mkdir -p $MNT 2&> /dev/null
 		sudo mount -t nfs -o wsize=1048576,rsize=1048576,async $NFS_URI $MNT
 		sudo -E RUNTIME="10s" RW=randrw BS=4k QD=128 P=4 ./workloads/fio.sh > /dev/null
+		# Each tenant works on their own subtree
+		sudo mkdir -p $MNT/$T 2&> /dev/null
 		echo mounted and warmed up $MNT
 	done
 
@@ -52,7 +55,7 @@ for MT in "${MT_LIST[@]}"; do
 
 					echo fio RW=$RW BS=$BS QD=$QD P=$P
 					for T in $(seq 1 $MT); do
-						export MNT=$BASE_MNT\_$T
+						export MNT=$BASE_MNT\_$T/$T
 
 						sudo -E env BS=$BS QD=$QD P=$P RW=$RW \
 							./workloads/fio.sh > $OUT/fio_${RW}_${BS}_${QD}_${P}_${T}.out &
@@ -74,7 +77,7 @@ for MT in "${MT_LIST[@]}"; do
 
 					echo fio RW=$RW BS=$BS QD=$QD P=$P
 					for T in $(seq 1 $MT); do
-						export MNT=$BASE_MNT\_$T
+						export MNT=$BASE_MNT\_$T/$T
 
 						sudo -E env BS=$BS QD=$QD P=$P RW=$RW \
 							./workloads/fio.sh > $OUT/fio_${RW}_${BS}_${QD}_${P}_${T}.out &
