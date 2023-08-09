@@ -25,15 +25,15 @@ P_LIST=("1")
 TIME=niks
 if [ -n "$METADATA" ]; then
 	TIME=$(python3 -c "
-	import datetime
-	t = 2*3*8*1*70 + 2*3*1*1*70 + 3*${REPS}*60
-	print(datetime.timedelta(seconds=t))
+import datetime
+t = 2*3*8*1*70 + 2*3*1*1*70 + 3*${REPS}*60
+print(datetime.timedelta(seconds=t))
 	")
 else
 	TIME=$(python3 -c "
-	import datetime
-	t = 2*3*8*1*70 + 2*3*1*1*70
-	print(datetime.timedelta(seconds=t))
+import datetime
+t = 2*3*8*1*70 + 2*3*1*1*70
+print(datetime.timedelta(seconds=t))
 	")
 fi
 echo "Running: multi-tenancy fio experiments which will take $TIME"
@@ -48,9 +48,10 @@ sudo modprobe virtio_pci
 sudo umount -A $BASE_MNT* 2&> /dev/null
 for T in $(seq 0 $MT); do
 	# Each tenant has their own mount point
-	export MNT=$BASE_MNT\_$T
+	MNT=$BASE_MNT\_$T
 	sudo mkdir -p $MNT 2&> /dev/null
 	sudo mount -t virtiofs dpfs-$T $MNT
+	export MNT=$BASE_MNT\_$T/$T
 	sudo -E RUNTIME="10s" RW=randrw BS=4k QD=128 P=4 ./workloads/fio.sh > /dev/null
 	# Each tenant works on their own subtree
 	echo mounted and warmed up $MNT
