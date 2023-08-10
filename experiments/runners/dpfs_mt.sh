@@ -5,9 +5,11 @@ if [[ -z $OUT || -z $MNT ]]; then
 	exit 1
 fi
 
-MT_LIST=("2" "4" "8" "10")
-for MT in "${MT_LIST[@]}"; do
-	export MOUNT_COMMAND="sudo mount -t virtiofs dpfs-@T @MNT"
-	MT=$MT MODULE=virtiofs ./runners/multi-tenancy.sh
-done
+if [[ -z $MT ]]; then
+	echo You must define the number of tenants using 
+	exit 1
+fi
+
+export MOUNT_COMMAND="sudo mount -t virtiofs dpfs-@T @MNT"
+MT=$MT MODULE=virtiofs ./runners/multi-tenancy.sh
 

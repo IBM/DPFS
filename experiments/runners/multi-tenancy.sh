@@ -39,6 +39,8 @@ fi
 echo "Running: multi-tenancy fio experiments which will take $TIME"
 
 echo MT=$MT
+# The user specifies the number of tenants, but we zero index here
+((MT--))
 export OUT=$BASE_OUT/MT_$MT/
 mkdir -p $OUT
 
@@ -52,12 +54,12 @@ fi
 sudo umount -A $BASE_MNT* 2&> /dev/null
 for T in $(seq 0 $MT); do
 	# Each tenant has their own mount point
-	MNT=$BASE_MNT\_$T
+	MNT=$BASE_MNT$T
 	MOUNT_COMMAND="${MOUNT_COMMAND//\@T/$T}"
 	MOUNT_COMMAND="${MOUNT_COMMAND//\@MNT/$MNT}"
 	sudo mkdir -p $MNT 2&> /dev/null
 	eval $MOUNT_COMMAND
-	export MNT=$BASE_MNT\_$T/$T
+	export MNT=$MNT/$T
 	sudo -E RUNTIME="10s" RW=randrw BS=4k QD=128 P=4 ./workloads/fio.sh > /dev/null
 	# Each tenant works on their own subtree
 	echo mounted and warmed up $MNT
@@ -70,8 +72,8 @@ for RW in "randread" "randwrite"; do
 			for P in "${P_LIST[@]}"; do
 
 				echo fio RW=$RW BS=$BS QD=$QD P=$P
-				for T in $(seq 1 $MT); do
-					export MNT=$BASE_MNT\_$T/$T
+				for T in $(seq 0 $MT); do
+					export MNT=$BASE_MNT$T/$T
 
 					sudo -E env BS=$BS QD=$QD P=$P RW=$RW \
 						./workloads/fio.sh > $OUT/fio_${RW}_${BS}_${QD}_${P}_${T}.out &
@@ -93,7 +95,7 @@ for RW in "randread" "randwrite"; do
 
 				echo fio RW=$RW BS=$BS QD=$QD P=$P
 				for T in $(seq 1 $MT); do
-					export MNT=$BASE_MNT\_$T/$T
+					export MNT=$BASE_MNT$T/$T
 
 					sudo -E env BS=$BS QD=$QD P=$P RW=$RW \
 						./workloads/fio.sh > $OUT/fio_${RW}_${BS}_${QD}_${P}_${T}.out &
@@ -118,19 +120,19 @@ if [ -n "$METADATA" ]; then
 
 	for f in "${FILEBENCHES[@]}"; do
 		echo "Running $f"
-		for i in $(seq 1 $REPS); do
+		for i in $(seq 0 $REPS); do
 			echo "i=$i"
 
 		# First prepare the filebench files for all the tenants
-		for T in $(seq 1 $MT); do
-			export MNT=$BASE_MNT\_$T/$T
-			sudo cp $FILEBENCHES_FOLDER/$f.f $FILEBENCHES_FOLDER/$f\_$T.f
-			sudo sed -i -e "s#set \$dir=.*#set \$dir=$MNT#g" $FILEBENCHES_FOLDER/$f\_$T.f
+		for T in $(seq 0 $MT); do
+			export MNT=$BASE_MNT$T/$T
+			sudo cp $FILEBENCHES_FOLDER/$f.f $FILEBENCHES_FOLDER/$f\_$T.f.mod
+			sudo sed -i -e "s#set \$dir=.*#set \$dir=$MNT#g" $FILEBENCHES_FOLDER/$f\_$T.f.mod
 		done
 
-		for T in $(seq 1 $MT); do
-			export MNT=$BASE_MNT\_$T/$T
-			sudo numactl -m $NUMA_NODE ~/filebench/filebench -f $MNT/$f.f > $OUT/$f\_$T\_$i &
+		for T in $(seq 0 $MT); do
+			export MNT=$BASE_MNT$T/$T
+			sudo numactl -m $NUMA_NODE ~/filebench/filebench -f $MNT/$f.f.mod > $OUT/$f\_$T\_$i &
 		done
 		wait
 

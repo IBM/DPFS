@@ -17,12 +17,13 @@ FILEBENCHES_FOLDER=./workloads/filebenches
 sudo sh -c 'echo 0 > /proc/sys/kernel/randomize_va_space'
 
 for f in "${FILEBENCHES[@]}"; do
-	sed -i -e "s#set \$dir=.*#set \$dir=$MNT#g" $FILEBENCHES_FOLDER/$f.f
+	cp $FILEBENCHES_FOLDER/$f.f $FILEBENCHES_FOLDER/$f.f.mod
+	sed -i -e "s#set \$dir=.*#set \$dir=$MNT#g" $FILEBENCHES_FOLDER/$f.f.mod
 	echo "Running $f"
 
 	for i in $(seq 1 $REPS); do
 		echo "i=$i"
-		sudo numactl -m $NUMA_NODE ~/filebench/filebench -f $FILEBENCHES_FOLDER/$f.f > $RESULTS/$f\_$i
+		sudo numactl -m $NUMA_NODE ~/filebench/filebench -f $FILEBENCHES_FOLDER/$f.f.mod > $RESULTS/$f\_$i
 	done
 done
 
