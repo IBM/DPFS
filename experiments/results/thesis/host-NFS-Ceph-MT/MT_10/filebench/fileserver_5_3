@@ -1,0 +1,26 @@
+Filebench Version 1.5-alpha3
+0.000: Allocated 177MB of shared memory
+0.002: Populating and pre-allocating filesets
+0.011: bigfileset populated: 10000 files, avg. dir. width = 20, avg. dir. depth = 3.1, 0 leafdirs, 1240.757MB total size
+0.011: Removing bigfileset tree (if exists)
+21.911: Pre-allocating directories in bigfileset tree
+23.371: Pre-allocating files in bigfileset tree
+64.444: Waiting for pre-allocation to finish (in case of a parallel pre-allocation)
+64.444: Population and pre-allocation of filesets completed
+64.444: Starting 1 filereader instances
+65.450: Running...
+125.455: Run took 60 seconds...
+125.457: Per-Operation Breakdown
+statfile1            4634ops       77ops/s   0.0mb/s   57.682ms/op [0.444ms - 490.723ms]
+deletefile1          4638ops       77ops/s   0.0mb/s  198.634ms/op [1.369ms - 963.555ms]
+closefile3           4649ops       77ops/s   0.0mb/s   15.279ms/op [0.133ms - 339.383ms]
+readfile1            4652ops       78ops/s  10.2mb/s    0.052ms/op [0.004ms - 0.348ms]
+openfile2            4652ops       78ops/s   0.0mb/s   74.443ms/op [1.089ms - 492.360ms]
+closefile2           4658ops       78ops/s   0.0mb/s   38.585ms/op [1.894ms - 484.392ms]
+appendfilerand1      4662ops       78ops/s   0.6mb/s    0.019ms/op [0.006ms - 0.176ms]
+openfile1            4662ops       78ops/s   0.0mb/s   74.734ms/op [1.162ms - 492.837ms]
+closefile1           4670ops       78ops/s   0.0mb/s   38.483ms/op [1.495ms - 494.784ms]
+wrtfile1             4673ops       78ops/s  11.9mb/s    0.130ms/op [0.009ms - 0.965ms]
+createfile1          4673ops       78ops/s   0.0mb/s  145.398ms/op [1.194ms - 590.094ms]
+125.457: IO Summary: 51223 ops 853.661 ops/s 78/156 rd/wr  22.7mb/s 58.453ms/op
+125.457: Shutting down processes
