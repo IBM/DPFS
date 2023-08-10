@@ -11,5 +11,5 @@ if [[ -z $MT ]]; then
 fi
 
 export MOUNT_COMMAND="sudo mount -t virtiofs dpfs-@T @MNT"
-MT=$MT MODULE=virtiofs ./runners/multi-tenancy.sh
+MT=$MT MODULE=virtio_pci ./runners/multi-tenancy.sh
 

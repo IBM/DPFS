@@ -39,10 +39,11 @@ fi
 echo "Running: multi-tenancy fio experiments which will take $TIME"
 
 echo MT=$MT
-# The user specifies the number of tenants, but we zero index here
-((MT--))
 export OUT=$BASE_OUT/MT_$MT/
 mkdir -p $OUT
+
+# The user specifies the number of tenants, but we zero index here
+((MT--))
 
 if [ -n "$MODULE" ]; then
 	sudo modprobe $MODULE
@@ -55,10 +56,10 @@ sudo umount -A $BASE_MNT* 2&> /dev/null
 for T in $(seq 0 $MT); do
 	# Each tenant has their own mount point
 	MNT=$BASE_MNT$T
-	MOUNT_COMMAND="${MOUNT_COMMAND//\@T/$T}"
-	MOUNT_COMMAND="${MOUNT_COMMAND//\@MNT/$MNT}"
+	MOUNT_COMMAND_NEW="${MOUNT_COMMAND//\@T/$T}"
+	MOUNT_COMMAND_NEW="${MOUNT_COMMAND_NEW//\@MNT/$MNT}"
 	sudo mkdir -p $MNT 2&> /dev/null
-	eval $MOUNT_COMMAND
+	eval $MOUNT_COMMAND_NEW
 	export MNT=$MNT/$T
 	sudo -E RUNTIME="10s" RW=randrw BS=4k QD=128 P=4 ./workloads/fio.sh > /dev/null
 	# Each tenant works on their own subtree

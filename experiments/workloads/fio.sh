@@ -20,7 +20,9 @@ FIO="fio $FIO_DEFAULTS $FIO_CUSTOM_OPTIONS --filename ${MNT}/fio-$SIZE --size=$S
 
 if [[ $P == 1 && -z $FIO_DISABLE_NUMA_CORE_PINNING ]]; then
   sudo numactl -m $NUMA_NODE -C $NUMA_CORE $FIO
-else
+elif [[ -z $FIO_DISABLE_NUMA_NODE_PINNING ]]; then
   sudo numactl -m $NUMA_NODE -N $NUMA_NODE $FIO
+else
+  sudo $FIO
 fi
   
