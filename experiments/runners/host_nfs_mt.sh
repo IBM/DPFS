@@ -13,6 +13,7 @@ fi
 # NUMA defaults, based on ZRL:zac15
 export NUMA_NODE="${NUMA_NODE:-1}"
 export FIO_DISABLE_NUMA_CORE_PINNING=1
+export REPS="${REPS:-5}"
 
 BASE_MNT=$MNT
 BASE_OUT=$OUT
@@ -120,7 +121,5 @@ for MT in "${MT_LIST[@]}"; do
 		done
 	done
 	sudo sh -c 'echo 1 > /proc/sys/kernel/randomize_va_space'
-
-fi
 
 done
