@@ -42,7 +42,9 @@ echo MT=$MT
 export OUT=$BASE_OUT/MT_$MT/
 mkdir -p $OUT
 
-sudo modprobe virtio_pci
+if [ -n "$MODULE" ]; then
+	sudo modprobe $MODULE
+fi
 
 # sudo mount -t virtiofs dpfs-@T @MNT
 # eval $MOUNT_COMMAND
@@ -139,4 +141,6 @@ if [ -n "$METADATA" ]; then
 fi
 
 sudo umount -A $BASE_MNT* 2&> /dev/null
-sudo rmmod virtio_pci
+if [ -n "$MODULE" ]; then
+	sudo rmmod $MODULE
+fi
