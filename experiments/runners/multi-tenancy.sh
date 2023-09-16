@@ -95,7 +95,7 @@ for RW in "randread" "randwrite"; do
 			for P in "${P_LIST[@]}"; do
 
 				echo fio RW=$RW BS=$BS QD=$QD P=$P
-				for T in $(seq 1 $MT); do
+				for T in $(seq 0 $MT); do
 					export MNT=$BASE_MNT$T/$T
 
 					sudo -E env BS=$BS QD=$QD P=$P RW=$RW \
