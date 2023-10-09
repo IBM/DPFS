@@ -2,6 +2,10 @@
 
 echo "Running the perf experiment"
 
+if perf 2>&1 | grep "WARNING: perf not found for kernel"; then
+	exit 1
+fi
+
 echo "Setting /proc/sys/kernel/perf_event_paranoid to -1 for perf. A sudo prompt might come up."
 sudo sh -c "echo -1 > /proc/sys/kernel/perf_event_paranoid"
 

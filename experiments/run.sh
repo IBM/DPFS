@@ -14,15 +14,9 @@ if [ -z $MNT ]; then
 	echo "You must set the MNT env variable to where you want to run the workloads!"
 	exit 1
 fi
-export MNT
 
 if [[ -z $NUMA_NODE || -z $NUMA_CORE ]]; then
 	echo "You must set the NUMA_NODE and NUMA_CORE env variables to where you want to run the workloads!"
-	exit 1
-fi
-export NUMA_NODE NUMA_CORE
-
-if perf 2>&1 | grep "WARNING: perf not found for kernel"; then
 	exit 1
 fi
 
