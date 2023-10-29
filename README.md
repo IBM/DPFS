@@ -73,6 +73,14 @@ Setup steps for the extern dependencies:
 # Project status
 See the Github issues and milestones.
 
+# Licensing
+The repository is split between two licenses to aid adoption by other DPU vendors and file system developers.
+DPFS-HAL and all the DPFS backends are MIT licensed, while DPFS-FUSE (based on libfuse) is licensed under LGPL.
+This allows any DPU vendor to create their own closed-source HAL implementation for DPFS, and any file system developer to create
+their own closed-source DPFS backend implementation. The FUSE API layer must be kept open source as it builds upon
+the work of libfuse, which is licensed under LGPL. This isolates the copy-left, to the layer of DPFS that should in principle not require
+closed-source modifications.
+
 # FAQ
 ## What is a 'DPU'?
 A DPU (Data Processing Unit), for the scope and definition of this project, contains a CPU (running e.g. Linux), NIC and programmable data acceleration engines. It is also commonly referred to as SmartNIC or IPU (Infrastructure Processing Unit).
